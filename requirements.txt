@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+torch
+transformers
+opencv-python
+Pillow
+numpy
+mediapipe
+python-dotenv
