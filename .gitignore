@@ -1,0 +1,38 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+
+# bukan di dalam repo. Tapi jika dataset disimpan di dalam folder ini, ignore:
+hasil_label6/
+cropped_faces/
+
+# File video dan gambar besar
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
