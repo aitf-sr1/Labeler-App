@@ -1,0 +1,30 @@
+"""
+core/siglip_model.py
+
+Singleton loader untuk model SigLIP2 (google/siglip2-base-patch16-224).
+Model hanya dimuat sekali ke memori; pemanggilan berikutnya langsung return instance yang ada.
+"""
+
+import torch
+
+_siglip_model     = None
+_siglip_processor = None
+_device           = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def get_device() -> str:
+    return _device
+
+
+def get_siglip():
+    """Lazy-load SigLIP2. Return (model, processor) dalam eval mode."""
+    global _siglip_model, _siglip_processor
+    if _siglip_model is None:
+        import os
+        MODEL_ID = os.getenv("SIGLIP_MODEL_ID", "google/siglip2-base-patch16-224")
+        print(f"Loading SigLIP2 on {_device.upper()} ({MODEL_ID})...")
+        _siglip_processor = AutoProcessor.from_pretrained(MODEL_ID)
+        _siglip_model     = AutoModel.from_pretrained(MODEL_ID)
+        _siglip_model.to(_device)
+        _siglip_model.eval()
+    return _siglip_model, _siglip_processor
