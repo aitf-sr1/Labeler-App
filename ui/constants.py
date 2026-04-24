@@ -13,7 +13,7 @@ DEFAULT_PROMPT_GROUPS = [
         "a student turning their face away from the monitor\n"
         "a student not paying attention and looking around the room\n"
         "a student yawning with mouth wide open\n"
-        "a student with eyes not directed at the screen\n"
+        "a student with eyes not directed at the screenor looking down\n"
         "a student appearing completely inattentive and distracted",
         "",
     ),

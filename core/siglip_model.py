@@ -6,6 +6,7 @@ Model hanya dimuat sekali ke memori; pemanggilan berikutnya langsung return inst
 """
 
 import torch
+from transformers import AutoProcessor, AutoModel
 
 _siglip_model     = None
 _siglip_processor = None

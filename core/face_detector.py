@@ -48,6 +48,9 @@ def crop_face(frame_bgr, padding_scale: float = 0.60):
     Padding ditambahkan di sekitar bounding box agar kepala dan leher ikut masuk.
     Jika tidak ada wajah terdeteksi, fallback ke center crop 80% dari sisi terpendek.
     Return frame asli jika hasil crop berukuran 0.
+
+    Returns:
+        (cropped_img, face_found: bool)
     """
     import mediapipe as mp
 
@@ -67,12 +70,14 @@ def crop_face(frame_bgr, padding_scale: float = 0.60):
         x1, y1  = max(0, cx - half_dim), max(0, cy - half_dim)
         x2, y2  = min(w, cx + half_dim), min(h, cy + half_dim)
         crop    = frame_bgr[y1:y2, x1:x2]
-        return crop if crop.size > 0 else frame_bgr
+        return (crop if crop.size > 0 else frame_bgr), True
 
-    # Fallback: center crop
+    # Fallback: center crop — wajah tidak terdeteksi
     cx, cy   = w // 2, h // 2
     half_dim = int(min(w, h) * 0.40)
-    return frame_bgr[
+    fallback = frame_bgr[
         max(0, cy - half_dim): cy + half_dim,
         max(0, cx - half_dim): cx + half_dim,
     ]
+    return fallback, False
+

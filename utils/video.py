@@ -38,10 +38,15 @@ def prepare_cropped_frames(
     video_path: str,
     root_folder: str,
     crop_dir_base: str,
-) -> list:
+) -> tuple:
     """
     Ekstrak, crop wajah, resize, simpan ke disk, dan kembalikan sebagai list PIL.Image.
     Jika 16 frame sudah ada di disk, langsung load tanpa re-process.
+
+    Returns:
+        (pil_images: list, no_face_count: int)
+        no_face_count = jumlah frame yang tidak terdeteksi wajahnya oleh MediaPipe.
+        Jika loading dari cache (frame sudah ada), no_face_count = 0 (tidak bisa diketahui).
     """
     rel_path        = os.path.relpath(video_path, root_folder)
     base_name       = os.path.splitext(rel_path)[0]
@@ -50,18 +55,22 @@ def prepare_cropped_frames(
 
     saved_files = sorted(glob.glob(os.path.join(target_crop_dir, "frame_*.jpg")))
     if len(saved_files) == 16:
-        return [Image.open(f).convert("RGB") for f in saved_files]
+        return [Image.open(f).convert("RGB") for f in saved_files], 0
 
     frames_bgr = extract_16_frames(video_path)
     if not frames_bgr:
-        return []
+        return [], 0
 
-    pil_images = []
+    pil_images    = []
+    no_face_count = 0
     for i, frame in enumerate(frames_bgr):
-        cropped_sq   = crop_face(frame)
+        cropped_sq, face_found = crop_face(frame)
+        if not face_found:
+            no_face_count += 1
         resized_full = cv2.resize(cropped_sq, (512, 512), interpolation=cv2.INTER_AREA)
         cv2.imwrite(os.path.join(target_crop_dir, f"frame_{i:02d}.jpg"), resized_full)
         pil_images.append(
             Image.fromarray(cv2.cvtColor(resized_full, cv2.COLOR_BGR2RGB))
         )
-    return pil_images
+    return pil_images, no_face_count
+

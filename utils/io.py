@@ -35,7 +35,8 @@ def save_annotations(csv_path: str, annotations_data: dict) -> None:
         w = csv.writer(f)
         w.writerow(["UUID", "Video_Asli", "Clip_Name", "File_Path",
                     "Boredom", "Engagement", "Confusion", "Frustration"])
-        for rel, vals in annotations_data.items():
+        # Gunakan list() untuk menghindari RuntimeError jika dict berubah di thread lain
+        for rel, vals in list(annotations_data.items()):
             p = rel.split(os.sep)
             w.writerow([
                 p[0] if p else "-",
@@ -85,7 +86,8 @@ def save_frame_annotations(json_path: str, frame_annotations: dict) -> None:
     """Tulis ulang frame_annotations.json."""
     os.makedirs(os.path.dirname(json_path), exist_ok=True)
     with open(json_path, "w") as f:
-        json.dump(frame_annotations, f, indent=4)
+        # Gunakan dict() untuk copy guna menghindari RuntimeError
+        json.dump(dict(frame_annotations), f, indent=4)
 
 
 def load_batch_history(json_path: str) -> dict:
@@ -108,7 +110,8 @@ def save_batch_history(json_path: str, batch_history: dict) -> None:
     os.makedirs(os.path.dirname(json_path), exist_ok=True)
     try:
         with open(json_path, "w") as f:
-            json.dump(batch_history, f, indent=4)
+            # Gunakan dict() untuk copy guna menghindari RuntimeError
+            json.dump(dict(batch_history), f, indent=4)
     except Exception as e:
         print(f"Gagal menyimpan batch_history: {e}")
 

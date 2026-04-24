@@ -123,6 +123,11 @@ class VideoLabelerApp:
         self.lbl_progress = ctk.CTkLabel(bar, text="", font=self.font_sm, text_color="gray")
         self.lbl_progress.pack(side="right", padx=16)
 
+        self.lbl_flag_count = ctk.CTkLabel(
+            bar, text="", font=self.font_sm, text_color="#ef4444"
+        )
+        self.lbl_flag_count.pack(side="right", padx=(0, 4))
+
     def _build_bottombar(self):
         """Bangun bar bawah: navigasi prev/skip/next, toggle flag, dan jump to video."""
         bar = ctk.CTkFrame(self.root, fg_color=("#e5e7eb", "#1f1f1f"), corner_radius=0, height=46)
@@ -211,6 +216,15 @@ class VideoLabelerApp:
         self.frame_annotations = load_frame_annotations(self.path_json_frames)
         self.batch_history     = load_batch_history(self.path_json_batch_history)
         self.skipped_videos    = load_skipped(self.path_json_skipped)
+        self._update_flag_count()
+
+    def _update_flag_count(self):
+        """Perbarui label counter flag di topbar."""
+        n = len(self.flagged_data)
+        if n > 0:
+            self.lbl_flag_count.configure(text=f"🚩 {n} flagged")
+        else:
+            self.lbl_flag_count.configure(text="")
 
     def save_current_state(self):
         """
@@ -234,6 +248,7 @@ class VideoLabelerApp:
         save_annotations(self.path_csv_annotations, self.annotations_data)
         save_flagged(self.path_csv_flagged, self.flagged_data)
         save_frame_annotations(self.path_json_frames, self.frame_annotations)
+        self._update_flag_count()
 
     # Video playback
 
@@ -439,7 +454,7 @@ class VideoLabelerApp:
         rel_path = os.path.relpath(vp, self.root_folder)
         active_lbl = self.active_frame_label.get()
 
-        pil_images = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+        pil_images, _ = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
         if not pil_images:
             for cv_widget in self.left_panel.frame_canvases:
                 cv_widget.delete("all")
@@ -552,12 +567,28 @@ class VideoLabelerApp:
         self.right_panel.lbl_batch_status.configure(text="Memproses…", text_color="#fbbf24")
 
         def worker():
-            imgs = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+            imgs, no_face_count = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
             if not imgs:
                 self.root.after(0, lambda: self.right_panel.lbl_batch_status.configure(
                     text="Gagal: tidak ada frame", text_color="#ef4444"
                 ))
                 return
+
+            # Auto-flag jika >50% frame tidak terdeteksi wajah oleh MediaPipe
+            if no_face_count > 8:
+                self.flagged_data.add(rel_path)
+                self.annotations_data.pop(rel_path, None)
+                save_flagged(self.path_csv_flagged, self.flagged_data)
+                self.root.after(0, lambda: (
+                    self.flag_var.set(True),
+                    self.right_panel.lbl_batch_status.configure(
+                        text=f"Auto-flag: wajah hanya terdeteksi {16 - no_face_count}/16 frame",
+                        text_color="#ef4444"
+                    ),
+                    self._update_flag_count()
+                ))
+                return
+
             res = run_siglip_on_frames(imgs, prompts, ths)
             self._apply_siglip_result(rel_path, res, update_label_vars=True)
 
@@ -635,8 +666,23 @@ class VideoLabelerApp:
                 self.root.after(0, upd_status)
 
                 try:
-                    imgs = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+                    imgs, no_face_count = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
                     if not imgs: continue
+
+                    # Auto-flag jika >50% frame tidak terdeteksi wajah
+                    if no_face_count > 8:
+                        self.flagged_data.add(rel_path)
+                        self.annotations_data.pop(rel_path, None)
+                        save_flagged(self.path_csv_flagged, self.flagged_data)
+                        self.root.after(0, self._update_flag_count)
+                        def upd_autoflag(r=rel_path, nf=no_face_count):
+                            self.right_panel.lbl_batch_status.configure(
+                                text=f"Auto-flag: {os.path.basename(r)} (wajah {16-nf}/16)",
+                                text_color="#ef4444",
+                            )
+                        self.root.after(0, upd_autoflag)
+                        continue
+
                     res = run_siglip_on_frames(imgs, prompts, ths)
 
                     self._apply_siglip_result(rel_path, res, update_label_vars=False)
