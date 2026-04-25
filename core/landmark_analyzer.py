@@ -195,13 +195,18 @@ def _analyze_hands(mp_image, h: int, w: int):
     pts_mid = sum(1 for _, y in all_pts if  0.25 <= y < 0.55)  # Facepalm / kucek mata
     pts_bot = sum(1 for _, y in all_pts if  0.55 <= y <= 1.20) # Nyanggah pipi/dagu
     
-    # Hanya validasi jika tangan ada di tengah frame (bukan tangan orang lain)
+    # Pastikan tangan cukup terlihat dan ada di tengah (minimal 8 titik)
+    # untuk mencegah false positive dari noise kamera.
     centered = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
     
-    # Deteksi biner: jika ada minimal 5 titik di zona tersebut
-    hand_top = 1.0 if (pts_top >= 5 and centered >= 5) else 0.0
-    hand_mid = 1.0 if (pts_mid >= 5 and centered >= 5) else 0.0
-    hand_bot = 1.0 if (pts_bot >= 5 and centered >= 5) else 0.0
+    if centered < 8:
+        hand_top = hand_mid = hand_bot = 0.0
+    else:
+        # Menghitung proporsional: 10 titik (setengah tangan) cukup untuk 1.0
+        # Tidak menggunakan biner murni agar noise kecil tidak merusak skor.
+        hand_top = _clamp(pts_top / 10, 0, 1)
+        hand_mid = _clamp(pts_mid / 10, 0, 1)
+        hand_bot = _clamp(pts_bot / 10, 0, 1)
     
     hand_pts_px = [(int(x * w), int(y * h)) for x, y in all_pts]
 
@@ -372,9 +377,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     conf = _clamp(base_conf * 0.85 + (pitch_cu + sig_brow_conf) * 0.15, 0, 1)
     
     # MUTLAK: Tangan yang menutupi area TENGAH WAJAH (mata/hidung) membatalkan Confusion
-    # Tapi tangan di ATAS kepala (garuk) tidak membatalkan Confusion!
-    # r.hand_forehead sekarang berisi gabungan mid & bot (Facepalm & Nyanggah pipi).
-    conf = _clamp(conf - r.hand_forehead, 0, 1)
+    # Tapi jika tangannya dominan menggaruk kepala (r.hand_chin), jangan dibatalkan!
+    suppression = r.hand_forehead if r.hand_chin < 0.5 else 0.0
+    conf = _clamp(conf - suppression, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
     # Threshold dinaikkan drastis agar orang yang sedang rileks/ngelamun (mulut nutup biasa,
