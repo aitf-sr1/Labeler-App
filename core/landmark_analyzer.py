@@ -302,8 +302,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     sig_expr   = max(blink_v, yawn_v, pitch_up_v) * 0.5
 
-    # Final: Soft OR logic. Jika menoleh (arah) ATAU ngantuk (ekspresi), skor langsung tinggi.
-    bore = _clamp(max(sig_arah, sig_expr) * 0.85 + (sig_arah + sig_expr) * 0.15, 0, 1)
+    # Final: Soft OR logic. Tangan di dagu (hand_chin) digunakan sebagai booster (+0.20)
+    base_bore = max(sig_arah, sig_expr)
+    bore = _clamp(base_bore * 0.70 + r.hand_chin * 0.20 + (sig_arah + sig_expr) * 0.10, 0, 1)
 
     # == 1: ENGAGEMENT -- semua gate harus ON (AND logic) ======================
     # Gate A: kepala lurus — DEAD ZONE: yaw ≤3° = sempurna (1.0), lalu turun, 0 di ≥10°
@@ -333,15 +334,18 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     # Sensitivitas diturunkan sedikit agar tidak bocor (0.12 -> 0.15)
     brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
     brow_in_v  = _clamp(g("browInnerUp") / 0.15, 0, 1)
-    jaw_co     = _clamp(g("jawOpen") / 0.20, 0, 1)  # Jangan terlalu sensitif (sebelumnya 0.15)
+    
+    # "Mangap" karena bingung (bukan karena tertawa/senyum)
+    smile_v    = max(g("mouthSmileLeft"), g("mouthSmileRight"))
+    jaw_co     = _clamp((g("jawOpen") - smile_v * 1.5) / 0.20, 0, 1)
 
     sig_brow_conf = max(brow_dn_v, brow_in_v)
     sig_mata_conf = max(iris_up_v, look_up_v)
     
     # Jika ADA SALAH SATU ciri yang kuat, skor dasar tinggi
     base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
-    # Tangan (hand_chin) dikembalikan sebagai 'booster' (+0.20) agar tidak bisa memicu sendirian
-    conf = _clamp(base_conf * 0.70 + r.hand_chin * 0.20 + (pitch_cu + sig_brow_conf) * 0.10, 0, 1)
+    # Tangan dihapus dari Confusion (prompt mengindikasikan menggaruk kepala/bukan dagu)
+    conf = _clamp(base_conf * 0.85 + (pitch_cu + sig_brow_conf) * 0.15, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
@@ -349,7 +353,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.15, 0, 1)
     lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.15, 0, 1)
     ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.15, 0, 1)
-    jw_fr = _clamp(g("jawOpen") / 0.25, 0, 1)
+    
+    # Rahang tegang/berteriak (bukan tertawa)
+    jw_fr = _clamp((g("jawOpen") - smile_v * 1.5) / 0.25, 0, 1)
 
     sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
     
