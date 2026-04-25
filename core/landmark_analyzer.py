@@ -193,15 +193,17 @@ def _analyze_hands(mp_image, h: int, w: int):
     n = len(all_pts)
     
     # Hitung semua titik yang ada di layar (0.00 <= y <= 1.00)
-    face_pts = sum(1 for _, y in all_pts if -0.20 <= y <= 1.20)  # Toleransi keluar frame sedikit
+    face_pts = sum(1 for _, y in all_pts if -0.20 <= y <= 1.20)
     
     # Hanya count jika tangan tidak terlalu di pinggir banget
-    centered     = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
-    center_ratio = centered / n
+    centered = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
     
-    hand_on_face = _clamp((face_pts / n) * center_ratio, 0, 1)
+    # Jika MediaPipe mendeteksi tangan dan minimal 5 titik berada di tengah,
+    # kita set mutlak 1.0 (karena ini sudah pasti tangan menutupi/menyentuh wajah).
+    # Tidak menggunakan rasio lagi agar skor tidak hancur saat dikuadratkan.
+    hand_on_face = 1.0 if (face_pts >= 5 and centered >= 5) else 0.0
     
-    hand_pts_px   = [(int(x * w), int(y * h)) for x, y in all_pts]
+    hand_pts_px = [(int(x * w), int(y * h)) for x, y in all_pts]
 
     # Return hand_on_face ke slot hand_forehead (agar kompatibel dengan kode yang ada)
     return hand_on_face, 0.0, hand_pts_px
@@ -374,11 +376,13 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     conf = _clamp(conf - r.hand_forehead, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
-    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
-    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.15, 0, 1)
-    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.15, 0, 1)
-    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.15, 0, 1)
-    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.15, 0, 1)
+    # Threshold dinaikkan drastis agar orang yang sedang rileks/ngelamun (mulut nutup biasa,
+    # mata sedikit sayu) tidak memicu Frustration secara tidak sengaja.
+    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.25, 0, 1)
+    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.20, 0, 1)
+    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.30, 0, 1)
+    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.30, 0, 1)
+    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.30, 0, 1)
     
     # Rahang tegang/berteriak (bisa terbuka lebar, abaikan mulut terbuka sedikit)
     jaw_val_frus = max(0.0, jo - 0.10)
@@ -388,10 +392,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     # Kurangi skor Frustration jika orang tersebut sedang tersenyum lebar (menghindari false positive dari cheekSquint/eyeSquint saat tertawa)
     sig_wajah_frus = _clamp(sig_wajah_frus - smile_pen * 1.5, 0, 1)
     
-    # Jika ada tangan di wajah (hand_forehead sekarang merepresentasikan ALL hand_on_face),
-    # ekspresi wajah mungkin tidak terbaca. User menganggap segala sentuhan wajah
-    # akibat pusing/stres sebagai Frustration.
-    hand_trigger_frus = r.hand_forehead ** 2
+    # Tangan (hand_forehead = hand_on_face) bernilai biner (0 atau 1).
+    # Jika 1, langsung menjadi pemicu mutlak Frustration.
+    hand_trigger_frus = r.hand_forehead
     base_frus = max(sig_wajah_frus, hand_trigger_frus)
     frus = _clamp(base_frus * 0.85 + (ck_fr + jw_fr) * 0.15, 0, 1)
 
