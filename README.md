@@ -189,8 +189,8 @@ jw_fr = clamp((jaw_val_frus - smile_pen × 1.5) / 0.20, 0, 1)
 sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr, ck_fr)
 sig_wajah_frus = clamp(sig_wajah_frus - smile_pen × 1.5, 0, 1)
 
-# Soft OR logic: Jika tangan menutupi wajah atas (facepalm) ATAU pipi/dagu, kuadratkan sebagai trigger
-hand_trigger_frus = max(hand_forehead, hand_chin) ** 2
+# Soft OR logic: Jika ada tangan di manapun di wajah/kepala, kuadratkan sebagai trigger
+hand_trigger_frus = hand_on_face ** 2
 base_frus = max(sig_wajah_frus, hand_trigger_frus)
 frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
 ```

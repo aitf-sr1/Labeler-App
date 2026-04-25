@@ -187,21 +187,24 @@ def _analyze_hands(mp_image, h: int, w: int):
     if not all_pts:
         return 0.0, 0.0, []
 
-    # Hitung proporsi titik di masing-masing zona (NON-OVERLAPPING)
+    # User meminta: SEMUA posisi tangan di layar (atas kepala, dahi, mata, pipi, mulut, dagu) 
+    # langsung masuk ke Frustration. Tidak perlu lagi dipisah berdasarkan zona atas/bawah.
+    # Selama berada di frame (dan relatif di tengah), itu dihitung sebagai sentuhan wajah/kepala.
     n = len(all_pts)
-    # Zona dahi/mata: y < 0.45  → Frustration (tekan dahi, tutup wajah area atas)
-    # Zona pipi/dagu: y >= 0.45 → Confusion   (topang dagu, pegang pipi area bawah)
-    forehead_pts = sum(1 for _, y in all_pts if 0.00 <= y < 0.45)
-    chin_pts     = sum(1 for _, y in all_pts if 0.45 <= y <= 0.80)
-    # Hanya count jika tangan di area horizontal tengah (bukan tepi frame)
-    centered     = sum(1 for x, _ in all_pts if 0.15 <= x <= 0.85)
+    
+    # Hitung semua titik yang ada di layar (0.00 <= y <= 1.00)
+    face_pts = sum(1 for _, y in all_pts if -0.20 <= y <= 1.20)  # Toleransi keluar frame sedikit
+    
+    # Hanya count jika tangan tidak terlalu di pinggir banget
+    centered     = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
     center_ratio = centered / n
-
-    hand_forehead = _clamp((forehead_pts / n) * center_ratio, 0, 1)
-    hand_chin     = _clamp((chin_pts     / n) * center_ratio, 0, 1)
+    
+    hand_on_face = _clamp((face_pts / n) * center_ratio, 0, 1)
+    
     hand_pts_px   = [(int(x * w), int(y * h)) for x, y in all_pts]
 
-    return hand_forehead, hand_chin, hand_pts_px
+    # Return hand_on_face ke slot hand_forehead (agar kompatibel dengan kode yang ada)
+    return hand_on_face, 0.0, hand_pts_px
 
 
 def analyze_frame(frame_bgr) -> LandmarkResult:
@@ -382,10 +385,10 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     # Kurangi skor Frustration jika orang tersebut sedang tersenyum lebar (menghindari false positive dari cheekSquint/eyeSquint saat tertawa)
     sig_wajah_frus = _clamp(sig_wajah_frus - smile_pen * 1.5, 0, 1)
     
-    # Jika tangan menutupi wajah atas (facepalm) ATAU bawah (nyanggah pipi), 
+    # Jika ada tangan di wajah (hand_forehead sekarang merepresentasikan ALL hand_on_face),
     # ekspresi wajah mungkin tidak terbaca. User menganggap segala sentuhan wajah
     # akibat pusing/stres sebagai Frustration.
-    hand_trigger_frus = max(r.hand_forehead, r.hand_chin) ** 2
+    hand_trigger_frus = r.hand_forehead ** 2
     base_frus = max(sig_wajah_frus, hand_trigger_frus)
     frus = _clamp(base_frus * 0.85 + (ck_fr + jw_fr) * 0.15, 0, 1)
 
