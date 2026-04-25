@@ -195,17 +195,18 @@ def _analyze_hands(mp_image, h: int, w: int):
     pts_mid = sum(1 for _, y in all_pts if  0.25 <= y < 0.55)  # Facepalm / kucek mata
     pts_bot = sum(1 for _, y in all_pts if  0.55 <= y <= 1.20) # Nyanggah pipi/dagu
     
-    # Pastikan tangan cukup terlihat dan ada di tengah (minimal 8 titik)
-    # untuk mencegah false positive dari noise kamera.
+    # Pastikan tangan cukup terlihat dan ada di tengah (minimal 5 titik)
+    # 5 titik dipilih karena terkadang siswa menutupi wajah tapi hanya ujung jarinya
+    # yang masuk layar kamera.
     centered = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
     
-    if centered < 8:
+    if centered < 5:
         hand_top = hand_mid_bot = 0.0
     else:
-        # Menghitung proporsional: 8 titik cukup untuk memicu 1.0
+        # Menghitung proporsional: 5 titik cukup untuk memicu 1.0
         # Menggabungkan mid dan bot (Frustration) agar saat facepalm/nyanggah, skor tangan maksimal
-        hand_top = _clamp(pts_top / 8, 0, 1)
-        hand_mid_bot = _clamp((pts_mid + pts_bot) / 8, 0, 1)
+        hand_top = _clamp(pts_top / 5, 0, 1)
+        hand_mid_bot = _clamp((pts_mid + pts_bot) / 5, 0, 1)
     
     hand_pts_px = [(int(x * w), int(y * h)) for x, y in all_pts]
 
