@@ -36,7 +36,7 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student squinting their eyes with visible mental effort to understand\n"
         "a face of a student with a slightly open mouth and raised brow looking lost\n"
         "a face of a student tilting their head with a questioning and perplexed look\n"
-        "a face of a student with a tense forehead scratching their head in confusion\n"
+        "a face of a student with a tense forehead and puckered lips in deep thought\n"
         "a face of a student with wide bewildered eyes trying hard to process information",
         "",
     ),
