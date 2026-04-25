@@ -379,11 +379,14 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
     # Threshold dinaikkan drastis agar orang yang sedang rileks/ngelamun (mulut nutup biasa,
     # mata sedikit sayu) tidak memicu Frustration secara tidak sengaja.
-    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.25, 0, 1)
+    # Threshold dinaikkan SANGAT TINGGI agar "mikir/bingung" (Confusion) yang 
+    # biasanya juga mengerutkan alis/bibir tidak bocor ke Frustration.
+    # Frustration murni butuh ekspresi ekstrem (marah/sangat stres/menangis).
+    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.40, 0, 1)
     ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.20, 0, 1)
-    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.30, 0, 1)
-    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.30, 0, 1)
-    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.30, 0, 1)
+    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.40, 0, 1)
+    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.40, 0, 1)
+    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.40, 0, 1)
     
     # Rahang tegang/berteriak (bisa terbuka lebar, abaikan mulut terbuka sedikit)
     jaw_val_frus = max(0.0, jo - 0.10)

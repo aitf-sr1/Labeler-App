@@ -36,17 +36,17 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student squinting their eyes with visible mental effort to understand\n"
         "a face of a student with a slightly open mouth and raised brow looking lost\n"
         "a face of a student tilting their head with a questioning and perplexed look\n"
-        "a face of a student with a tense forehead and puckered lips feeling very confused\n"
+        "a face of a student with a thinking expression, pursed lips, and furrowed eyebrows\n"
         "a face of a student scratching their head feeling puzzled and confused\n"
-        "a face of a student with wide bewildered eyes trying hard to process information",
+        "a face of a student concentrating hard with a slightly open mouth and squinting eyes",
         "",
     ),
     # 3 — Frustration
     # Fokus pada otot tegang: rahang, bibir ditekan, mata tertutup kesal
     (
-        "a face of a student with tightly pressed lips and a strained frustrated expression\n"
-        "a face of a student with a clenched jaw and tense angry eyebrows\n"
-        "a face of a student sighing heavily with eyes squeezed shut in defeat\n"
+        "a face of a student looking extremely angry and stressed with a clenched jaw\n"
+        "a face of a student with a fierce angry expression and gritting teeth\n"
+        "a face of a student sighing heavily with eyes squeezed shut in frustration\n"
         "a face of a student pinching the bridge of their nose showing mental fatigue\n"
         "a face of a student resting their head on their hand looking completely stressed out\n"
         "a face of a student rubbing their eyes forcefully looking completely overwhelmed",
