@@ -171,7 +171,7 @@ def run_siglip_on_frames(
         frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
 
         per_label_result[i] = {
-            "prediction":   1 if avg_score >= thr else 0,
+            "prediction":   1 if vote_pos >= 8 else 0,
             "vote_pos":     vote_pos,
             "vote_neg":     n_frames - vote_pos,
             "skipped":      0,

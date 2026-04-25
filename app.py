@@ -363,6 +363,22 @@ class VideoLabelerApp:
         if not self.flag_var.get() and saved:
             for i, lbl in enumerate(LABELS):
                 self.label_vars[lbl].set(saved[i])
+                
+            # PENYELARASAN LOGIKA UI: 
+            # Override dengan Mayoritas Frame (>= 8) khusus untuk hasil AI murni (belum diedit manual).
+            # Ini mengoreksi hasil dari batch process lama yang masih memakai logika Rata-rata.
+            if rel in self.batch_history and rel in self.frame_annotations:
+                for i, lbl in enumerate(LABELS):
+                    # Ambil tebakan AI awal (logika Rata-rata)
+                    ai_pred_old = str(self.batch_history[rel].get("per_label", {}).get(str(i), {}).get("prediction", "0"))
+                    
+                    # Jika label saat ini masih sama dengan tebakan AI lama (belum diedit user)
+                    if saved[i] == ai_pred_old:
+                        total_1 = sum(1 for j in range(16) if self.frame_annotations[rel].get(str(j), {}).get(lbl, 0) == 1)
+                        new_pred = "1" if total_1 >= 8 else "0"
+                        if saved[i] != new_pred:
+                            self.label_vars[lbl].set(new_pred)
+                            self.annotations_data[rel][i] = new_pred # Simpan perbaikan ini di memori
         else:
             for v in self.label_vars.values():
                 v.set("0")
