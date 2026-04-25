@@ -235,6 +235,7 @@ class VideoLabelerApp:
         self.skipped_videos    = load_skipped(self.path_json_skipped)
         self._load_saved_thresholds()
         self._update_flag_count()
+        self.right_panel.update_statistics(self.batch_history)
 
     def _load_saved_thresholds(self):
         """Muat threshold tersimpan dan terapkan ke slider UI."""
@@ -640,6 +641,8 @@ class VideoLabelerApp:
         if update_label_vars:
             for i, lbl in enumerate(LABELS):
                 self.label_vars[lbl].set(str(res["per_label"][i]["prediction"]))
+
+        self.right_panel.update_statistics(self.batch_history)
 
     def _proses_satu(self):
         """
