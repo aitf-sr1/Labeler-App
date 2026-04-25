@@ -155,32 +155,34 @@ eng = gate × (0.60 × p_ok + 0.40 × eye_op)
 
 #### Confusion (label 2)
 ```
-iris_up_v = clamp((-iris_y - 0.15) / 0.35, 0, 1)   # pupil melirik ke atas
+iris_up_v = clamp((-iris_y - 0.15) / 0.35, 0, 1)   
 look_up_v = clamp(max(eyeLookUpL, eyeLookUpR) / 0.3, 0, 1)
 pitch_cu  = clamp((pitch - 8°) / 17, 0, 1)
-brow_dn_v = clamp(mean(browDownL, browDownR) / 0.2, 0, 1)
-brow_in_v = clamp(browInnerUp / 0.2, 0, 1)
-jaw_co    = clamp(jawOpen / 0.20, 0, 1)
-hnd_chin  = proporsi titik tangan di zona pipi/dagu (y 45–80%)
+brow_dn_v = clamp(mean(browDownL, browDownR) / 0.12, 0, 1)
+brow_in_v = clamp(browInnerUp / 0.12, 0, 1)
+jaw_co    = clamp(jawOpen / 0.15, 0, 1)     # "mangap dikit" langsung memicu
 
-conf = 0.18×iris_up + 0.15×look_up + 0.10×pitch_cu
-     + 0.15×brow_dn + 0.10×brow_in + 0.15×jaw_co
-     + 0.17×hnd_chin
+sig_brow_conf = max(brow_dn_v, brow_in_v)
+sig_mata_conf = max(iris_up_v, look_up_v)
+
+# Soft OR logic: Jika ADA SALAH SATU ciri kuat, skor langsung tinggi
+base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, hand_chin)
+conf = clamp(base_conf × 0.80 + (pitch_cu + sig_brow_conf) × 0.10, 0, 1)
 ```
 
 #### Frustration (label 3)
 ```
-br_fr = clamp(mean(browDownL, browDownR) / 0.15, 0, 1)
-ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.15, 0, 1)
-ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.2, 0, 1)
-lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.2, 0, 1)
-ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.2, 0, 1)
-jw_fr = clamp(jawOpen / 0.25, 0, 1)
-hnd_f = proporsi titik tangan di zona dahi/mata (y 0–45%)
+br_fr = clamp(mean(browDownL, browDownR) / 0.12, 0, 1)
+ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.12, 0, 1)
+ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.15, 0, 1)
+lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.15, 0, 1)
+ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.15, 0, 1)
+jw_fr = clamp(jawOpen / 0.20, 0, 1)
 
-frus = 0.22×br_fr + 0.15×ns_fr + 0.12×ck_fr
-     + 0.13×lp_fr + 0.08×ey_fr + 0.08×jw_fr
-     + 0.22×hnd_f
+sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
+
+# Soft OR logic: Jika menekan bibir, mengernyit, ATAU pegang dahi, skor langsung tinggi
+frus = clamp(max(sig_wajah_frus, hand_forehead) × 0.85 + (ck_fr + jw_fr) × 0.10, 0, 1)
 ```
 
 ### 3. Hybrid Score & Prediksi Akhir

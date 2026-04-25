@@ -327,31 +327,34 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     eng = gate * (0.60 * p_ok + 0.40 * eye_op)
 
-    # == 2: CONFUSION -- ekspresi bingung (blendshapes amplified) ==============
+    # == 2: CONFUSION -- ekspresi bingung (Soft OR logic agar lebih sensitif) ========
     iris_up_v  = _clamp((-r.iris_y - 0.15) / 0.35, 0, 1)
     look_up_v  = _clamp(max(g("eyeLookUpLeft"), g("eyeLookUpRight")) / 0.3, 0, 1)
     pitch_cu   = _clamp((r.pitch - 8) / 17, 0, 1)
-    brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.2, 0, 1)
-    brow_in_v  = _clamp(g("browInnerUp") / 0.2, 0, 1)
-    jaw_co     = _clamp(g("jawOpen") / 0.20, 0, 1)
-    hnd_chin   = r.hand_chin
+    # Sensitivitas dinaikkan (0.2 -> 0.12)
+    brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.12, 0, 1)
+    brow_in_v  = _clamp(g("browInnerUp") / 0.12, 0, 1)
+    jaw_co     = _clamp(g("jawOpen") / 0.15, 0, 1)  # "Mangap dikit" langsung memicu
 
-    conf = (0.18 * iris_up_v + 0.15 * look_up_v + 0.10 * pitch_cu
-            + 0.15 * brow_dn_v + 0.10 * brow_in_v + 0.15 * jaw_co
-            + 0.17 * hnd_chin)
+    sig_brow_conf = max(brow_dn_v, brow_in_v)
+    sig_mata_conf = max(iris_up_v, look_up_v)
+    
+    # Jika ADA SALAH SATU ciri yang kuat, skor langsung tinggi (tidak dibagi rata)
+    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, r.hand_chin)
+    conf = _clamp(base_conf * 0.80 + (pitch_cu + sig_brow_conf) * 0.10, 0, 1)
 
-    # == 3: FRUSTRATION -- ekspresi tegang (blendshapes amplified) =============
-    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
-    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.15, 0, 1)
-    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.2, 0, 1)
-    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.2, 0, 1)
-    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.2, 0, 1)
-    jw_fr = _clamp(g("jawOpen") / 0.25, 0, 1)
-    hnd_f = r.hand_forehead
+    # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
+    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.12, 0, 1)
+    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.12, 0, 1)
+    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.15, 0, 1)
+    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.15, 0, 1)
+    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.15, 0, 1)
+    jw_fr = _clamp(g("jawOpen") / 0.20, 0, 1)
 
-    frus = (0.22 * br_fr + 0.15 * ns_fr + 0.12 * ck_fr
-            + 0.13 * lp_fr + 0.08 * ey_fr + 0.08 * jw_fr
-            + 0.22 * hnd_f)
+    sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
+    
+    # Jika menekan bibir, mengernyit, ATAU pegang dahi, skor langsung tinggi
+    frus = _clamp(max(sig_wajah_frus, r.hand_forehead) * 0.85 + (ck_fr + jw_fr) * 0.10, 0, 1)
 
     # Debug log
     if _DBG_LAND:
