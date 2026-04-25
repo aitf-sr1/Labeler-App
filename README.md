@@ -174,6 +174,8 @@ pucker_co = clamp(mouthPucker / 0.20, 0, 1)
 # Soft OR logic: Tangan dihapus dari Confusion (fokus ke ekspresi)
 base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
 conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
+# Pembatalan Mutlak: Tangan menutupi wajah akan menihilkan Confusion (karena masuk ke Frustration)
+conf = clamp(conf - hand_on_face, 0, 1)
 ```
 
 #### Frustration (label 3)

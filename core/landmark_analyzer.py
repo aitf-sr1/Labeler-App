@@ -367,8 +367,11 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     
     # Jika ADA SALAH SATU ciri yang kuat, skor dasar tinggi
     base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
-    # Tangan dihapus dari Confusion (prompt mengindikasikan menggaruk kepala/bukan dagu)
     conf = _clamp(base_conf * 0.85 + (pitch_cu + sig_brow_conf) * 0.15, 0, 1)
+    
+    # MUTLAK: Tangan di wajah membatalkan Confusion (mencegah false positive dari occlusion).
+    # Sesuai permintaan user, tangan di wajah murni milik Frustration.
+    conf = _clamp(conf - r.hand_forehead, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
