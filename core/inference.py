@@ -17,7 +17,7 @@ from .siglip_model import get_siglip, get_device
 
 _LABEL_KEYS   = ["BOREDOM", "ENGAGEMENT", "CONFUSION", "FRUSTRATION"]
 _LABEL_DEFAULTS = [
-    (0.45, 0.55),   # Boredom     — landmark dominan (head yaw paling reliable)
+    (0.35, 0.65),   # Boredom     — landmark dominan (head yaw + restlessness paling reliable)
     (0.45, 0.55),   # Engagement  — landmark dominan (forward gate paling reliable)
     (0.75, 0.25),   # Confusion   — SigLIP dominan (blendshapes subtle, hand rare)
     (0.65, 0.35),   # Frustration — SigLIP dominan (ekspresi + hand coverage luas)
@@ -146,6 +146,22 @@ def run_siglip_on_frames(
             land_avg = round(
                 sum(land_scores_per_frame[f][i] for f in range(n_frames)) / n_frames, 4
             )
+
+            # ── Temporal Restlessness Bonus (khusus Boredom, i=0) ────────
+            # Jika kepala bergerak bolak-balik (std yaw tinggi), naikkan skor boredom.
+            # Ini menangkap pola 'tolah-toleh' yang tidak bisa dideteksi per-frame.
+            if i == 0:
+                yaws = [r.yaw for r in landmark_results if r.face_found]
+                if len(yaws) >= 4:
+                    import numpy as np
+                    yaw_std = float(np.std(yaws))
+                    # std >= 3° mulai bonus, >= 10° = bonus penuh (0.15)
+                    restless_bonus = min(max((yaw_std - 3.0) / 7.0, 0.0), 1.0) * 0.15
+                    if restless_bonus > 0.01:
+                        hybrid_scores = [
+                            round(min(s + restless_bonus, 1.0), 4) for s in hybrid_scores
+                        ]
+                        print(f"  [RESTLESS] yaw_std={yaw_std:.1f}° → bonus={restless_bonus:.3f}")
         else:
             hybrid_scores = siglip_scores
             land_avg      = None

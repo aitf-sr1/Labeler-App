@@ -284,11 +284,13 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     ix = abs(r.iris_x)
 
     # == 0: BOREDOM -- MAX(noleh, lirik) agar SATU sinyal saja cukup ==========
-    # A) Kepala noleh (yaw >=5 mulai naik, >=15 = penuh)
-    sig_yaw    = _clamp((ya - 5) / 10, 0, 1)
+    # A) Kepala noleh (yaw >=3° mulai naik, >=12° = penuh)
+    #    Diturunkan dari 5°/15° agar 'tolah-toleh' kecil pun terdeteksi.
+    sig_yaw    = _clamp((ya - 3) / 9, 0, 1)
 
-    # B) Mata lirik ke samping (iris_x >=0.10 mulai, >=0.35 = penuh)
-    sig_iris   = _clamp((ix - 0.10) / 0.25, 0, 1)
+    # B) Mata lirik ke samping (iris_x >=0.07 mulai, >=0.30 = penuh)
+    #    Diturunkan dari 0.10/0.35 agar lirik kecil juga dihitung.
+    sig_iris   = _clamp((ix - 0.07) / 0.23, 0, 1)
 
     # Sinyal ARAH: ambil MAX -- kepala noleh ATAU mata lirik = BORED
     sig_arah   = max(sig_yaw, sig_iris)
