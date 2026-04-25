@@ -167,7 +167,7 @@ sig_brow_conf = max(brow_dn_v, brow_in_v)
 sig_mata_conf = max(iris_up_v, look_up_v)
 smile_pen = max(0.0, max(mouthSmileLeft, mouthSmileRight) - 0.15)
 
-# jaw_val_conf = naik saat jawOpen 0.10->0.25, turun jadi 0 saat jawOpen >0.35 (menguap/berteriak)
+# jaw_val_conf = naik saat jawOpen 0.05->0.20, turun jadi 0 saat jawOpen >0.35 (menguap/berteriak)
 jaw_co = clamp(jaw_val_conf - smile_pen × 1.5, 0, 1)
 pucker_co = clamp(mouthPucker / 0.20, 0, 1)
 

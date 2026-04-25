@@ -36,7 +36,7 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student squinting their eyes with visible mental effort to understand\n"
         "a face of a student with a slightly open mouth and raised brow looking lost\n"
         "a face of a student tilting their head with a questioning and perplexed look\n"
-        "a face of a student with a tense forehead and puckered lips in deep thought\n"
+        "a face of a student with a tense forehead and puckered lips feeling very confused\n"
         "a face of a student with wide bewildered eyes trying hard to process information",
         "",
     ),
@@ -47,7 +47,7 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student with a clenched jaw and tense angry eyebrows\n"
         "a face of a student sighing heavily with eyes squeezed shut in defeat\n"
         "a face of a student pinching the bridge of their nose showing mental fatigue\n"
-        "a face of a student with a deeply annoyed, irritated, and stressed face\n"
+        "a face of a student resting their head on their hand looking completely stressed out\n"
         "a face of a student rubbing their eyes forcefully looking completely overwhelmed",
         "",
     ),

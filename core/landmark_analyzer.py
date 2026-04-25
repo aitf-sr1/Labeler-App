@@ -341,15 +341,15 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     # Dead zone: abaikan senyum tipis (<0.15) karena sering muncul saat meringis/bingung
     smile_pen  = max(0.0, smile_raw - 0.15)
     
-    # Confusion: Mulut terbuka sedikit (0.10 - 0.25). 
+    # Confusion: Mulut terbuka sedikit (0.05 - 0.20). 
     # Jika terlalu lebar (>0.35), itu menguap/berteriak (bukan bingung).
     jo = g("jawOpen")
-    if jo <= 0.10:
+    if jo <= 0.05:
         jaw_val_conf = 0.0
-    elif jo <= 0.25:
-        jaw_val_conf = (jo - 0.10) / 0.15
+    elif jo <= 0.20:
+        jaw_val_conf = (jo - 0.05) / 0.15
     elif jo <= 0.35:
-        jaw_val_conf = 1.0 - (jo - 0.25) / 0.10
+        jaw_val_conf = 1.0 - (jo - 0.20) / 0.15
     else:
         jaw_val_conf = 0.0
         
