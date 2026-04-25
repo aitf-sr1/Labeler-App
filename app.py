@@ -78,6 +78,8 @@ class VideoLabelerApp:
         self.label_vars = {label: ctk.StringVar(value="0") for label in LABELS}
         self.flag_var   = ctk.BooleanVar(value=False)
         self.active_frame_label = ctk.StringVar(value="Boredom")
+        self.show_viz   = ctk.BooleanVar(value=False)   # Toggle landmark viz di galeri
+        self.viz_images = []   # Cache viz PIL images untuk video aktif
 
         self.batch_running, self.cancel_batch = False, False
 
@@ -127,6 +129,12 @@ class VideoLabelerApp:
             bar, text="", font=self.font_sm, text_color="#ef4444"
         )
         self.lbl_flag_count.pack(side="right", padx=(0, 4))
+
+        ctk.CTkSwitch(
+            bar, text="Viz", variable=self.show_viz,
+            font=self.font_sm, progress_color="#6366f1",
+            command=self.refresh_frame_gallery,
+        ).pack(side="right", padx=(0, 12))
 
     def _build_bottombar(self):
         """Bangun bar bawah: navigasi prev/skip/next, toggle flag, dan jump to video."""
@@ -454,7 +462,10 @@ class VideoLabelerApp:
         rel_path = os.path.relpath(vp, self.root_folder)
         active_lbl = self.active_frame_label.get()
 
-        pil_images, _ = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+        pil_images, _, multi_fc, landmark_results, viz_images = prepare_cropped_frames(
+            vp, self.root_folder, self.path_dir_cropped
+        )
+        self.viz_images = viz_images   # cache untuk toggle
         if not pil_images:
             for cv_widget in self.left_panel.frame_canvases:
                 cv_widget.delete("all")
@@ -462,7 +473,8 @@ class VideoLabelerApp:
             return
 
         vid_data = self.frame_annotations.get(rel_path, {})
-        self.left_panel.render_frames(pil_images, vid_data, active_lbl)
+        display_images = self.viz_images if (self.show_viz.get() and self.viz_images) else pil_images
+        self.left_panel.render_frames(display_images, vid_data, active_lbl)
 
         for lbl in LABELS:
             self._update_vote_bar(lbl)
@@ -536,16 +548,20 @@ class VideoLabelerApp:
         self.batch_history[rel_path] = {
             "per_label": {
                 str(i): {
-                    "prediction":   res["per_label"][i]["prediction"],
-                    "vote_pos":     res["per_label"][i]["vote_pos"],
-                    "vote_neg":     res["per_label"][i]["vote_neg"],
-                    "skipped":      res["per_label"][i]["skipped"],
-                    "avg_score":    res["per_label"][i]["avg_score"],
-                    "frame_scores": res["per_label"][i]["frame_scores"],
-                    "frame_preds":  res["per_label"][i]["frame_preds"],
+                    "prediction":    res["per_label"][i]["prediction"],
+                    "vote_pos":      res["per_label"][i]["vote_pos"],
+                    "vote_neg":      res["per_label"][i]["vote_neg"],
+                    "skipped":       res["per_label"][i]["skipped"],
+                    "avg_score":     res["per_label"][i]["avg_score"],
+                    "siglip_avg":    res["per_label"][i].get("siglip_avg"),
+                    "landmark_avg":  res["per_label"][i].get("landmark_avg"),
+                    "threshold":     res["thresholds"][i],
+                    "frame_scores":  res["per_label"][i]["frame_scores"],
+                    "frame_preds":   res["per_label"][i]["frame_preds"],
                 }
                 for i in range(len(LABELS))
-            }
+            },
+            "thresholds": res["thresholds"],
         }
         save_batch_history(self.path_json_batch_history, self.batch_history)
 
@@ -567,10 +583,28 @@ class VideoLabelerApp:
         self.right_panel.lbl_batch_status.configure(text="Memproses…", text_color="#fbbf24")
 
         def worker():
-            imgs, no_face_count = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+            imgs, no_face_count, multi_face_count, landmark_results, viz_imgs = prepare_cropped_frames(
+                vp, self.root_folder, self.path_dir_cropped
+            )
+            self.viz_images = viz_imgs
             if not imgs:
                 self.root.after(0, lambda: self.right_panel.lbl_batch_status.configure(
                     text="Gagal: tidak ada frame", text_color="#ef4444"
+                ))
+                return
+
+            # Auto-flag jika frame kurang dari 16 (video terlalu pendek)
+            if len(imgs) < 16:
+                self.flagged_data.add(rel_path)
+                self.annotations_data.pop(rel_path, None)
+                save_flagged(self.path_csv_flagged, self.flagged_data)
+                self.root.after(0, lambda nf=len(imgs): (
+                    self.flag_var.set(True),
+                    self.right_panel.lbl_batch_status.configure(
+                        text=f"Auto-flag: hanya {nf}/16 frame (video terlalu pendek)",
+                        text_color="#ef4444"
+                    ),
+                    self._update_flag_count()
                 ))
                 return
 
@@ -589,14 +623,33 @@ class VideoLabelerApp:
                 ))
                 return
 
-            res = run_siglip_on_frames(imgs, prompts, ths)
+            # Auto-flag jika terlalu banyak frame dengan >1 wajah
+            mf_thr = int(os.getenv("MULTI_FACE_FRAMES_THRESHOLD", "4"))
+            if multi_face_count > mf_thr:
+                self.flagged_data.add(rel_path)
+                self.annotations_data.pop(rel_path, None)
+                save_flagged(self.path_csv_flagged, self.flagged_data)
+                self.root.after(0, lambda mfc=multi_face_count: (
+                    self.flag_var.set(True),
+                    self.right_panel.lbl_batch_status.configure(
+                        text=f"Auto-flag: {mfc} frame berisi >1 wajah",
+                        text_color="#ef4444"
+                    ),
+                    self._update_flag_count()
+                ))
+                return
+
+            res = run_siglip_on_frames(imgs, prompts, ths,
+                                        landmark_results=landmark_results)
             self._apply_siglip_result(rel_path, res, update_label_vars=True)
 
             def update_ui():
                 for i, lbl in enumerate(LABELS):
                     r = res["per_label"][i]
                     self.right_panel.update_ai_score_bar(lbl, r["avg_score"])
-                    print(f"{lbl}: pred={r['prediction']} avg={r['avg_score']:.3f} votes={r['vote_pos']}/{r['vote_neg']}")
+                    land = f" land={r['landmark_avg']:.3f}" if r.get("landmark_avg") is not None else ""
+                    print(f"{lbl}: pred={r['prediction']} hybrid={r['avg_score']:.3f} "
+                          f"siglip={r['siglip_avg']:.3f}{land} votes={r['vote_pos']}/{r['vote_neg']}")
                 self._refresh_all_label_buttons()
                 self.save_current_state()
                 self.refresh_frame_gallery()
@@ -666,8 +719,24 @@ class VideoLabelerApp:
                 self.root.after(0, upd_status)
 
                 try:
-                    imgs, no_face_count = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+                    imgs, no_face_count, multi_face_count, landmark_results, _ = prepare_cropped_frames(
+                        vp, self.root_folder, self.path_dir_cropped
+                    )
                     if not imgs: continue
+
+                    # Auto-flag jika frame kurang dari 16 (video terlalu pendek, mis. <1 detik)
+                    if len(imgs) < 16:
+                        self.flagged_data.add(rel_path)
+                        self.annotations_data.pop(rel_path, None)
+                        save_flagged(self.path_csv_flagged, self.flagged_data)
+                        self.root.after(0, self._update_flag_count)
+                        def upd_shortflag(r=rel_path, nf=len(imgs)):
+                            self.right_panel.lbl_batch_status.configure(
+                                text=f"Auto-flag: {os.path.basename(r)} (hanya {nf}/16 frame)",
+                                text_color="#ef4444",
+                            )
+                        self.root.after(0, upd_shortflag)
+                        continue
 
                     # Auto-flag jika >50% frame tidak terdeteksi wajah
                     if no_face_count > 8:
@@ -683,7 +752,23 @@ class VideoLabelerApp:
                         self.root.after(0, upd_autoflag)
                         continue
 
-                    res = run_siglip_on_frames(imgs, prompts, ths)
+                    # Auto-flag jika terlalu banyak frame dengan >1 wajah
+                    mf_thr = int(os.getenv("MULTI_FACE_FRAMES_THRESHOLD", "4"))
+                    if multi_face_count > mf_thr:
+                        self.flagged_data.add(rel_path)
+                        self.annotations_data.pop(rel_path, None)
+                        save_flagged(self.path_csv_flagged, self.flagged_data)
+                        self.root.after(0, self._update_flag_count)
+                        def upd_multiface(r=rel_path, mfc=multi_face_count):
+                            self.right_panel.lbl_batch_status.configure(
+                                text=f"Auto-flag: {os.path.basename(r)} ({mfc} frame multi-wajah)",
+                                text_color="#ef4444",
+                            )
+                        self.root.after(0, upd_multiface)
+                        continue
+
+                    res = run_siglip_on_frames(imgs, prompts, ths,
+                                               landmark_results=landmark_results)
 
                     self._apply_siglip_result(rel_path, res, update_label_vars=False)
 
