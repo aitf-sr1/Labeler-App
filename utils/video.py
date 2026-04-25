@@ -10,6 +10,7 @@ Fungsi utama:
 import os
 import glob
 import cv2
+import numpy as np
 from PIL import Image
 
 from core.face_detector import crop_face
@@ -40,37 +41,72 @@ def prepare_cropped_frames(
     crop_dir_base: str,
 ) -> tuple:
     """
-    Ekstrak, crop wajah, resize, simpan ke disk, dan kembalikan sebagai list PIL.Image.
-    Jika 16 frame sudah ada di disk, langsung load tanpa re-process.
+    Ekstrak, crop wajah (BlazeFace), jalankan landmark analysis (FaceLandmarker),
+    simpan ke disk, dan kembalikan hasil.
+
+    Selalu menjalankan landmark analysis, bahkan jika crop sudah ada di cache,
+    agar viz image selalu up-to-date.
 
     Returns:
-        (pil_images: list, no_face_count: int)
-        no_face_count = jumlah frame yang tidak terdeteksi wajahnya oleh MediaPipe.
-        Jika loading dari cache (frame sudah ada), no_face_count = 0 (tidak bisa diketahui).
+        (pil_images, no_face_count, landmark_results, viz_pil_images)
+        - pil_images       : list[PIL.Image] — 16 crop bersih untuk SigLIP
+        - no_face_count    : int — jumlah frame tanpa deteksi wajah (dari FaceLandmarker)
+        - landmark_results : list[LandmarkResult] — satu per frame
+        - viz_pil_images   : list[PIL.Image] — crop dengan overlay landmark untuk galeri viz
+        - multi_face_count : int — jumlah frame dengan >1 wajah terdeteksi (untuk auto-flag)
     """
+    from core.landmark_analyzer import analyze_frame, compute_emotion_scores, draw_landmark_viz
+
     rel_path        = os.path.relpath(video_path, root_folder)
     base_name       = os.path.splitext(rel_path)[0]
     target_crop_dir = os.path.join(crop_dir_base, base_name)
     os.makedirs(target_crop_dir, exist_ok=True)
 
+    # ── Load atau generate clean crops ─────────────────────────────────────
     saved_files = sorted(glob.glob(os.path.join(target_crop_dir, "frame_*.jpg")))
-    if len(saved_files) == 16:
-        return [Image.open(f).convert("RGB") for f in saved_files], 0
+    # Filter hanya yang clean (tanpa _viz suffix)
+    clean_files = [f for f in saved_files if "_viz" not in os.path.basename(f)]
 
-    frames_bgr = extract_16_frames(video_path)
-    if not frames_bgr:
-        return [], 0
+    if len(clean_files) == 16:
+        pil_images       = [Image.open(f).convert("RGB") for f in clean_files]
+        multi_face_count = 0  # tidak diketahui dari cache
+    else:
+        frames_bgr = extract_16_frames(video_path)
+        if not frames_bgr:
+            return [], 0, 0, [], []
 
-    pil_images    = []
-    no_face_count = 0
-    for i, frame in enumerate(frames_bgr):
-        cropped_sq, face_found = crop_face(frame)
-        if not face_found:
+        pil_images       = []
+        multi_face_count = 0
+        for i, frame in enumerate(frames_bgr):
+            cropped_sq, _, n_faces = crop_face(frame)
+            if n_faces > 1:
+                multi_face_count += 1
+            resized_full = cv2.resize(cropped_sq, (512, 512), interpolation=cv2.INTER_AREA)
+            cv2.imwrite(os.path.join(target_crop_dir, f"frame_{i:02d}.jpg"), resized_full)
+            pil_images.append(
+                Image.fromarray(cv2.cvtColor(resized_full, cv2.COLOR_BGR2RGB))
+            )
+
+    # ── Landmark analysis + viz ──────────────────────────────────────────────
+    landmark_results = []
+    viz_pil_images   = []
+    no_face_count    = 0
+
+    for i, pil_img in enumerate(pil_images):
+        bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        lr  = analyze_frame(bgr)
+        if not lr.face_found:
             no_face_count += 1
-        resized_full = cv2.resize(cropped_sq, (512, 512), interpolation=cv2.INTER_AREA)
-        cv2.imwrite(os.path.join(target_crop_dir, f"frame_{i:02d}.jpg"), resized_full)
-        pil_images.append(
-            Image.fromarray(cv2.cvtColor(resized_full, cv2.COLOR_BGR2RGB))
+        landmark_results.append(lr)
+
+        emotion_sc = compute_emotion_scores(lr)
+        viz_bgr    = draw_landmark_viz(bgr, lr, emotion_sc)
+        viz_path   = os.path.join(target_crop_dir, f"frame_{i:02d}_viz.jpg")
+        cv2.imwrite(viz_path, viz_bgr)
+        viz_pil_images.append(
+            Image.fromarray(cv2.cvtColor(viz_bgr, cv2.COLOR_BGR2RGB))
         )
-    return pil_images, no_face_count
+
+    return pil_images, no_face_count, multi_face_count, landmark_results, viz_pil_images
+
 

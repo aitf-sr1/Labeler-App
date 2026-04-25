@@ -41,7 +41,16 @@ def _get_mp_detector():
     return _mp_detector
 
 
-def crop_face(frame_bgr, padding_scale: float = 0.60):
+def _get_crop_padding() -> float:
+    """Baca FACE_CROP_PADDING dari .env. Default 0.60 jika tidak di-set."""
+    import os
+    try:
+        return float(os.getenv("FACE_CROP_PADDING", "0.60"))
+    except ValueError:
+        return 0.60
+
+
+def crop_face(frame_bgr, padding_scale: float = None):
     """
     Crop area wajah terbesar dari frame BGR.
 
@@ -54,12 +63,16 @@ def crop_face(frame_bgr, padding_scale: float = 0.60):
     """
     import mediapipe as mp
 
+    if padding_scale is None:
+        padding_scale = _get_crop_padding()
+
     h, w      = frame_bgr.shape[:2]
     rgb_frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     mp_image  = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
     result    = _get_mp_detector().detect(mp_image)
 
     if result.detections:
+        n_faces  = len(result.detections)
         best     = max(result.detections,
                        key=lambda d: d.bounding_box.width * d.bounding_box.height)
         bb       = best.bounding_box
@@ -70,7 +83,7 @@ def crop_face(frame_bgr, padding_scale: float = 0.60):
         x1, y1  = max(0, cx - half_dim), max(0, cy - half_dim)
         x2, y2  = min(w, cx + half_dim), min(h, cy + half_dim)
         crop    = frame_bgr[y1:y2, x1:x2]
-        return (crop if crop.size > 0 else frame_bgr), True
+        return (crop if crop.size > 0 else frame_bgr), True, n_faces
 
     # Fallback: center crop — wajah tidak terdeteksi
     cx, cy   = w // 2, h // 2
@@ -79,5 +92,5 @@ def crop_face(frame_bgr, padding_scale: float = 0.60):
         max(0, cy - half_dim): cy + half_dim,
         max(0, cx - half_dim): cx + half_dim,
     ]
-    return fallback, False
+    return fallback, False, 0
 
