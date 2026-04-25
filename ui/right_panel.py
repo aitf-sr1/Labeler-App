@@ -105,6 +105,13 @@ class RightPanel:
         )
         self.lbl_batch_status.pack(anchor="w", padx=14, pady=(0, 2))
 
+        self.btn_restart_batch = ctk.CTkButton(
+            parent, text="🔄 Restart Batch", command=self.app._restart_batch,
+            fg_color="#f59e0b", hover_color="#d97706",
+            font=("Poppins", 9), height=24, width=120,
+        )
+        self.btn_restart_batch.pack(anchor="w", padx=14, pady=(0, 2))
+
         ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
             fill="x", padx=12, pady=(2, 6)
         )
@@ -216,7 +223,9 @@ class RightPanel:
         thr_lbl_w.pack(side="right")
 
         def _make_cb(ref=thr_lbl_w):
-            def cb(v): ref.configure(text=f"{float(v):.2f}")
+            def cb(v):
+                ref.configure(text=f"{float(v):.2f}")
+                self.app._save_current_thresholds()
             return cb
 
         ctk.CTkSlider(

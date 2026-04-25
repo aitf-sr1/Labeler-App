@@ -37,6 +37,7 @@ from utils import (
     load_frame_annotations, save_frame_annotations,
     load_batch_history, save_batch_history,
     load_skipped, save_skipped,
+    load_thresholds, save_thresholds,
 )
 from core import run_siglip_on_frames
 
@@ -64,6 +65,7 @@ class VideoLabelerApp:
         self.path_dir_cropped        = ""
         self.path_json_batch_history = ""
         self.path_json_skipped       = ""
+        self.path_json_thresholds    = ""
 
         self.cap, self.is_playing = None, False
         self.total_frames, self.current_frame, self.after_id = 0, 0, None
@@ -114,7 +116,13 @@ class VideoLabelerApp:
             bar, text="Buka Folder", command=self.open_folder,
             font=self.font_bold, fg_color="#10b981", hover_color="#059669",
             width=110, height=30,
-        ).pack(side="left", padx=(14, 10), pady=8)
+        ).pack(side="left", padx=(14, 4), pady=8)
+
+        ctk.CTkButton(
+            bar, text="📁 Output", command=self._change_output_folder,
+            font=self.font_sm, fg_color="#6366f1", hover_color="#4f46e5",
+            width=80, height=30,
+        ).pack(side="left", padx=(0, 10), pady=8)
 
         self.lbl_info = ctk.CTkLabel(
             bar, text="Pilih folder dataset untuk memulai",
@@ -203,6 +211,7 @@ class VideoLabelerApp:
         self.path_json_frames        = os.path.join(base, "frame_annotations.json")
         self.path_json_batch_history = os.path.join(base, "batch_history.json")
         self.path_json_skipped       = os.path.join(base, "skipped_videos.json")
+        self.path_json_thresholds    = os.path.join(base, "thresholds.json")
         self.path_dir_cropped        = os.path.join(base, "cropped_faces")
         os.makedirs(self.path_dir_cropped, exist_ok=True)
 
@@ -224,7 +233,70 @@ class VideoLabelerApp:
         self.frame_annotations = load_frame_annotations(self.path_json_frames)
         self.batch_history     = load_batch_history(self.path_json_batch_history)
         self.skipped_videos    = load_skipped(self.path_json_skipped)
+        self._load_saved_thresholds()
         self._update_flag_count()
+
+    def _load_saved_thresholds(self):
+        """Muat threshold tersimpan dan terapkan ke slider UI."""
+        if not self.path_json_thresholds:
+            return
+        saved = load_thresholds(self.path_json_thresholds, LABELS)
+        if saved:
+            for i, val in enumerate(saved):
+                self.right_panel.threshold_vars[i].set(val)
+            print(f"[Threshold] Dimuat dari disk: {[f'{v:.2f}' for v in saved]}")
+
+    def _save_current_thresholds(self):
+        """Simpan threshold saat ini ke disk."""
+        if not self.path_json_thresholds:
+            return
+        thrs = [v.get() for v in self.right_panel.threshold_vars]
+        save_thresholds(self.path_json_thresholds, LABELS, thrs)
+
+    def _change_output_folder(self):
+        """Buka dialog untuk memilih folder output yang berbeda."""
+        if not self.root_folder:
+            messagebox.showinfo("Info", "Buka folder dataset terlebih dahulu.")
+            return
+        folder = filedialog.askdirectory(
+            title="Pilih Folder Output",
+            initialdir=os.path.dirname(self.path_csv_annotations) if self.path_csv_annotations else self.root_folder,
+        )
+        if not folder:
+            return
+
+        self.path_csv_annotations    = os.path.join(folder, "annotations_bener.csv")
+        self.path_csv_flagged        = os.path.join(folder, "flagged_videos.csv")
+        self.path_json_frames        = os.path.join(folder, "frame_annotations.json")
+        self.path_json_batch_history = os.path.join(folder, "batch_history.json")
+        self.path_json_skipped       = os.path.join(folder, "skipped_videos.json")
+        self.path_json_thresholds    = os.path.join(folder, "thresholds.json")
+        self.path_dir_cropped        = os.path.join(folder, "cropped_faces")
+        os.makedirs(self.path_dir_cropped, exist_ok=True)
+
+        self._load_data()
+        self.load_video()
+        messagebox.showinfo("Output", f"Folder output diubah ke:\n{folder}")
+
+    def _restart_batch(self):
+        """
+        Hapus batch_history sehingga Batch AI bisa dijalankan ulang dari awal.
+        Tidak menghapus anotasi manual — hanya riwayat AI.
+        """
+        if not self.path_json_batch_history:
+            return
+        if not messagebox.askyesno(
+            "Restart Batch",
+            "Hapus riwayat batch AI? Semua video akan diproses ulang.\n"
+            "Anotasi manual TIDAK terhapus."
+        ):
+            return
+        self.batch_history = {}
+        save_batch_history(self.path_json_batch_history, self.batch_history)
+        self.right_panel.lbl_batch_status.configure(
+            text="Batch history direset ✓", text_color="#10b981"
+        )
+        print("[Batch] History direset — semua video akan diproses ulang.")
 
     def _update_flag_count(self):
         """Perbarui label counter flag di topbar."""
