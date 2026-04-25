@@ -302,9 +302,11 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     sig_expr   = max(blink_v, yawn_v, pitch_up_v) * 0.5
 
-    # Final: Soft OR logic. Tangan di dagu (hand_chin) digunakan sebagai booster (+0.20)
-    base_bore = max(sig_arah, sig_expr)
-    bore = _clamp(base_bore * 0.70 + r.hand_chin * 0.20 + (sig_arah + sig_expr) * 0.10, 0, 1)
+    # Final: Soft OR logic. 
+    # Jika tangan menutupi dagu secara dominan (occlusion), ia bisa memicu Boredom sendiri.
+    hand_trigger_bore = r.hand_chin ** 2
+    base_bore = max(sig_arah, sig_expr, hand_trigger_bore)
+    bore = _clamp(base_bore * 0.85 + (sig_arah + sig_expr) * 0.15, 0, 1)
 
     # == 1: ENGAGEMENT -- semua gate harus ON (AND logic) ======================
     # Gate A: kepala lurus — DEAD ZONE: yaw ≤3° = sempurna (1.0), lalu turun, 0 di ≥10°
@@ -377,8 +379,11 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
     
-    # Tangan (hand_forehead) dikembalikan sebagai 'booster' (+0.20) agar tidak bisa memicu sendirian
-    frus = _clamp(sig_wajah_frus * 0.70 + r.hand_forehead * 0.20 + (ck_fr + jw_fr) * 0.10, 0, 1)
+    # Jika tangan menutupi wajah atas secara dominan (facepalm / occlusion), 
+    # ekspresi wajah mungkin tidak terbaca. Maka hand_forehead memicu kuat secara eksponensial.
+    hand_trigger_frus = r.hand_forehead ** 2
+    base_frus = max(sig_wajah_frus, hand_trigger_frus)
+    frus = _clamp(base_frus * 0.85 + (ck_fr + jw_fr) * 0.15, 0, 1)
 
     # Debug log
     if _DBG_LAND:

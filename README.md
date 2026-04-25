@@ -136,9 +136,10 @@ yawn_v     = clamp(jawOpen / 0.35, 0, 1)   # hanya jika pitch < 8°
 pitch_up_v = clamp((pitch - 20°) / 25, 0, 1)
 sig_expr   = max(blink_v, yawn_v, pitch_up_v) × 0.5
 
-# Soft OR logic: Tangan di dagu (hand_chin) digunakan sebagai booster (+0.20)
-base_bore = max(sig_arah, sig_expr)
-bore = clamp(base_bore × 0.70 + hand_chin × 0.20 + (sig_arah + sig_expr) × 0.10, 0, 1)
+# Soft OR logic: Jika tangan menutupi wajah bawah secara dominan, kuadratkan sebagai trigger
+hand_trigger_bore = hand_chin ** 2
+base_bore = max(sig_arah, sig_expr, hand_trigger_bore)
+bore = clamp(base_bore × 0.85 + (sig_arah + sig_expr) × 0.15, 0, 1)
 ```
 
 #### Engagement (label 1)
@@ -188,8 +189,10 @@ jw_fr = clamp((jaw_val_frus - smile_v) / 0.20, 0, 1)
 
 sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
 
-# Soft OR logic: Tangan (hand_forehead) digunakan sebagai booster (+0.20)
-frus = clamp(sig_wajah_frus × 0.70 + hand_forehead × 0.20 + (ck_fr + jw_fr) × 0.10, 0, 1)
+# Soft OR logic: Jika tangan menutupi wajah atas (facepalm), kuadratkan sebagai trigger
+hand_trigger_frus = hand_forehead ** 2
+base_frus = max(sig_wajah_frus, hand_trigger_frus)
+frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
 ```
 
 ### 3. Hybrid Score & Prediksi Akhir
