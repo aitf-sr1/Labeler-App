@@ -145,78 +145,118 @@ bore = clamp(base_bore × 0.85 + (sig_arah + sig_expr) × 0.15, 0, 1)
 ```
 # AND logic: semua gate harus non-zero
 gate_yaw  = clamp(1 - max(0, |yaw|-3°) / 7,  0, 1)   # dead zone ≤3°, 0 di ≥10°
-gate_iris = clamp(1 - max(0, |iris_x|-0.08) / 0.17, 0, 1)  # dead zone ≤0.08
-gate      = gate_yaw × gate_iris                        # keduanya harus ON
+### 2. Evaluasi Skor Emosi (Landmark-based)
 
-p_ok  = kualitas pitch (-25°≤pitch≤15° = 1.0, turun di luar range)
-eye_op = 1 - max(eyeBlinkLeft, eyeBlinkRight)
+Setiap kelas memiliki kombinasi "otot wajah" spesifik (Blendshapes) dan posisi kepala. Rentang nilai selalu **0.0 - 1.0** menggunakan fungsi `clamp()`.
 
-eng = gate × (0.60 × p_ok + 0.40 × eye_op)
-```
+#### A. Zonasi Tangan (Hand Zoning 5-Titik)
+Untuk membedakan gestur *mikir/bingung* dengan gestur *stres/frustrasi*, tangan dibagi menjadi zona:
+1. **Zona Atas (`y < 0.25`)**: Gestur **menggaruk kepala**. Langsung memicu *Confusion* (1.0).
+2. **Zona Tengah & Bawah (`0.25 <= y <= 1.20`)**: Gestur **facepalm, kucek mata, atau menopang dagu**. Langsung memicu *Frustration* (1.0).
 
-#### Confusion (label 2)
-```
-iris_up_v = clamp((-iris_y - 0.15) / 0.35, 0, 1)   
-look_up_v = clamp(max(eyeLookUpL, eyeLookUpR) / 0.3, 0, 1)
-pitch_cu  = clamp((pitch - 8°) / 17, 0, 1)
-brow_dn_v = clamp(mean(browDownL, browDownR) / 0.12, 0, 1)
-brow_in_v = clamp(browInnerUp / 0.12, 0, 1)
-jaw_co    = clamp(jawOpen / 0.15, 0, 1)     # "mangap dikit" langsung memicu
+**Pertimbangan Matematis & Akurasi:**
+- **Threshold 5 Titik:** MediaPipe membutuhkan 21 titik untuk 1 tangan penuh. Namun, saat siswa melakukan *facepalm* atau bertopang dagu dari bawah *frame* kamera, seringkali **hanya ujung jarinya saja (sekitar 5 titik)** yang tertangkap. Dengan menetapkan ambang batas proporsional ke 5 titik (dibagi 5), kita menjamin bahwa ujung jari yang menutupi wajah pun sudah cukup untuk memicu nilai tangan `1.0` secara maksimal.
+- **Filter Noise:** Jika total titik tangan di area tengah kurang dari 5, sistem akan membuangnya menjadi `0.0`. Ini mencegah *noise* (seperti MediaPipe salah mengira kerah baju sebagai jari) menghancurkan skor emosi.
 
-sig_brow_conf = max(brow_dn_v, brow_in_v)
-sig_mata_conf = max(iris_up_v, look_up_v)
-smile_pen = max(0.0, max(mouthSmileLeft, mouthSmileRight) - 0.15)
+#### B. Confusion (label 2)
+Fokus pada ekspresi berpikir: mengerutkan alis, memiringkan kepala, mulut mengerucut, atau **menggaruk kepala**.
 
-# jaw_val_conf = naik saat jawOpen 0.05->0.20, turun jadi 0 saat jawOpen >0.35 (menguap/berteriak)
+```python
+iris_up_v  = clamp((-iris_y - 0.15) / 0.35, 0, 1) # Lirik ke atas
+look_up_v  = clamp(max(eyeLookUpL, eyeLookUpR) / 0.3, 0, 1)
+pitch_cu   = clamp((pitch - 8) / 17, 0, 1)        # Kepala mendongak/miring
+brow_dn_v  = clamp(mean(browDownL, browDownR) / 0.15, 0, 1) # Alis mengkerut (mikir)
+brow_in_v  = clamp(browInnerUp / 0.15, 0, 1)      # Alis dalam naik (bingung)
+
+# Mulut sedikit terbuka (mangap bingung) atau bibir mengerucut (mikir keras)
 jaw_co = clamp(jaw_val_conf - smile_pen × 1.5, 0, 1)
 pucker_co = clamp(mouthPucker / 0.20, 0, 1)
 
-# Soft OR logic: Tangan dihapus dari Confusion (fokus ke ekspresi)
-base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
+# Jika garuk kepala (hand_top), base_conf menjadi tinggi
+base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, hand_top)
 conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
-# Pembatalan Mutlak: Tangan menutupi wajah akan menihilkan Confusion (karena masuk ke Frustration)
-conf = clamp(conf - hand_on_face, 0, 1)
+
+# PEMBATALAN MUTLAK (Suppression Logic):
+# Jika tangan berada di area wajah/dagu (Frustration), Confusion HARUS dimatikan jadi 0.
+# Namun, jika tangan sedang menggaruk kepala (hand_top dominan), Confusion dibiarkan hidup.
+suppression = hand_mid_bot if hand_top < 0.5 else 0.0
+conf = clamp(conf - suppression, 0, 1)
 ```
 
-#### Frustration (label 3)
-```
-br_fr = clamp(mean(browDownL, browDownR) / 0.12, 0, 1)
-ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.12, 0, 1)
-ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.15, 0, 1)
-lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.15, 0, 1)
-ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.15, 0, 1)
-jaw_val_frus = max(0.0, jawOpen - 0.10)
-jw_fr = clamp((jaw_val_frus - smile_pen × 1.5) / 0.20, 0, 1)
+#### C. Frustration (label 3)
+Fokus pada ketegangan ekstrem: marah, mengernyit jijik, menutup mata rapat, merapatkan bibir, dan **menyentuh wajah/menopang dagu**.
+
+**Alasan Penggunaan SUM Logic (Bukan MAX):**
+Pada versi awal, digunakan logika `MAX`. Jika salah satu otot saja bernilai tinggi (misal: bibir merapat karena sedang diam/ngelamun santai), maka *Frustration* langsung tembus 1.0. Ini menyebabkan siswa yang diam salah terdeteksi sebagai Frustrasi.
+Oleh karena itu, sistem diubah menjadi **SUM Logic (Kombinasi Rata-rata)**. *Frustration* wajah HANYA akan tembus 1.0 jika siswa secara bersamaan memadukan beberapa otot stres (alis tegang + bibir rapat + mata menyipit tajam).
+
+```python
+# Threshold dinaikkan drastis (0.40) agar ekspresi mikir biasa tidak bocor ke Frustrasi
+br_fr = clamp(mean(browDownL, browDownR) / 0.40, 0, 1)
+ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.20, 0, 1)
+ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.40, 0, 1)
+lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.40, 0, 1)
+ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.40, 0, 1)
+jw_fr = clamp((max(0.0, jawOpen - 0.10) - smile_pen × 1.5) / 0.20, 0, 1)
 
 # SUM LOGIC: Butuh kombinasi beberapa otot tegang (kecuali noseSneer yang mutlak)
 sig_wajah_frus = clamp(ns_fr + (br_fr + lp_fr + ey_fr + ck_fr) / 2.0, 0, 1)
 sig_wajah_frus = clamp(sig_wajah_frus - smile_pen × 1.5, 0, 1)
 
 # Jika tangan menutupi wajah bawah/tengah (hand_mid_bot), skor ditambah secara absolut
-hand_trigger_frus = hand_forehead
+hand_trigger_frus = hand_mid_bot
 base_frus = clamp(sig_wajah_frus + hand_trigger_frus, 0, 1)
 frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
 ```
 
-### 3. Hybrid Score & Prediksi Akhir
+### 3. Hybrid Ratio Scoring & Sigmoid SigLIP
 
+Sistem menggunakan metode **Late Fusion (Ensemble)** untuk menggabungkan dua model AI yang berbeda secara fundamental:
+1. **MediaPipe (Landmark):** AI Geometris yang menghitung jarak dan ketegangan otot fisik secara matematis. Sangat akurat untuk posisi kepala dan kedipan mata, tetapi buta terhadap "niat" (konteks).
+2. **SigLIP 2 (Vision-Language):** AI Semantik berbasis VLM (Vision-Language Model). Memahami "niat" dari bahasa tubuh dan tatapan, tetapi tidak presisi dalam menghitung derajat miringnya kepala.
+
+Skor akhir didapatkan dengan rumus penggabungan berbobot (*Ratio Scoring*):
+```python
+hybrid_score = (α × sigmoid(siglip_score)) + (β × landmark_score)
 ```
-hybrid_score[frame] = α × siglip_score[frame] + β × landmark_score[frame]
 
-avg_score = mean(hybrid_score[frame] for frame in 1..16)
-prediction = 1 if avg_score >= threshold else 0
-```
+**Kenapa menggunakan Sigmoid pada keluaran SigLIP?**
+Keluaran murni dari model SigLIP berupa *logits* (skor mentah yang bisa bernilai negatif atau positif tak hingga). Agar dapat digabungkan dengan skor MediaPipe (yang memiliki batas pasti 0.0 hingga 1.0), nilai *logits* SigLIP dimasukkan ke dalam fungsi `Sigmoid(x) = 1 / (1 + e^-x)`. Ini memampatkan skor menjadi probabilitas 0% hingga 100% yang mulus, sehingga *hybrid scoring* berjalan seimbang tanpa salah satu AI mendominasi.
 
-**Bobot default per label** (dapat diubah di `.env`):
+**Rasio Bobot Default per Label:**
 
-| Label | α (SigLIP) | β (Landmark) | Alasan |
+| Label | α (SigLIP) | β (Landmark) | Alasan & Pembagian Tugas (*Ratio Justification*) |
 |---|---|---|---|
-| Boredom | 0.50 | 0.50 | Seimbang: Landmark untuk pose (noleh), SigLIP untuk ekspresi (ngantuk) |
-| Engagement | 0.50 | 0.50 | Seimbang: Landmark untuk pose tegak, SigLIP untuk mata fokus |
-| Confusion | 0.50 | 0.50 | Seimbang: Landmark untuk kerutan alis, SigLIP untuk ekspresi bingung |
-| Frustration | 0.50 | 0.50 | Seimbang: Keduanya saling melengkapi untuk deteksi stres |
+| Boredom | 0.50 | 0.50 | MediaPipe sangat kuat mendeteksi kepala menunduk (pose), SigLIP kuat mendeteksi aura mengantuk/kosong. |
+| Engagement | 0.50 | 0.50 | MediaPipe mendeteksi kepala tegak, SigLIP mendeteksi "tatapan fokus ke monitor". |
+| Confusion | 0.50 | 0.50 | MediaPipe mendeteksi kerutan dahi fisik, SigLIP memvalidasi niat "sedang berpikir keras". |
+| Frustration | 0.50 | 0.50 | MediaPipe mendeteksi gestur fisik ekstrem (facepalm/otot tegang), SigLIP menangkap *stress/anger*. |
 
-**Threshold default:** 0.5 untuk semua label (dapat diubah di UI atau `.env`).
+---
+
+### 4. Strategi Prompting SigLIP 2
+
+Kualitas SigLIP sangat bergantung pada deskripsi bahasa (*Prompt Engineering*). Prompt dirancang secara spesifik untuk menghindari kata *overlap* (tumpang tindih) yang membingungkan AI.
+
+#### Confusion Prompts
+Fokus utama: Berpikir keras, bingung, tidak yakin.
+*   **EN:** *"a face of a student with a thinking expression, pursed lips, and furrowed eyebrows"*
+    *   **ID:** *"wajah siswa dengan ekspresi berpikir, bibir mengerucut, dan alis berkerut"*
+    *   **Alasan:** Spesifik memisahkan 'berpikir' dari 'marah'.
+*   **EN:** *"a face of a student scratching their head feeling puzzled and confused"*
+    *   **ID:** *"wajah siswa yang menggaruk kepalanya merasa kebingungan"*
+    *   **Alasan:** Secara eksplisit menyebutkan "garuk kepala" agar SigLIP bisa mem-backup MediaPipe saat tangan gagal terdeteksi utuh.
+
+#### Frustration Prompts
+Fokus utama: Stres berat, kemarahan, tekanan mental berlebihan.
+*   **EN:** *"a face of a student looking extremely angry and stressed with a clenched jaw"*
+    *   **ID:** *"wajah siswa yang terlihat sangat marah dan stres dengan rahang mengeras"*
+    *   **Alasan:** Menghapus kata abu-abu seperti *"strained"* (tegang) yang sering disalahartikan sebagai tegang memikirkan tugas (*Confusion*). Diganti dengan *"extremely angry/stressed"* yang mutlak.
+*   **EN:** *"a face of a student resting their head on their hand looking completely stressed out"*
+    *   **ID:** *"wajah siswa yang menopang kepalanya di tangan terlihat sangat stres"*
+    *   **Alasan:** Mendefinisikan gestur *facepalm/topang dagu* secara harfiah.
+
+Dengan pemisahan leksikal ini, SigLIP tidak lagi kebingungan membedakan orang yang mengerutkan dahi karena mikir (*Confusion*) dan orang yang mengerutkan dahi karena frustrasi (*Frustration*).
 
 ### 4. Aturan Label Video (Voting)
 
