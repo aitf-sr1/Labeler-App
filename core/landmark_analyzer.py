@@ -339,7 +339,8 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     sig_mata_conf = max(iris_up_v, look_up_v)
     
     # Jika ADA SALAH SATU ciri yang kuat, skor langsung tinggi (tidak dibagi rata)
-    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, r.hand_chin)
+    # Tangan (hand_chin) dihapus dari Confusion agar tidak tumpang tindih dengan Frustration
+    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
     conf = _clamp(base_conf * 0.80 + (pitch_cu + sig_brow_conf) * 0.10, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================

@@ -166,7 +166,7 @@ sig_brow_conf = max(brow_dn_v, brow_in_v)
 sig_mata_conf = max(iris_up_v, look_up_v)
 
 # Soft OR logic: Jika ADA SALAH SATU ciri kuat, skor langsung tinggi
-base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, hand_chin)
+base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
 conf = clamp(base_conf × 0.80 + (pitch_cu + sig_brow_conf) × 0.10, 0, 1)
 ```
 
