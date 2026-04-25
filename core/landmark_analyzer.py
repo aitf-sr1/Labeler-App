@@ -337,13 +337,17 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     
     # "Mangap" karena bingung (bukan karena tertawa/senyum)
     smile_v    = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-    jaw_co     = _clamp((g("jawOpen") - smile_v * 1.5) / 0.20, 0, 1)
+    # Penalti dikurangi jadi 1.0 agar "meringis" sedikit tidak membatalkan Confusion
+    jaw_co     = _clamp((g("jawOpen") - smile_v) / 0.20, 0, 1)
+    
+    # "Cemburut" / mengerucutkan bibir saat berpikir/bingung
+    pucker_co  = _clamp(g("mouthPucker") / 0.20, 0, 1)
 
     sig_brow_conf = max(brow_dn_v, brow_in_v)
     sig_mata_conf = max(iris_up_v, look_up_v)
     
     # Jika ADA SALAH SATU ciri yang kuat, skor dasar tinggi
-    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
+    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
     # Tangan dihapus dari Confusion (prompt mengindikasikan menggaruk kepala/bukan dagu)
     conf = _clamp(base_conf * 0.85 + (pitch_cu + sig_brow_conf) * 0.15, 0, 1)
 
@@ -355,7 +359,7 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.15, 0, 1)
     
     # Rahang tegang/berteriak (bukan tertawa)
-    jw_fr = _clamp((g("jawOpen") - smile_v * 1.5) / 0.25, 0, 1)
+    jw_fr = _clamp((g("jawOpen") - smile_v) / 0.25, 0, 1)
 
     sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
     
