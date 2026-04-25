@@ -6,8 +6,8 @@ Inferensi zero-shot label emosi menggunakan SigLIP2.
 Untuk setiap video:
     1. Semua prompt (4 label × 6 deskripsi = 24 teks) diproses dalam satu batch
     2. Model menghasilkan logits [n_frames × n_texts]
-    3. Logits dinormalisasi min-max per frame agar skor antar prompt sebanding
-    4. Rata-rata skor positif prompt per label dihitung untuk setiap frame
+    3. Logits langsung dilewatkan ke fungsi Sigmoid (karena SigLIP = Sigmoid Loss)
+    4. Rata-rata probabilitas prompt per label dihitung untuk setiap frame
     5. Prediksi akhir ditentukan dari avg_score vs threshold
 """
 
@@ -102,23 +102,16 @@ def run_siglip_on_frames(
 
     n_frames = len(pil_images)
 
-    # ── PER-GROUP SIGMOID (Independent antar emosi) ─────────────────────────
-    # Masalah sebelumnya:
-    #   - Dynamic shift per-FRAME: semua 24 prompt bersaing → engagement selalu
-    #     menang, frustration tertekan (kompetitif, bukan independent).
-    #   - Fixed bias cancel: semua skor jadi tinggi (cosine sim selalu positif).
-    #
-    # Solusi: Dynamic shift PER GRUP EMOSI.
-    # Setiap grup 6 prompt punya shift sendiri → best prompt per emosi = ~0.88.
-    # Engagement dan Frustration TIDAK saling tekan.
-    # Tapi di DALAM satu grup, prompt terbaik tetap mendominasi (valid).
+    # ── MURNI SIGMOID (Sesuai Arsitektur Asli SigLIP) ───────────────────────
+    # Logit dari SigLIP secara bawaan sudah didesain sebagai input untuk Sigmoid
+    # untuk menghasilkan probabilitas independen (multi-label).
+    # Kita tidak boleh melakukan normalisasi max() per frame karena akan merusak
+    # keyakinan absolut model.
 
     norm_by_label = []
     for i in range(n_labels):
         group_logits = logits_per_image[:, group_indices[i]]       # [n_frames, 6]
-        max_in_group = group_logits.max(dim=1, keepdim=True).values
-        shifted      = group_logits - max_in_group + 2.0           # best prompt → 2.0
-        probs        = torch.sigmoid(shifted)                      # [n_frames, 6]
+        probs        = torch.sigmoid(group_logits)                 # [n_frames, 6]
         norm_by_label.append(probs.mean(dim=1))                    # [n_frames]
 
     # Pre-compute landmark scores per frame (jika tersedia)
