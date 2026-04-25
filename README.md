@@ -1,279 +1,309 @@
 # Labeler Emosi SigLIP2
 
-Aplikasi desktop untuk melabeli emosi pada video secara manual maupun semi-otomatis menggunakan model SigLIP2 dari Google. Dibangun untuk kebutuhan anotasi emosi siswa.
+Aplikasi desktop untuk melabeli emosi pada video secara manual maupun semi-otomatis. Menggunakan model SigLIP2 (Google) dikombinasikan dengan analisis geometri wajah 3D dari MediaPipe (Hybrid Scoring).
 
 ## Daftar Isi
 
 1. [Deskripsi](#deskripsi)
-2. [Prasyarat](#prasyarat)
-3. [Instalasi](#instalasi)
-4. [Menjalankan Aplikasi](#menjalankan-aplikasi)
-5. [Panduan Penggunaan](#panduan-penggunaan)
-6. [Alur Kerja Kode](#alur-kerja-kode)
-7. [File Output](#file-output)
-8. [Struktur Kode](#struktur-kode)
+2. [Prasyarat & Instalasi](#prasyarat--instalasi)
+3. [Menjalankan Aplikasi](#menjalankan-aplikasi)
+4. [Panduan Penggunaan](#panduan-penggunaan)
+5. [Aturan Scoring & Perhitungan](#aturan-scoring--perhitungan)
+6. [Konfigurasi (.env)](#konfigurasi-env)
+7. [Struktur Kode](#struktur-kode)
+8. [File Output](#file-output)
 9. [FAQ](#faq)
+
+---
 
 ## Deskripsi
 
-Aplikasi ini melabeli video dengan 4 kelas emosi. Setiap label bernilai `0` (tidak ada) atau `1` (ada).
+Aplikasi ini melabeli video dengan 4 kelas emosi. Setiap label bernilai `0` (tidak ada) atau `1` (ada). Sistem menggunakan pendekatan **multi-label** — satu video dapat memiliki lebih dari satu emosi aktif secara bersamaan.
 
-| Label | Arti |
-|---|---|
-| Boredom | Siswa terlihat bosan |
-| Engagement | Siswa terlihat fokus / terlibat |
-| Confusion | Siswa terlihat bingung |
-| Frustration | Siswa terlihat frustrasi |
+| Label | Kode | Arti |
+|---|---|---|
+| Boredom | 0 | Siswa terlihat bosan, tidak memperhatikan |
+| Engagement | 1 | Siswa terlihat fokus dan terlibat aktif |
+| Confusion | 2 | Siswa terlihat bingung atau tidak mengerti |
+| Frustration | 3 | Siswa terlihat frustrasi atau kesal |
 
 Ada tiga mode pelabelan:
-
 - **Manual** — nilai tiap label ditentukan secara manual oleh labeler
 - **Semi-otomatis** — AI memberikan saran awal, labeler melakukan koreksi
-- **Batch AI** — AI memproses semua video secara berurutan di background thread
+- **Batch AI** — AI memproses seluruh dataset secara berurutan di background thread
 
-## Prasyarat
+---
 
+## Prasyarat & Instalasi
+
+**Persyaratan sistem:**
 - Python 3.9 atau lebih baru
 - pip
-- GPU NVIDIA opsional — inferensi juga bisa berjalan di CPU
+- GPU NVIDIA (opsional) — inferensi juga bisa berjalan di CPU
 
-## Instalasi
-
+**Instalasi:**
 ```bash
 pip install -r requirements.txt
 ```
 
-Download model SigLIP2 pertama kali membutuhkan sekitar 400 MB. Pastikan koneksi internet tersedia saat pertama kali menjalankan aplikasi.
+Model SigLIP2 (~400 MB) dan MediaPipe FaceLandmarker (~30 MB) diunduh secara otomatis pada pertama kali aplikasi dijalankan.
+
+---
 
 ## Menjalankan Aplikasi
 
 ```bash
+# Salin dan sesuaikan konfigurasi (opsional)
+cp .env.example .env
+
+# Jalankan aplikasi
 python app.py
 ```
+
+---
 
 ## Panduan Penggunaan
 
 ### Membuka Dataset
 
-Klik tombol **Buka Folder** di pojok kiri atas, lalu pilih folder root dataset yang berisi file `.mp4`. Aplikasi akan mencari semua file video secara rekursif, membuat folder `hasil_label6/` sebagai direktori output, dan memuat ulang data yang sudah pernah disimpan secara otomatis.
+Klik tombol **Buka Folder** di pojok kiri atas, lalu pilih folder root yang berisi file `.mp4`. Aplikasi akan:
+1. Mencari semua file video secara rekursif
+2. Membuat folder `hasil_label6/` sebagai direktori output
+3. Memuat ulang label yang sudah pernah disimpan secara otomatis
 
 ### Memutar Video
 
-Video diputar otomatis saat pertama dimuat. Klik area video untuk pause atau play. Slider di bawah video digunakan untuk berpindah posisi. Di bawah slider terdapat 16 thumbnail yang mewakili titik-titik distribusi merata sepanjang video.
+Video diputar otomatis saat pertama dimuat. Klik area video untuk pause/play. Di bawah slider terdapat 16 thumbnail yang mewakili titik distribusi merata sepanjang video.
 
 ### Labeling Manual
 
 Panel kanan berisi tombol `0` dan `1` untuk setiap label emosi. Untuk labeling per-frame:
-
 1. Pilih tab label aktif (misalnya `Engagement`) di atas galeri frame
-2. Klik kanan pada frame untuk toggle — border berwarna berarti positif, abu berarti negatif
-3. Jika 8 atau lebih dari 16 frame ditandai positif, nilai label video otomatis berubah menjadi `1`
+2. Klik kanan pada frame untuk toggle — border berwarna = positif, abu = negatif
+3. Jika **8 atau lebih dari 16 frame** ditandai positif, nilai label video otomatis berubah menjadi `1`
 
-### Menggunakan AI
+### Menggunakan AI (Hybrid Scoring)
 
-Panel kanan bawah berisi kontrol inferensi SigLIP.
+Panel kanan bawah berisi kontrol inferensi SigLIP2 + MediaPipe.
 
 - **Proses Video Ini** — inferensi dijalankan pada video yang sedang ditampilkan
-- **Batch Semua** — inferensi dijalankan pada seluruh dataset secara berurutan, dapat dihentikan sewaktu-waktu
-- Bar di samping tiap label menunjukkan confidence score dari model
+- **Batch Semua** — inferensi dijalankan pada seluruh dataset secara berurutan
 
-Video yang sudah pernah diproses akan di-skip secara otomatis berdasarkan `batch_history.json`. Prompt dan threshold dapat disesuaikan langsung di panel.
+Bar di samping tiap label menunjukkan **Hybrid Score** (gabungan SigLIP + Landmark). Video yang sudah diproses akan di-skip otomatis berdasarkan `batch_history.json`.
 
-### Navigasi Antar Video
+### Flag Otomatis
 
-| Aksi | Keterangan |
-|---|---|
-| Save & Next atau panah kanan | Simpan label saat ini dan lanjut ke video berikutnya |
-| Prev atau panah kiri | Kembali ke video sebelumnya |
-| Skip | Lewati video tanpa menyimpan label |
-| Kolom "Loncat ke" + Go | Lompat ke nomor video tertentu |
-| Spasi | Play / Pause |
+Jika MediaPipe tidak mendeteksi wajah pada lebih dari 50% frame, video akan secara otomatis di-flag (ditandai merah di daftar). Jumlah video terflag ditampilkan di topbar. Video terflag masih bisa dilabeli manual.
 
-### Flag dan Reject Video
+---
 
-Aktifkan toggle **Flag / Reject** di bar bawah untuk menandai video sebagai bermasalah (blur, salah clip, tidak bisa dinilai), lalu klik Save & Next. Video tersebut dihapus dari `annotations_bener.csv` dan dicatat di `flagged_videos.csv`. Saat kembali ke video yang sudah di-flag, toggle aktif kembali secara otomatis.
+## Aturan Scoring & Perhitungan
 
-## Alur Kerja Kode
+Ini adalah bagian inti dari sistem. Skor akhir per label dihitung melalui dua tahap: **SigLIP Scoring** dan **Landmark Scoring**, lalu digabungkan menjadi **Hybrid Score**.
 
-### 1. Startup
+### 1. SigLIP Scoring (Visual)
 
+**Input:** 16 frame crop wajah (PIL Image) + prompt teks per label.
+
+**Alur:**
 ```
-python app.py
-    -> VideoLabelerApp.__init__()
-        -> inisialisasi variabel state (video_files, annotations_data, dll)
-        -> _build_ui() -> topbar, LeftPanel, RightPanel, bottombar
-        -> bind keyboard shortcut (spasi, panah kiri/kanan)
+Frame (1-16) × Prompt (6 per label) → Logits [n_frames × n_prompts]
 ```
 
-### 2. Membuka Folder
-
+**Per-Group Sigmoid Shift** (diterapkan per emosi, bukan global):
 ```
-Klik "Buka Folder"
-    -> open_folder()
-        -> filedialog memilih folder
-        -> tentukan path semua file output di hasil_label6/
-        -> glob mencari semua .mp4 secara rekursif
-        -> _load_data()
-            -> load_annotations()       -> baca annotations_bener.csv
-            -> load_flagged()           -> baca flagged_videos.csv
-            -> load_frame_annotations() -> baca frame_annotations.json
-            -> load_batch_history()     -> baca batch_history.json
-            -> load_skipped()           -> baca skipped_videos.json
-        -> load_video(index=0)
+max_in_group  = max(logit) dalam 6 prompt emosi ke-i, per frame
+shifted       = logit - max_in_group + 2.0   # best prompt → 2.0
+sigmoid_score = sigmoid(shifted)              # best prompt → ~0.88
+siglip_score  = mean(sigmoid_score)           # rata-rata 6 prompt per frame
 ```
 
-### 3. Memuat Video
+*Kenapa per-group?* Jika di-shift secara global (24 prompt bersaing), Engagement selalu mendominasi karena logit-nya cenderung lebih tinggi. Per-group shift memastikan setiap emosi dinilai secara **independen**.
 
-```
-load_video(index)
-    -> buka file .mp4 dengan cv2.VideoCapture
-    -> baca total_frames dan fps
-    -> restore label dari annotations_data jika sudah pernah dilabeli
-    -> restore status flag dari flagged_data
-    -> refresh_frame_gallery()
-        -> prepare_cropped_frames()
-            -> cek cache di cropped_faces/
-            -> jika belum ada: extract_16_frames() -> crop_face() per frame -> simpan .jpg
-            -> return 16 PIL.Image
-        -> render 16 thumbnail di LeftPanel
-        -> update vote bar dan AI score bar di RightPanel
-    -> toggle_play() -> mulai update_frame() loop
-```
+### 2. Landmark Scoring (Geometri Wajah)
 
-### 4. Loop Playback
+**Input:** Frame BGR → MediaPipe FaceLandmarker + HandLandmarker.
 
+**Output per frame:** Skor 0.0–1.0 untuk setiap emosi.
+
+#### Boredom (label 0)
 ```
-update_frame() dipanggil setiap 15ms via root.after()
-    -> hitung target frame dari waktu yang sudah berlalu (time-based)
-    -> cap.read() frame tersebut
-    -> show_video_frame() -> tampilkan ke canvas video
-    -> root.after(15, update_frame) -> jadwalkan ulang
+sig_yaw  = clamp((|yaw| - 5°) / 10, 0, 1)          # kepala noleh ≥5° mulai naik
+sig_iris = clamp((|iris_x| - 0.10) / 0.25, 0, 1)   # mata lirik ≥0.10 mulai naik
+sig_arah = max(sig_yaw, sig_iris)                    # OR logic: salah satu cukup
+
+# Faktor pendukung (ekspresi):
+blink_v    = clamp(max(eyeBlinkL, eyeBlinkR) / 0.4, 0, 1)
+eye_low_v  = clamp(mean(eyeLookDownL, eyeLookDownR) / 0.3, 0, 1)
+yawn_v     = clamp(jawOpen / 0.3, 0, 1)   # hanya jika pitch < 8°
+pitch_up_v = clamp((pitch - 20°) / 25, 0, 1)
+sig_expr   = max(blink_v, eye_low_v, yawn_v, pitch_up_v) × 0.5
+
+bore = clamp(sig_arah × 0.75 + sig_expr × 0.25, 0, 1)
 ```
 
-### 5. Menyimpan Label
-
+#### Engagement (label 1)
 ```
-Klik "Save & Next" atau tekan panah kanan
-    -> save_and_next()
-        -> save_current_state()
-            -> baca nilai label_vars (Boredom, Engagement, Confusion, Frustration)
-            -> jika flag aktif:
-                -> tambah ke flagged_data, hapus dari annotations_data
-            -> jika flag tidak aktif:
-                -> simpan [b, e, c, f] ke annotations_data
-            -> save_annotations()       -> tulis ulang annotations_bener.csv
-            -> save_flagged()           -> tulis ulang flagged_videos.csv
-            -> save_frame_annotations() -> tulis ulang frame_annotations.json
-        -> current_index += 1
-        -> load_video(index baru)
+# AND logic: semua gate harus non-zero
+gate_yaw  = clamp(1 - max(0, |yaw|-3°) / 7,  0, 1)   # dead zone ≤3°, 0 di ≥10°
+gate_iris = clamp(1 - max(0, |iris_x|-0.08) / 0.17, 0, 1)  # dead zone ≤0.08
+gate      = gate_yaw × gate_iris                        # keduanya harus ON
+
+p_ok  = kualitas pitch (-25°≤pitch≤15° = 1.0, turun di luar range)
+eye_op = 1 - max(eyeBlinkLeft, eyeBlinkRight)
+
+eng = gate × (0.60 × p_ok + 0.40 × eye_op)
 ```
 
-### 6. Inferensi AI (Satu Video)
-
+#### Confusion (label 2)
 ```
-Klik "Proses Video Ini"
-    -> _proses_satu()
-        -> ambil prompts dan thresholds dari RightPanel
-        -> jalankan worker() di background thread
-            -> prepare_cropped_frames() -> 16 PIL.Image
-            -> run_siglip_on_frames()
-                -> gabung semua prompt jadi satu batch teks
-                -> model menghasilkan logits [16 frames x N teks]
-                -> normalisasi min-max per frame
-                -> hitung avg_score dan voting per label
-                -> return prediksi per label
-            -> _apply_siglip_result() -> tulis ke frame_annotations + batch_history
-            -> update_ui() via root.after() -> update tombol label + score bar
+iris_up_v = clamp((-iris_y - 0.15) / 0.35, 0, 1)   # pupil melirik ke atas
+look_up_v = clamp(max(eyeLookUpL, eyeLookUpR) / 0.3, 0, 1)
+pitch_cu  = clamp((pitch - 8°) / 17, 0, 1)
+brow_dn_v = clamp(mean(browDownL, browDownR) / 0.2, 0, 1)
+brow_in_v = clamp(browInnerUp / 0.2, 0, 1)
+jaw_co    = clamp(jawOpen / 0.20, 0, 1)
+hnd_chin  = proporsi titik tangan di zona pipi/dagu (y 45–80%)
+
+conf = 0.18×iris_up + 0.15×look_up + 0.10×pitch_cu
+     + 0.15×brow_dn + 0.10×brow_in + 0.15×jaw_co
+     + 0.17×hnd_chin
 ```
 
-### 7. Inferensi AI (Batch Semua Video)
-
+#### Frustration (label 3)
 ```
-Klik "Batch Semua"
-    -> _toggle_batch() -> _proses_semua()
-        -> jalankan worker() di background thread
-            -> untuk setiap video:
-                -> jika sudah ada di batch_history -> skip
-                -> prepare_cropped_frames()
-                -> run_siglip_on_frames()
-                -> _apply_siglip_result()
-                -> save_annotations() dan save_frame_annotations() per video
-                -> update status di UI via root.after()
-            -> selesai: kembalikan tombol ke state normal
-```
+br_fr = clamp(mean(browDownL, browDownR) / 0.15, 0, 1)
+ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.15, 0, 1)
+ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.2, 0, 1)
+lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.2, 0, 1)
+ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.2, 0, 1)
+jw_fr = clamp(jawOpen / 0.25, 0, 1)
+hnd_f = proporsi titik tangan di zona dahi/mata (y 0–45%)
 
-## File Output
-
-Semua hasil disimpan di subfolder `hasil_label6/` di dalam folder dataset yang dibuka.
-
-```
-folder_dataset/
-└── hasil_label6/
-    ├── annotations_bener.csv    — Label utama tiap video
-    ├── flagged_videos.csv       — Daftar video yang di-flag
-    ├── frame_annotations.json  — Label per-frame (16 frame per video)
-    ├── batch_history.json       — Riwayat hasil inferensi AI
-    ├── skipped_videos.json      — Daftar video yang di-skip
-    └── cropped_faces/           — Cache crop wajah
+frus = 0.22×br_fr + 0.15×ns_fr + 0.12×ck_fr
+     + 0.13×lp_fr + 0.08×ey_fr + 0.08×jw_fr
+     + 0.22×hnd_f
 ```
 
-Format `annotations_bener.csv`:
+### 3. Hybrid Score & Prediksi Akhir
 
 ```
-UUID, Video_Asli, Clip_Name, File_Path, Boredom, Engagement, Confusion, Frustration
+hybrid_score[frame] = α × siglip_score[frame] + β × landmark_score[frame]
+
+avg_score = mean(hybrid_score[frame] for frame in 1..16)
+prediction = 1 if avg_score >= threshold else 0
 ```
 
-Format `flagged_videos.csv`:
+**Bobot default per label** (dapat diubah di `.env`):
 
+| Label | α (SigLIP) | β (Landmark) | Alasan |
+|---|---|---|---|
+| Boredom | 0.45 | 0.55 | Landmark (head yaw) paling reliabel untuk boredom |
+| Engagement | 0.45 | 0.55 | Landmark (forward gaze gate) paling reliabel |
+| Confusion | 0.75 | 0.25 | SigLIP dominan — blendshapes subtle & tangan jarang |
+| Frustration | 0.65 | 0.35 | SigLIP dominan — coverage ekspresi wajah lebih luas |
+
+**Threshold default:** 0.5 untuk semua label (dapat diubah di UI atau `.env`).
+
+### 4. Aturan Label Video (Voting)
+
+Prediksi akhir **level video** ditentukan dari skor rata-rata (bukan voting mayoritas):
 ```
-UUID, Video_Asli, Clip_Name, File_Path
+label_video = 1  if avg_score >= threshold
+label_video = 0  otherwise
 ```
+
+Untuk labeling **manual per-frame** (klik kanan di galeri):
+```
+label_video = 1  if jumlah frame positif >= 8 dari 16
+label_video = 0  otherwise
+```
+
+---
+
+## Konfigurasi (.env)
+
+Salin `.env.example` ke `.env` dan sesuaikan:
+
+```env
+# Model SigLIP2 yang digunakan
+SIGLIP_MODEL_ID=google/siglip2-base-patch16-224
+
+# Bobot hybrid global (fallback jika per-label tidak diset)
+SIGLIP_WEIGHT=0.5
+LANDMARK_WEIGHT=0.5
+
+# Override per label (format: {LABEL}_SIGLIP_WEIGHT / {LABEL}_LANDMARK_WEIGHT)
+BOREDOM_SIGLIP_WEIGHT=0.45
+BOREDOM_LANDMARK_WEIGHT=0.55
+ENGAGEMENT_SIGLIP_WEIGHT=0.45
+ENGAGEMENT_LANDMARK_WEIGHT=0.55
+CONFUSION_SIGLIP_WEIGHT=0.75
+CONFUSION_LANDMARK_WEIGHT=0.25
+FRUSTRATION_SIGLIP_WEIGHT=0.65
+FRUSTRATION_LANDMARK_WEIGHT=0.35
+```
+
+---
 
 ## Struktur Kode
 
 ```
-siglip_microservice/
-├── app.py                 — Entry point utama
-├── main.py                — Entry point FastAPI
-├── ai_service.py          — Fungsi inferensi untuk REST API
+siglip2_Labeler_App/
+├── app.py                      # Entry point — GUI utama & event orchestration
+├── ai_service.py               # FastAPI microservice (opsional, headless mode)
 ├── requirements.txt
-├── ui/
-│   ├── constants.py       — Label, warna, dan prompt default
-│   ├── left_panel.py      — Video player dan galeri frame
-│   └── right_panel.py     — Kontrol label, AI, dan prompt editor
+├── .env.example
+│
 ├── core/
-│   ├── siglip_model.py    — Singleton loader model SigLIP2
-│   ├── face_detector.py   — Deteksi dan crop wajah (MediaPipe)
-│   └── inference.py       — Inferensi zero-shot
+│   ├── siglip_model.py         # Singleton loader model SigLIP2 (lazy load)
+│   ├── inference.py            # Hybrid scoring: SigLIP + Landmark fusion
+│   ├── landmark_analyzer.py    # MediaPipe head pose, iris, blendshapes, hand
+│   ├── face_detector.py        # Crop wajah dari frame video
+│   └── README_SIGLIP.md        # Dokumentasi teknis pipeline inferensi
+│
+├── ui/
+│   ├── constants.py            # Label, warna, prompt default
+│   ├── left_panel.py           # Panel kiri: daftar video
+│   ├── right_panel.py          # Panel kanan: tombol label & kontrol AI
+│   └── video_player.py         # Widget video player + galeri frame
+│
 └── utils/
-    ├── io.py              — Baca/tulis CSV dan JSON
-    └── video.py           — Ekstraksi frame dari video
+    ├── io.py                   # Baca/tulis CSV output
+    └── video.py                # Ekstraksi frame dari file video
 ```
 
-Detail teknis model SigLIP2 dan pipeline inferensi tersedia di [README_SIGLIP.md](core/README_SIGLIP.md).
+---
+
+## File Output
+
+Setiap video yang dilabeli menghasilkan satu baris di file CSV output (`hasil_label6/labels.csv`):
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| `video_path` | str | Path relatif ke file video |
+| `Boredom` | 0/1 | Label boredom |
+| `Engagement` | 0/1 | Label engagement |
+| `Confusion` | 0/1 | Label confusion |
+| `Frustration` | 0/1 | Label frustration |
+| `labeled_by` | str | `"manual"` atau `"ai"` |
+| `timestamp` | str | Waktu pelabelan |
+
+---
 
 ## FAQ
 
-**Apakah progress hilang kalau aplikasi ditutup?**
+**Q: Berapa lama proses Batch AI?**
+A: Sekitar 3–8 detik per video tergantung panjang video dan apakah GPU tersedia. MediaPipe berjalan di CPU secara paralel dengan SigLIP di GPU.
 
-Tidak. Data disimpan ke disk setiap kali Save & Next ditekan.
+**Q: Apakah bisa dipakai tanpa GPU?**
+A: Bisa. Inferensi akan berjalan di CPU, sekitar 3–5× lebih lambat.
 
-**Kenapa tidak ada file `flagged_videos.csv`?**
+**Q: Kenapa ada video yang terflag merah?**
+A: MediaPipe tidak berhasil mendeteksi wajah pada >50% frame. Ini biasanya terjadi pada video dengan kualitas rendah, pencahayaan buruk, atau wajah yang terlalu kecil/terhalang.
 
-Di versi sebelumnya flag hanya tersimpan di memori dan hilang saat aplikasi ditutup. Bug ini sudah diperbaiki — flag kini langsung ditulis ke disk.
+**Q: Bagaimana cara mengubah threshold?**
+A: Slider threshold tersedia di panel kanan bawah. Perubahan hanya berlaku untuk sesi saat ini, kecuali disimpan ke `.env`.
 
-**Kenapa inferensi AI lambat?**
-
-Model SigLIP2 cukup besar. Tanpa GPU, inferensi di CPU membutuhkan sekitar 10–30 detik per video. Gunakan mode Batch agar proses berjalan di background.
-
-**Apa bedanya Skip dan Flag?**
-
-Skip melewati video sementara dan video masih bisa dilabeli nanti. Flag menandai video sebagai ditolak secara permanen dan mengeluarkannya dari data training.
-
-**Bolehkah folder `cropped_faces/` dihapus?**
-
-Boleh. Folder tersebut hanya berisi cache crop wajah dan akan dibuat ulang secara otomatis. Tidak ada data labeling yang hilang.
-
-**Bagaimana cara mereset label satu video?**
-
-Set semua label ke `0`, pastikan Flag tidak aktif, lalu klik Save & Next.
+**Q: Apakah skor SigLIP dan Landmark bisa dilihat terpisah?**
+A: Ya. Hover pada bar skor di panel kanan untuk melihat detail `siglip_avg` dan `landmark_avg` secara terpisah.
