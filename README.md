@@ -126,18 +126,19 @@ siglip_score  = mean(sigmoid_score)           # rata-rata 6 prompt per frame
 
 #### Boredom (label 0)
 ```
-sig_yaw  = clamp((|yaw| - 5°) / 10, 0, 1)          # kepala noleh ≥5° mulai naik
-sig_iris = clamp((|iris_x| - 0.10) / 0.25, 0, 1)   # mata lirik ≥0.10 mulai naik
-sig_arah = max(sig_yaw, sig_iris)                    # OR logic: salah satu cukup
+sig_yaw = clamp((|yaw| - 8°) / 10, 0, 1)       # noleh ≥8° mulai naik
+sig_iris = clamp((|iris_x| - 0.12) / 0.23, 0, 1) # mata lirik ≥0.12 mulai naik
+sig_arah = max(sig_yaw, sig_iris)                # OR logic: salah satu cukup
 
 # Faktor pendukung (ekspresi):
 blink_v    = clamp(max(eyeBlinkL, eyeBlinkR) / 0.4, 0, 1)
-eye_low_v  = clamp(mean(eyeLookDownL, eyeLookDownR) / 0.3, 0, 1)
-yawn_v     = clamp(jawOpen / 0.3, 0, 1)   # hanya jika pitch < 8°
+yawn_v     = clamp(jawOpen / 0.35, 0, 1)   # hanya jika pitch < 8°
 pitch_up_v = clamp((pitch - 20°) / 25, 0, 1)
-sig_expr   = max(blink_v, eye_low_v, yawn_v, pitch_up_v) × 0.5
+sig_expr   = max(blink_v, yawn_v, pitch_up_v) × 0.5
 
-bore = clamp(sig_arah × 0.90 + sig_expr × 0.10, 0, 1)
+# Soft OR logic: Tangan di dagu (hand_chin) digunakan sebagai booster (+0.20)
+base_bore = max(sig_arah, sig_expr)
+bore = clamp(base_bore × 0.70 + hand_chin × 0.20 + (sig_arah + sig_expr) × 0.10, 0, 1)
 ```
 
 #### Engagement (label 1)
@@ -165,9 +166,9 @@ jaw_co    = clamp(jawOpen / 0.15, 0, 1)     # "mangap dikit" langsung memicu
 sig_brow_conf = max(brow_dn_v, brow_in_v)
 sig_mata_conf = max(iris_up_v, look_up_v)
 
-# Soft OR logic: Tangan (hand_chin) digunakan sebagai booster (+0.20)
+# Soft OR logic: Tangan dihapus dari Confusion (fokus ke ekspresi)
 base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
-conf = clamp(base_conf × 0.70 + hand_chin × 0.20 + (pitch_cu + sig_brow_conf) × 0.10, 0, 1)
+conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
 ```
 
 #### Frustration (label 3)
