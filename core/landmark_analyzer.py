@@ -338,10 +338,10 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     sig_brow_conf = max(brow_dn_v, brow_in_v)
     sig_mata_conf = max(iris_up_v, look_up_v)
     
-    # Jika ADA SALAH SATU ciri yang kuat, skor langsung tinggi (tidak dibagi rata)
-    # Tangan (hand_chin) dihapus dari Confusion agar tidak tumpang tindih dengan Frustration
+    # Jika ADA SALAH SATU ciri yang kuat, skor dasar tinggi
     base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
-    conf = _clamp(base_conf * 0.80 + (pitch_cu + sig_brow_conf) * 0.10, 0, 1)
+    # Tangan (hand_chin) dikembalikan sebagai 'booster' (+0.20) agar tidak bisa memicu sendirian
+    conf = _clamp(base_conf * 0.70 + r.hand_chin * 0.20 + (pitch_cu + sig_brow_conf) * 0.10, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
@@ -353,8 +353,8 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
     
-    # Jika menekan bibir, mengernyit, dsb skor langsung tinggi (hand dihapus)
-    frus = _clamp(sig_wajah_frus * 0.85 + (ck_fr + jw_fr) * 0.10, 0, 1)
+    # Tangan (hand_forehead) dikembalikan sebagai 'booster' (+0.20) agar tidak bisa memicu sendirian
+    frus = _clamp(sig_wajah_frus * 0.70 + r.hand_forehead * 0.20 + (ck_fr + jw_fr) * 0.10, 0, 1)
 
     # Debug log
     if _DBG_LAND:

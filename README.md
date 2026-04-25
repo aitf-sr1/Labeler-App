@@ -165,9 +165,9 @@ jaw_co    = clamp(jawOpen / 0.15, 0, 1)     # "mangap dikit" langsung memicu
 sig_brow_conf = max(brow_dn_v, brow_in_v)
 sig_mata_conf = max(iris_up_v, look_up_v)
 
-# Soft OR logic: Jika ADA SALAH SATU ciri kuat, skor langsung tinggi
+# Soft OR logic: Tangan (hand_chin) digunakan sebagai booster (+0.20)
 base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co)
-conf = clamp(base_conf × 0.80 + (pitch_cu + sig_brow_conf) × 0.10, 0, 1)
+conf = clamp(base_conf × 0.70 + hand_chin × 0.20 + (pitch_cu + sig_brow_conf) × 0.10, 0, 1)
 ```
 
 #### Frustration (label 3)
@@ -181,8 +181,8 @@ jw_fr = clamp(jawOpen / 0.20, 0, 1)
 
 sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
 
-# Soft OR logic: Jika menekan bibir, mengernyit, dsb skor naik (tangan dihapus)
-frus = clamp(sig_wajah_frus × 0.85 + (ck_fr + jw_fr) × 0.10, 0, 1)
+# Soft OR logic: Tangan (hand_forehead) digunakan sebagai booster (+0.20)
+frus = clamp(sig_wajah_frus × 0.70 + hand_forehead × 0.20 + (ck_fr + jw_fr) × 0.10, 0, 1)
 ```
 
 ### 3. Hybrid Score & Prediksi Akhir
