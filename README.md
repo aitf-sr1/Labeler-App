@@ -180,24 +180,22 @@ conf = clamp(conf - hand_on_face, 0, 1)
 
 #### Frustration (label 3)
 ```
-# Threshold sangat tinggi (0.50) agar wajah "diam/ngelamun" tidak memicu Frustration
-br_fr = clamp(mean(browDownL, browDownR) / 0.50, 0, 1)
-ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.30, 0, 1)
-ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.50, 0, 1)
-lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.50, 0, 1)
-ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.50, 0, 1)
+br_fr = clamp(mean(browDownL, browDownR) / 0.12, 0, 1)
+ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.12, 0, 1)
+ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.15, 0, 1)
+lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.15, 0, 1)
+ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.15, 0, 1)
 jaw_val_frus = max(0.0, jawOpen - 0.10)
 jw_fr = clamp((jaw_val_frus - smile_pen × 1.5) / 0.20, 0, 1)
 
-sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr, ck_fr)
+# SUM LOGIC: Butuh kombinasi beberapa otot tegang (kecuali noseSneer yang mutlak)
+sig_wajah_frus = clamp(ns_fr + (br_fr + lp_fr + ey_fr + ck_fr) / 2.0, 0, 1)
 sig_wajah_frus = clamp(sig_wajah_frus - smile_pen × 1.5, 0, 1)
 
-# Soft OR logic: Jika ada tangan di wajah/dagu, kuadratkan sebagai trigger
+# Jika tangan menutupi wajah bawah/tengah (hand_mid_bot), skor ditambah secara absolut
 hand_trigger_frus = hand_forehead
-base_frus = max(sig_wajah_frus, hand_trigger_frus)
+base_frus = clamp(sig_wajah_frus + hand_trigger_frus, 0, 1)
 frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
-# Jika tangan di wajah, MUTLAK dongkrak Frustration ke skor maksimal tangan tersebut
-frus = max(frus, hand_trigger_frus)
 ```
 
 ### 3. Hybrid Score & Prediksi Akhir

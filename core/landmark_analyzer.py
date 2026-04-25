@@ -200,17 +200,16 @@ def _analyze_hands(mp_image, h: int, w: int):
     centered = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
     
     if centered < 8:
-        hand_top = hand_mid = hand_bot = 0.0
+        hand_top = hand_mid_bot = 0.0
     else:
-        # Karena noise sudah difilter (minimal 8 titik), kita bisa membuat
-        # sensitivitasnya SANGAT TINGGI. 5 titik di zona ini = 1.0 (Skor Penuh!)
-        hand_top = _clamp(pts_top / 5, 0, 1)
-        hand_mid = _clamp(pts_mid / 5, 0, 1)
-        hand_bot = _clamp(pts_bot / 5, 0, 1)
+        # Menghitung proporsional: 8 titik cukup untuk memicu 1.0
+        # Menggabungkan mid dan bot (Frustration) agar saat facepalm/nyanggah, skor tangan maksimal
+        hand_top = _clamp(pts_top / 8, 0, 1)
+        hand_mid_bot = _clamp((pts_mid + pts_bot) / 8, 0, 1)
     
     hand_pts_px = [(int(x * w), int(y * h)) for x, y in all_pts]
 
-    return hand_top, hand_mid, hand_bot, hand_pts_px
+    return hand_top, hand_mid_bot, 0.0, hand_pts_px
 
 
 def analyze_frame(frame_bgr) -> LandmarkResult:
@@ -233,7 +232,7 @@ def analyze_frame(frame_bgr) -> LandmarkResult:
     if not res.face_landmarks:
         return LandmarkResult(
             face_found=False,
-            hand_forehead=max(hand_mid, hand_bot),  # Frustration trigger
+            hand_forehead=hand_mid_bot,             # Frustration trigger
             hand_chin=hand_top,                     # Confusion trigger
             hand_landmarks_px=hand_pts_px,
         )
@@ -265,7 +264,7 @@ def analyze_frame(frame_bgr) -> LandmarkResult:
         iris_img_x=round(iris_img_x, 4), iris_img_y=round(iris_img_y, 4),
         left_iris_px=(lxi, lyi), right_iris_px=(rxi, ryi),
         blendshapes=bs, face_found=True,
-        hand_forehead=round(max(hand_mid, hand_bot), 4),
+        hand_forehead=round(hand_mid_bot, 4),
         hand_chin=round(hand_top, 4),
         hand_landmarks_px=hand_pts_px,
     )
@@ -384,31 +383,32 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
     # Threshold dinaikkan drastis agar orang yang sedang rileks/ngelamun (mulut nutup biasa,
     # mata sedikit sayu) tidak memicu Frustration secara tidak sengaja.
-    # Threshold dinaikkan SANGAT TINGGI (0.50) agar wajah "diam aja" (ngelamun)
-    # tidak mungkin memicu Frustration. Frustration murni butuh ekspresi ekstrem.
-    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.50, 0, 1)
-    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.30, 0, 1)
-    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.50, 0, 1)
-    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.50, 0, 1)
-    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.50, 0, 1)
+    # Threshold dinaikkan SANGAT TINGGI agar "mikir/bingung" (Confusion) yang 
+    # biasanya juga mengerutkan alis/bibir tidak bocor ke Frustration.
+    # Frustration murni butuh ekspresi ekstrem (marah/sangat stres/menangis).
+    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.40, 0, 1)
+    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / 0.20, 0, 1)
+    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / 0.40, 0, 1)
+    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.40, 0, 1)
+    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.40, 0, 1)
     
     # Rahang tegang/berteriak (bisa terbuka lebar, abaikan mulut terbuka sedikit)
     jaw_val_frus = max(0.0, jo - 0.10)
     jw_fr = _clamp((jaw_val_frus - smile_pen * 1.5) / 0.20, 0, 1)
 
-    sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr, ck_fr)
-    # Kurangi skor Frustration jika orang tersebut sedang tersenyum lebar (menghindari false positive dari cheekSquint/eyeSquint saat tertawa)
+    # SUM LOGIC: Frustration butuh lebih dari 1 otot tegang (kombinasi).
+    # Jika hanya 1 otot (misal browDown karena bingung), skornya tidak akan tembus 1.0.
+    # Namun noseSneer (mengernyit jijik/marah) sangat kuat, jadi nilainya mutlak.
+    sig_wajah_frus = _clamp(ns_fr + (br_fr + lp_fr + ey_fr + ck_fr) / 2.0, 0, 1)
+    
+    # Kurangi skor Frustration jika orang tersebut sedang tersenyum lebar
     sig_wajah_frus = _clamp(sig_wajah_frus - smile_pen * 1.5, 0, 1)
     
-    # Tangan (hand_forehead = hand_on_face) bernilai biner (0 atau 1).
-    # Jika 1, langsung menjadi pemicu mutlak Frustration.
+    # Tangan Frustration (hand_mid_bot yang disimpan di hand_forehead)
+    # Jika tangan menutupi wajah bawah/tengah, Frustration langsung naik drastis.
     hand_trigger_frus = r.hand_forehead
-    base_frus = max(sig_wajah_frus, hand_trigger_frus)
+    base_frus = _clamp(sig_wajah_frus + hand_trigger_frus, 0, 1)
     frus = _clamp(base_frus * 0.85 + (ck_fr + jw_fr) * 0.15, 0, 1)
-    
-    # MUTLAK: Jika ada tangan di wajah (Facepalm/Nyanggah), pastikan skor Frustration
-    # didongkrak secara penuh agar tidak kalah dengan skor wajah yang sedang "diam".
-    frus = max(frus, r.hand_forehead)
 
     # Debug log
     if _DBG_LAND:
