@@ -198,8 +198,8 @@ prediction = 1 if avg_score >= threshold else 0
 
 | Label | α (SigLIP) | β (Landmark) | Alasan |
 |---|---|---|---|
-| Boredom | 0.50 | 0.50 | Seimbang: Landmark untuk pose (noleh), SigLIP untuk ekspresi (ngantuk) |
-| Engagement | 0.50 | 0.50 | Seimbang: Landmark untuk pose tegak, SigLIP untuk mata fokus |
+| Boredom | 0.30 | 0.70 | Landmark dominan (Noleh / postur sangat menentukan) |
+| Engagement | 0.40 | 0.60 | Landmark sedikit dominan (Eye contact / postur tegak) |
 | Confusion | 0.50 | 0.50 | Seimbang: Landmark untuk kerutan alis, SigLIP untuk ekspresi bingung |
 | Frustration | 0.50 | 0.50 | Seimbang: Keduanya saling melengkapi untuk deteksi stres |
 
@@ -234,10 +234,10 @@ SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
 # Override per label (format: {LABEL}_SIGLIP_WEIGHT / {LABEL}_LANDMARK_WEIGHT)
-BOREDOM_SIGLIP_WEIGHT=0.50
-BOREDOM_LANDMARK_WEIGHT=0.50
-ENGAGEMENT_SIGLIP_WEIGHT=0.50
-ENGAGEMENT_LANDMARK_WEIGHT=0.50
+BOREDOM_SIGLIP_WEIGHT=0.30
+BOREDOM_LANDMARK_WEIGHT=0.70
+ENGAGEMENT_SIGLIP_WEIGHT=0.40
+ENGAGEMENT_LANDMARK_WEIGHT=0.60
 CONFUSION_SIGLIP_WEIGHT=0.50
 CONFUSION_LANDMARK_WEIGHT=0.50
 FRUSTRATION_SIGLIP_WEIGHT=0.50
