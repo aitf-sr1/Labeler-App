@@ -181,8 +181,8 @@ jw_fr = clamp(jawOpen / 0.20, 0, 1)
 
 sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
 
-# Soft OR logic: Jika menekan bibir, mengernyit, ATAU pegang dahi, skor langsung tinggi
-frus = clamp(max(sig_wajah_frus, hand_forehead) × 0.85 + (ck_fr + jw_fr) × 0.10, 0, 1)
+# Soft OR logic: Jika menekan bibir, mengernyit, dsb skor naik (tangan dihapus)
+frus = clamp(sig_wajah_frus × 0.85 + (ck_fr + jw_fr) × 0.10, 0, 1)
 ```
 
 ### 3. Hybrid Score & Prediksi Akhir

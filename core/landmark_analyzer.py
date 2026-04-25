@@ -353,8 +353,8 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
     
-    # Jika menekan bibir, mengernyit, ATAU pegang dahi, skor langsung tinggi
-    frus = _clamp(max(sig_wajah_frus, r.hand_forehead) * 0.85 + (ck_fr + jw_fr) * 0.10, 0, 1)
+    # Jika menekan bibir, mengernyit, dsb skor langsung tinggi (hand dihapus)
+    frus = _clamp(sig_wajah_frus * 0.85 + (ck_fr + jw_fr) * 0.10, 0, 1)
 
     # Debug log
     if _DBG_LAND:
