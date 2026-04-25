@@ -166,8 +166,9 @@ jaw_co    = clamp(jawOpen / 0.15, 0, 1)     # "mangap dikit" langsung memicu
 sig_brow_conf = max(brow_dn_v, brow_in_v)
 sig_mata_conf = max(iris_up_v, look_up_v)
 smile_v = max(mouthSmileLeft, mouthSmileRight)
-jaw_val = max(0.0, jawOpen - 0.10)   # Abaikan mulut kebuka sedikit (behel/rileks)
-jaw_co = clamp((jaw_val - smile_v) / 0.15, 0, 1)
+
+# jaw_val_conf = naik saat jawOpen 0.10->0.25, turun jadi 0 saat jawOpen >0.35 (menguap/berteriak)
+jaw_co = clamp(jaw_val_conf - smile_v, 0, 1)
 pucker_co = clamp(mouthPucker / 0.20, 0, 1)
 
 # Soft OR logic: Tangan dihapus dari Confusion (fokus ke ekspresi)
@@ -182,7 +183,8 @@ ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.12, 0, 1)
 ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.15, 0, 1)
 lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.15, 0, 1)
 ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.15, 0, 1)
-jw_fr = clamp((jaw_val - smile_v) / 0.20, 0, 1)
+jaw_val_frus = max(0.0, jawOpen - 0.10)
+jw_fr = clamp((jaw_val_frus - smile_v) / 0.20, 0, 1)
 
 sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
 

@@ -335,14 +335,23 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / 0.15, 0, 1)
     brow_in_v  = _clamp(g("browInnerUp") / 0.15, 0, 1)
     
-    # "Mangap" karena bingung (bukan karena tertawa/senyum)
+    # "Mangap" sedikit karena bingung (bukan karena tertawa/senyum)
     smile_v    = max(g("mouthSmileLeft"), g("mouthSmileRight"))
     
-    # Dead zone 0.10: abaikan mulut yang terbuka sedikit karena behel / rileks / tidur
-    jaw_val    = max(0.0, g("jawOpen") - 0.10)
-    
+    # Confusion: Mulut terbuka sedikit (0.10 - 0.25). 
+    # Jika terlalu lebar (>0.35), itu menguap/berteriak (bukan bingung).
+    jo = g("jawOpen")
+    if jo <= 0.10:
+        jaw_val_conf = 0.0
+    elif jo <= 0.25:
+        jaw_val_conf = (jo - 0.10) / 0.15
+    elif jo <= 0.35:
+        jaw_val_conf = 1.0 - (jo - 0.25) / 0.10
+    else:
+        jaw_val_conf = 0.0
+        
     # Penalti dikurangi jadi 1.0 agar "meringis" sedikit tidak membatalkan Confusion
-    jaw_co     = _clamp((jaw_val - smile_v) / 0.15, 0, 1)
+    jaw_co     = _clamp(jaw_val_conf - smile_v, 0, 1)
     
     # "Cemburut" / mengerucutkan bibir saat berpikir/bingung
     pucker_co  = _clamp(g("mouthPucker") / 0.20, 0, 1)
@@ -362,8 +371,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / 0.15, 0, 1)
     ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / 0.15, 0, 1)
     
-    # Rahang tegang/berteriak (bukan tertawa, abaikan mulut terbuka sedikit)
-    jw_fr = _clamp((jaw_val - smile_v) / 0.20, 0, 1)
+    # Rahang tegang/berteriak (bisa terbuka lebar, abaikan mulut terbuka sedikit)
+    jaw_val_frus = max(0.0, jo - 0.10)
+    jw_fr = _clamp((jaw_val_frus - smile_v) / 0.20, 0, 1)
 
     sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
     
