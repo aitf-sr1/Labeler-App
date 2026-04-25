@@ -187,26 +187,25 @@ def _analyze_hands(mp_image, h: int, w: int):
     if not all_pts:
         return 0.0, 0.0, []
 
-    # User meminta: SEMUA posisi tangan di layar (atas kepala, dahi, mata, pipi, mulut, dagu) 
-    # langsung masuk ke Frustration. Tidak perlu lagi dipisah berdasarkan zona atas/bawah.
-    # Selama berada di frame (dan relatif di tengah), itu dihitung sebagai sentuhan wajah/kepala.
+    # ZONASI TANGAN V3: Membedakan garuk kepala (Confusion) vs Facepalm/Nyanggah (Frustration)
     n = len(all_pts)
     
-    # Hitung semua titik yang ada di layar (0.00 <= y <= 1.00)
-    face_pts = sum(1 for _, y in all_pts if -0.20 <= y <= 1.20)
+    # Hitung jumlah titik di masing-masing zona
+    pts_top = sum(1 for _, y in all_pts if -0.20 <= y < 0.25)  # Garuk rambut/puncak kepala
+    pts_mid = sum(1 for _, y in all_pts if  0.25 <= y < 0.55)  # Facepalm / kucek mata
+    pts_bot = sum(1 for _, y in all_pts if  0.55 <= y <= 1.20) # Nyanggah pipi/dagu
     
-    # Hanya count jika tangan tidak terlalu di pinggir banget
+    # Hanya validasi jika tangan ada di tengah frame (bukan tangan orang lain)
     centered = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
     
-    # Jika MediaPipe mendeteksi tangan dan minimal 5 titik berada di tengah,
-    # kita set mutlak 1.0 (karena ini sudah pasti tangan menutupi/menyentuh wajah).
-    # Tidak menggunakan rasio lagi agar skor tidak hancur saat dikuadratkan.
-    hand_on_face = 1.0 if (face_pts >= 5 and centered >= 5) else 0.0
+    # Deteksi biner: jika ada minimal 5 titik di zona tersebut
+    hand_top = 1.0 if (pts_top >= 5 and centered >= 5) else 0.0
+    hand_mid = 1.0 if (pts_mid >= 5 and centered >= 5) else 0.0
+    hand_bot = 1.0 if (pts_bot >= 5 and centered >= 5) else 0.0
     
     hand_pts_px = [(int(x * w), int(y * h)) for x, y in all_pts]
 
-    # Return hand_on_face ke slot hand_forehead (agar kompatibel dengan kode yang ada)
-    return hand_on_face, 0.0, hand_pts_px
+    return hand_top, hand_mid, hand_bot, hand_pts_px
 
 
 def analyze_frame(frame_bgr) -> LandmarkResult:
@@ -224,13 +223,13 @@ def analyze_frame(frame_bgr) -> LandmarkResult:
     res   = _get_landmarker().detect(mp_img)
 
     # Deteksi tangan (selalu dijalankan, terlepas dari wajah ditemukan atau tidak)
-    hand_forehead, hand_chin, hand_pts_px = _analyze_hands(mp_img, h, w)
+    hand_top, hand_mid, hand_bot, hand_pts_px = _analyze_hands(mp_img, h, w)
 
     if not res.face_landmarks:
         return LandmarkResult(
             face_found=False,
-            hand_forehead=hand_forehead,
-            hand_chin=hand_chin,
+            hand_forehead=max(hand_mid, hand_bot),  # Frustration trigger
+            hand_chin=hand_top,                     # Confusion trigger
             hand_landmarks_px=hand_pts_px,
         )
 
@@ -261,8 +260,8 @@ def analyze_frame(frame_bgr) -> LandmarkResult:
         iris_img_x=round(iris_img_x, 4), iris_img_y=round(iris_img_y, 4),
         left_iris_px=(lxi, lyi), right_iris_px=(rxi, ryi),
         blendshapes=bs, face_found=True,
-        hand_forehead=round(hand_forehead, 4),
-        hand_chin=round(hand_chin, 4),
+        hand_forehead=round(max(hand_mid, hand_bot), 4),
+        hand_chin=round(hand_top, 4),
         hand_landmarks_px=hand_pts_px,
     )
 
@@ -368,11 +367,13 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     sig_mata_conf = max(iris_up_v, look_up_v)
     
     # Jika ADA SALAH SATU ciri yang kuat, skor dasar tinggi
-    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
+    # hand_chin sekarang berisi hand_top (garuk rambut). Jika garuk rambut = Confusion 1.0
+    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, r.hand_chin)
     conf = _clamp(base_conf * 0.85 + (pitch_cu + sig_brow_conf) * 0.15, 0, 1)
     
-    # MUTLAK: Tangan di wajah membatalkan Confusion (mencegah false positive dari occlusion).
-    # Sesuai permintaan user, tangan di wajah murni milik Frustration.
+    # MUTLAK: Tangan yang menutupi area TENGAH WAJAH (mata/hidung) membatalkan Confusion
+    # Tapi tangan di ATAS kepala (garuk) tidak membatalkan Confusion!
+    # r.hand_forehead sekarang berisi gabungan mid & bot (Facepalm & Nyanggah pipi).
     conf = _clamp(conf - r.hand_forehead, 0, 1)
 
     # == 3: FRUSTRATION -- ekspresi tegang (Soft OR logic) ===========================
