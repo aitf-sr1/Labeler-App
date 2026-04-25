@@ -17,10 +17,10 @@ from .siglip_model import get_siglip, get_device
 
 _LABEL_KEYS   = ["BOREDOM", "ENGAGEMENT", "CONFUSION", "FRUSTRATION"]
 _LABEL_DEFAULTS = [
-    (0.30, 0.70),   # Boredom     — Landmark dominan (Noleh / postur sangat menentukan)
-    (0.40, 0.60),   # Engagement  — Landmark sedikit dominan (Eye contact / postur tegak)
-    (0.50, 0.50),   # Confusion   — Seimbang (Ekspresi visual & kerut dahi sama penting)
-    (0.50, 0.50),   # Frustration — Seimbang (Ekspresi visual & ketegangan otot)
+    (0.50, 0.50),   # Boredom
+    (0.50, 0.50),   # Engagement
+    (0.50, 0.50),   # Confusion
+    (0.50, 0.50),   # Frustration
 ]
 
 

@@ -96,15 +96,15 @@ Lihat [README.md](../README.md#aturan-scoring--perhitungan) untuk formula lengka
 hybrid_score = α × siglip_score + β × landmark_score
 
 # α dan β dibaca dari env, berbeda per label:
-# - Boredom:     α=0.30, β=0.70  (Landmark dominan)
-# - Engagement:  α=0.40, β=0.60  (Landmark dominan)
+# - Boredom:     α=0.50, β=0.50  (Seimbang)
+# - Engagement:  α=0.50, β=0.50  (Seimbang)
 # - Confusion:   α=0.50, β=0.50  (Seimbang)
 # - Frustration: α=0.50, β=0.50  (Seimbang)
 ```
 
 **Alasan bobot berbeda per label:**
 
-- **Boredom & Engagement**: Landmark menangani sinyal geometri yang pasti (arah muka/mata noleh) dan karena ini sangat menentukan, bobot Landmark dibuat lebih besar (0.70 dan 0.60). SigLIP tetap membantu melihat mikro-ekspresi (misal: kelopak mata berat).
+- **Boredom & Engagement**: Landmark menangani sinyal geometri yang pasti (arah muka/mata noleh), sedangkan SigLIP dioptimalkan untuk melihat mikro-ekspresi dari muka yang di-crop (misal: kelopak mata berat, tatapan kosong). Keduanya saling melengkapi (50/50).
 - **Confusion & Frustration**: SigLIP menangkap tensi muka keseluruhan, sedangkan Landmark menangkap indikator spesifik (kerutan dahi, rahang terbuka). Keduanya saling melengkapi seimbang (50/50).
 
 **Prediksi akhir:**
@@ -125,8 +125,8 @@ SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
 # Override per label (LABEL = BOREDOM | ENGAGEMENT | CONFUSION | FRUSTRATION)
-BOREDOM_SIGLIP_WEIGHT=0.30
-BOREDOM_LANDMARK_WEIGHT=0.70
+BOREDOM_SIGLIP_WEIGHT=0.50
+BOREDOM_LANDMARK_WEIGHT=0.50
 ```
 
 Urutan prioritas: **per-label env** → **global env** → **hardcoded default**.
