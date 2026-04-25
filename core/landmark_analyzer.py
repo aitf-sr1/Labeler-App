@@ -227,7 +227,7 @@ def analyze_frame(frame_bgr) -> LandmarkResult:
     res   = _get_landmarker().detect(mp_img)
 
     # Deteksi tangan (selalu dijalankan, terlepas dari wajah ditemukan atau tidak)
-    hand_top, hand_mid, hand_bot, hand_pts_px = _analyze_hands(mp_img, h, w)
+    hand_top, hand_mid_bot, _, hand_pts_px = _analyze_hands(mp_img, h, w)
 
     if not res.face_landmarks:
         return LandmarkResult(
