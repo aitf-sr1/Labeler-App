@@ -173,10 +173,10 @@ def _analyze_hands(mp_image, h: int, w: int):
     try:
         res = _get_hand_landmarker().detect(mp_image)
     except Exception:
-        return 0.0, 0.0, []
+        return 0.0, 0.0, 0.0, []
 
     if not res.hand_landmarks:
-        return 0.0, 0.0, []
+        return 0.0, 0.0, 0.0, []
 
     # Kumpulkan semua titik landmark dari semua tangan yang terdeteksi
     all_pts = []
@@ -185,7 +185,7 @@ def _analyze_hands(mp_image, h: int, w: int):
             all_pts.append((lm.x, lm.y))
 
     if not all_pts:
-        return 0.0, 0.0, []
+        return 0.0, 0.0, 0.0, []
 
     # ZONASI TANGAN V3: Membedakan garuk kepala (Confusion) vs Facepalm/Nyanggah (Frustration)
     n = len(all_pts)
