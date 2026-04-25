@@ -137,7 +137,7 @@ yawn_v     = clamp(jawOpen / 0.3, 0, 1)   # hanya jika pitch < 8°
 pitch_up_v = clamp((pitch - 20°) / 25, 0, 1)
 sig_expr   = max(blink_v, eye_low_v, yawn_v, pitch_up_v) × 0.5
 
-bore = clamp(sig_arah × 0.75 + sig_expr × 0.25, 0, 1)
+bore = clamp(sig_arah × 0.90 + sig_expr × 0.10, 0, 1)
 ```
 
 #### Engagement (label 1)

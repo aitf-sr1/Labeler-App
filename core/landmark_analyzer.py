@@ -303,8 +303,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
 
     sig_expr   = max(blink_v, eye_low_v, yawn_v, pitch_up_v) * 0.5
 
-    # Final: arah dominan, ekspresi pendukung
-    bore = _clamp(sig_arah * 0.75 + sig_expr * 0.25, 0, 1)
+    # Final: Arah kepala/mata SANGAT mendominasi (90%). 
+    # Jika noleh/lirik = bosan/disengaged.
+    bore = _clamp(sig_arah * 0.90 + sig_expr * 0.10, 0, 1)
 
     # == 1: ENGAGEMENT -- semua gate harus ON (AND logic) ======================
     # Gate A: kepala lurus — DEAD ZONE: yaw ≤3° = sempurna (1.0), lalu turun, 0 di ≥10°

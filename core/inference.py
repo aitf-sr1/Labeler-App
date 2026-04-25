@@ -106,12 +106,17 @@ def run_siglip_on_frames(
     # Logit dari SigLIP secara bawaan sudah didesain sebagai input untuk Sigmoid
     # untuk menghasilkan probabilitas independen (multi-label).
     # Kita tidak boleh melakukan normalisasi max() per frame karena akan merusak
-    # keyakinan absolut model.
+    # keyakinan absolut model. Namun, karena logit zero-shot untuk teks yang spesifik 
+    # seringkali berada di rentang negatif (misal -3.0 hingga -6.0), nilai sigmoid murni
+    # akan sangat kecil (mendekati 0).
+    # Solusinya: Gunakan Bias Kalibrasi Statis (Empirical Bias) untuk menggeser kurva
+    # tanpa memanipulasi distribusi antar-frame.
+    EMPIRICAL_BIAS = 3.5
 
     norm_by_label = []
     for i in range(n_labels):
         group_logits = logits_per_image[:, group_indices[i]]       # [n_frames, 6]
-        probs        = torch.sigmoid(group_logits)                 # [n_frames, 6]
+        probs        = torch.sigmoid(group_logits + EMPIRICAL_BIAS) # [n_frames, 6]
         norm_by_label.append(probs.mean(dim=1))                    # [n_frames]
 
     # Pre-compute landmark scores per frame (jika tersedia)

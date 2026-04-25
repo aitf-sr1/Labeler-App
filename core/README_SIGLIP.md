@@ -49,12 +49,13 @@ Oleh karena itu, logit asli bisa (dan harus) langsung dimasukkan ke `sigmoid()` 
 ```python
 # Untuk setiap emosi i:
 group_logits = logits[:, prompt_indices[i]]       # [n_frames, 6]
-probs        = torch.sigmoid(group_logits)        # probabilitas (0-1) murni
+# Karena logit zero-shot seringkali negatif, kita tambahkan bias empiris statis
+probs        = torch.sigmoid(group_logits + 3.5)  # probabilitas (0-1) murni + bias
 siglip_score[i] = mean(probs, dim=1)              # rata-rata 6 prompt per frame
 ```
 
 **Mengapa ini penting?**  
-Pendekatan sebelumnya menggunakan normalisasi "Per-Group Max Shift" (mengurangi logit dengan logit tertinggi di grup + 2.0). Secara matematis ini fatal karena memaksa logit tertinggi di setiap grup untuk *selalu* menjadi probabilitas ~0.88, bahkan jika logit aslinya sangat negatif (misalnya saat emosi tersebut tidak ada). Dengan **Murni Sigmoid**, probabilitas benar-benar mencerminkan tingkat kecocokan absolut model terhadap prompt, tanpa false-positive buatan.
+Pendekatan sebelumnya menggunakan normalisasi "Per-Group Max Shift" (mengurangi logit dengan logit tertinggi di grup + 2.0). Secara matematis ini fatal karena memaksa logit tertinggi di setiap grup untuk *selalu* menjadi probabilitas ~0.88, bahkan jika logit aslinya sangat negatif (misalnya saat emosi tersebut tidak ada). Dengan **Murni Sigmoid + Bias Statis**, probabilitas benar-benar mencerminkan tingkat kecocokan absolut model terhadap prompt, namun skalanya tetap masuk akal untuk dibandingkan dengan threshold 0.5.
 
 ---
 
