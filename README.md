@@ -136,9 +136,8 @@ yawn_v     = clamp(jawOpen / 0.35, 0, 1)   # hanya jika pitch < 8°
 pitch_up_v = clamp((pitch - 20°) / 25, 0, 1)
 sig_expr   = max(blink_v, yawn_v, pitch_up_v) × 0.5
 
-# Soft OR logic: Jika tangan menutupi wajah bawah secara dominan, kuadratkan sebagai trigger
-hand_trigger_bore = hand_chin ** 2
-base_bore = max(sig_arah, sig_expr, hand_trigger_bore)
+# Soft OR logic: (Tangan dihapus dari Boredom, pindah ke Frustration)
+base_bore = max(sig_arah, sig_expr)
 bore = clamp(base_bore × 0.85 + (sig_arah + sig_expr) × 0.15, 0, 1)
 ```
 
@@ -166,10 +165,10 @@ jaw_co    = clamp(jawOpen / 0.15, 0, 1)     # "mangap dikit" langsung memicu
 
 sig_brow_conf = max(brow_dn_v, brow_in_v)
 sig_mata_conf = max(iris_up_v, look_up_v)
-smile_v = max(mouthSmileLeft, mouthSmileRight)
+smile_pen = max(0.0, max(mouthSmileLeft, mouthSmileRight) - 0.15)
 
 # jaw_val_conf = naik saat jawOpen 0.10->0.25, turun jadi 0 saat jawOpen >0.35 (menguap/berteriak)
-jaw_co = clamp(jaw_val_conf - smile_v, 0, 1)
+jaw_co = clamp(jaw_val_conf - smile_pen × 1.5, 0, 1)
 pucker_co = clamp(mouthPucker / 0.20, 0, 1)
 
 # Soft OR logic: Tangan dihapus dari Confusion (fokus ke ekspresi)
@@ -185,12 +184,13 @@ ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.15, 0, 1)
 lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.15, 0, 1)
 ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.15, 0, 1)
 jaw_val_frus = max(0.0, jawOpen - 0.10)
-jw_fr = clamp((jaw_val_frus - smile_v) / 0.20, 0, 1)
+jw_fr = clamp((jaw_val_frus - smile_pen × 1.5) / 0.20, 0, 1)
 
-sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
+sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr, ck_fr)
+sig_wajah_frus = clamp(sig_wajah_frus - smile_pen × 1.5, 0, 1)
 
-# Soft OR logic: Jika tangan menutupi wajah atas (facepalm), kuadratkan sebagai trigger
-hand_trigger_frus = hand_forehead ** 2
+# Soft OR logic: Jika tangan menutupi wajah atas (facepalm) ATAU pipi/dagu, kuadratkan sebagai trigger
+hand_trigger_frus = max(hand_forehead, hand_chin) ** 2
 base_frus = max(sig_wajah_frus, hand_trigger_frus)
 frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
 ```

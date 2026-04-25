@@ -303,9 +303,8 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     sig_expr   = max(blink_v, yawn_v, pitch_up_v) * 0.5
 
     # Final: Soft OR logic. 
-    # Jika tangan menutupi dagu secara dominan (occlusion), ia bisa memicu Boredom sendiri.
-    hand_trigger_bore = r.hand_chin ** 2
-    base_bore = max(sig_arah, sig_expr, hand_trigger_bore)
+    # (Tangan dihapus dari Boredom karena user meminta semua sentuhan wajah masuk ke Frustration)
+    base_bore = max(sig_arah, sig_expr)
     bore = _clamp(base_bore * 0.85 + (sig_arah + sig_expr) * 0.15, 0, 1)
 
     # == 1: ENGAGEMENT -- semua gate harus ON (AND logic) ======================
@@ -338,7 +337,9 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     brow_in_v  = _clamp(g("browInnerUp") / 0.15, 0, 1)
     
     # "Mangap" sedikit karena bingung (bukan karena tertawa/senyum)
-    smile_v    = max(g("mouthSmileLeft"), g("mouthSmileRight"))
+    smile_raw  = max(g("mouthSmileLeft"), g("mouthSmileRight"))
+    # Dead zone: abaikan senyum tipis (<0.15) karena sering muncul saat meringis/bingung
+    smile_pen  = max(0.0, smile_raw - 0.15)
     
     # Confusion: Mulut terbuka sedikit (0.10 - 0.25). 
     # Jika terlalu lebar (>0.35), itu menguap/berteriak (bukan bingung).
@@ -352,8 +353,8 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     else:
         jaw_val_conf = 0.0
         
-    # Penalti dikurangi jadi 1.0 agar "meringis" sedikit tidak membatalkan Confusion
-    jaw_co     = _clamp(jaw_val_conf - smile_v, 0, 1)
+    # Penalti dikali 1.5 agar senyum asli benar-benar membatalkan Confusion
+    jaw_co     = _clamp(jaw_val_conf - smile_pen * 1.5, 0, 1)
     
     # "Cemburut" / mengerucutkan bibir saat berpikir/bingung
     pucker_co  = _clamp(g("mouthPucker") / 0.20, 0, 1)
@@ -375,13 +376,16 @@ def compute_emotion_scores(r: LandmarkResult) -> dict:
     
     # Rahang tegang/berteriak (bisa terbuka lebar, abaikan mulut terbuka sedikit)
     jaw_val_frus = max(0.0, jo - 0.10)
-    jw_fr = _clamp((jaw_val_frus - smile_v) / 0.20, 0, 1)
+    jw_fr = _clamp((jaw_val_frus - smile_pen * 1.5) / 0.20, 0, 1)
 
-    sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr)
+    sig_wajah_frus = max(br_fr, ns_fr, lp_fr, ey_fr, ck_fr)
+    # Kurangi skor Frustration jika orang tersebut sedang tersenyum lebar (menghindari false positive dari cheekSquint/eyeSquint saat tertawa)
+    sig_wajah_frus = _clamp(sig_wajah_frus - smile_pen * 1.5, 0, 1)
     
-    # Jika tangan menutupi wajah atas secara dominan (facepalm / occlusion), 
-    # ekspresi wajah mungkin tidak terbaca. Maka hand_forehead memicu kuat secara eksponensial.
-    hand_trigger_frus = r.hand_forehead ** 2
+    # Jika tangan menutupi wajah atas (facepalm) ATAU bawah (nyanggah pipi), 
+    # ekspresi wajah mungkin tidak terbaca. User menganggap segala sentuhan wajah
+    # akibat pusing/stres sebagai Frustration.
+    hand_trigger_frus = max(r.hand_forehead, r.hand_chin) ** 2
     base_frus = max(sig_wajah_frus, hand_trigger_frus)
     frus = _clamp(base_frus * 0.85 + (ck_fr + jw_fr) * 0.15, 0, 1)
 
