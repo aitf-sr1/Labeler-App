@@ -96,16 +96,16 @@ Lihat [README.md](../README.md#aturan-scoring--perhitungan) untuk formula lengka
 hybrid_score = α × siglip_score + β × landmark_score
 
 # α dan β dibaca dari env, berbeda per label:
-# - Boredom:     α=0.35, β=0.65  (landmark dominan)
-# - Engagement:  α=0.45, β=0.55  (landmark dominan)
-# - Confusion:   α=0.75, β=0.25  (SigLIP dominan)
-# - Frustration: α=0.65, β=0.35  (SigLIP dominan)
+# - Boredom:     α=0.50, β=0.50  (Seimbang)
+# - Engagement:  α=0.50, β=0.50  (Seimbang)
+# - Confusion:   α=0.50, β=0.50  (Seimbang)
+# - Frustration: α=0.50, β=0.50  (Seimbang)
 ```
 
 **Alasan bobot berbeda per label:**
 
-- **Boredom & Engagement**: Sinyal geometri (arah kepala, arah mata) sangat spesifik dan tidak ambigu. SigLIP cenderung bingung membedakan siswa yang "fokus" vs "bosan" secara visual.
-- **Confusion & Frustration**: Blendshapes wajah (kerutan alis, cibiran hidung, dll) sangat subtle sehingga landmark tidak cukup sensitif. SigLIP lebih baik dalam menangkap ekspresi wajah yang lebih global.
+- **Boredom & Engagement**: Landmark menangani sinyal geometri yang pasti (arah muka/mata noleh), sedangkan SigLIP dioptimalkan untuk melihat mikro-ekspresi dari muka yang di-crop (misal: kelopak mata berat, tatapan kosong). Keduanya saling melengkapi (50/50).
+- **Confusion & Frustration**: SigLIP menangkap tensi muka keseluruhan, sedangkan Landmark menangkap indikator spesifik (kerutan dahi, rahang terbuka). Keduanya saling melengkapi (50/50).
 
 **Prediksi akhir:**
 ```python
@@ -125,8 +125,8 @@ SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
 # Override per label (LABEL = BOREDOM | ENGAGEMENT | CONFUSION | FRUSTRATION)
-BOREDOM_SIGLIP_WEIGHT=0.35
-BOREDOM_LANDMARK_WEIGHT=0.65
+BOREDOM_SIGLIP_WEIGHT=0.50
+BOREDOM_LANDMARK_WEIGHT=0.50
 ```
 
 Urutan prioritas: **per-label env** → **global env** → **hardcoded default**.

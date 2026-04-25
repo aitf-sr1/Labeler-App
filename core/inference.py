@@ -17,10 +17,10 @@ from .siglip_model import get_siglip, get_device
 
 _LABEL_KEYS   = ["BOREDOM", "ENGAGEMENT", "CONFUSION", "FRUSTRATION"]
 _LABEL_DEFAULTS = [
-    (0.35, 0.65),   # Boredom     — landmark dominan (head yaw + restlessness paling reliable)
-    (0.45, 0.55),   # Engagement  — landmark dominan (forward gate paling reliable)
-    (0.75, 0.25),   # Confusion   — SigLIP dominan (blendshapes subtle, hand rare)
-    (0.65, 0.35),   # Frustration — SigLIP dominan (ekspresi + hand coverage luas)
+    (0.50, 0.50),   # Boredom
+    (0.50, 0.50),   # Engagement
+    (0.50, 0.50),   # Confusion
+    (0.50, 0.50),   # Frustration
 ]
 
 

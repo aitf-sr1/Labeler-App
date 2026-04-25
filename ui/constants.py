@@ -8,47 +8,47 @@ LABEL_COLORS = {
 
 DEFAULT_PROMPT_GROUPS = [
     # 0 — Boredom
-    # 3 prompt NOLEH (kepala ke samping) + 3 prompt MATA WANDERING (kepala lurus tapi mata lirik)
+    # Karena input adalah crop wajah, fokus pada EKSPRESI (mata ngantuk, menguap, tatapan kosong)
+    # bukan sekadar "noleh" (yang sudah ditangani MediaPipe).
     (
-        "a student looking to the side with a blank disinterested bored expression\n"
-        "a student with their face turned showing only their cheek appearing completely bored\n"
-        "a student with head turned away and a slack tired unfocused look\n"
-        "a student staring off with wandering unfocused eyes and a dull bored expression\n"
-        "a student with eyes glancing sideways appearing distracted and mentally absent\n"
-        "a student with a vacant distant stare and droopy heavy eyelids looking disengaged",
+        "a close-up face of a student with heavy droopy eyelids looking extremely sleepy and tired\n"
+        "a close-up face of a student yawning widely with an open mouth showing pure exhaustion\n"
+        "a close-up face of a student with a completely blank, expressionless, and dull stare\n"
+        "a close-up face of a student resting their chin on their hand with lazy unfocused eyes\n"
+        "a close-up face of a student with half-closed eyes appearing mentally absent and disengaged\n"
+        "a close-up face of a student with relaxed facial muscles and a vacant bored expression",
         "",
     ),
     # 1 — Engagement
-    # Fokus pada EYE CONTACT dan ekspresi attentif — bukan "centered" (crop selalu centered!)
     (
-        "a student making direct eye contact with clear focus and engaged attention\n"
-        "a student with bright alert eyes actively watching the screen ahead\n"
-        "a student with an attentive upright posture and focused interested expression\n"
-        "a student nodding and reacting while looking straight at the screen\n"
-        "a student leaning forward with curious raised eyebrows showing interest\n"
-        "a student with a lively responsive face showing understanding and involvement",
+        "a close-up face of a student making direct eye contact with clear focus and engaged attention\n"
+        "a close-up face of a student with bright wide alert eyes actively watching and learning\n"
+        "a close-up face of a student with an attentive expression and a subtle interested smile\n"
+        "a close-up face of a student nodding and reacting with lively responsive facial features\n"
+        "a close-up face of a student with slightly raised eyebrows showing curiosity and focus\n"
+        "a close-up face of a student with a sharp, present, and actively involved expression",
         "",
     ),
     # 2 — Confusion
-    # Furrowed brow + tilted head + searching upward + mouth agak terbuka (ngelamun)
+    # Fokus pada kerutan alis spesifik dan mata menyipit
     (
-        "a student with deeply furrowed eyebrows and a lost puzzled uncertain expression\n"
-        "a student tilting their head sideways with a questioning and confused look\n"
-        "a student with mouth slightly open and eyes searching upward as if stuck\n"
-        "a student with a blank daydreaming stare and slightly slack open mouth\n"
-        "a student squinting with visible mental effort and a concentrated frown\n"
-        "a student with a tense forehead and wide bewildered eyes unable to understand",
+        "a close-up face of a student with deeply furrowed eyebrows looking puzzled and uncertain\n"
+        "a close-up face of a student squinting their eyes with visible mental effort to understand\n"
+        "a close-up face of a student with a slightly open mouth and raised brow looking lost\n"
+        "a close-up face of a student tilting their head with a questioning and perplexed look\n"
+        "a close-up face of a student with a tense forehead scratching their head in confusion\n"
+        "a close-up face of a student with wide bewildered eyes trying hard to process information",
         "",
     ),
     # 3 — Frustration
-    # Ekspresi stress halus — bukan hanya gesture ekstrem (tutup muka)
+    # Fokus pada otot tegang: rahang, bibir ditekan, mata tertutup kesal
     (
-        "a student with tightly furrowed brows and a strained pained frustrated expression\n"
-        "a student appearing stressed and tense with a clenched jaw and pressed lips\n"
-        "a student with a deeply annoyed irritated face showing visible displeasure\n"
-        "a student sighing heavily with closed eyes and a defeated exhausted look\n"
-        "a student touching their forehead or rubbing eyes from mental fatigue\n"
-        "a student with squinting eyes and a stiff rigid frustrated expression",
+        "a close-up face of a student with tightly pressed lips and a strained frustrated expression\n"
+        "a close-up face of a student with a clenched jaw and tense angry eyebrows\n"
+        "a close-up face of a student sighing heavily with eyes squeezed shut in defeat\n"
+        "a close-up face of a student pinching the bridge of their nose showing mental fatigue\n"
+        "a close-up face of a student with a deeply annoyed, irritated, and stressed face\n"
+        "a close-up face of a student rubbing their eyes forcefully looking completely overwhelmed",
         "",
     ),
 ]

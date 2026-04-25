@@ -196,10 +196,10 @@ prediction = 1 if avg_score >= threshold else 0
 
 | Label | α (SigLIP) | β (Landmark) | Alasan |
 |---|---|---|---|
-| Boredom | 0.35 | 0.65 | Landmark (head yaw + temporal restlessness) paling reliabel |
-| Engagement | 0.45 | 0.55 | Landmark (forward gaze gate) paling reliabel |
-| Confusion | 0.75 | 0.25 | SigLIP dominan — blendshapes subtle & tangan jarang |
-| Frustration | 0.65 | 0.35 | SigLIP dominan — coverage ekspresi wajah lebih luas |
+| Boredom | 0.50 | 0.50 | Seimbang: Landmark untuk pose (noleh), SigLIP untuk ekspresi (ngantuk) |
+| Engagement | 0.50 | 0.50 | Seimbang: Landmark untuk pose tegak, SigLIP untuk mata fokus |
+| Confusion | 0.50 | 0.50 | Seimbang: Landmark untuk kerutan alis, SigLIP untuk ekspresi bingung |
+| Frustration | 0.50 | 0.50 | Seimbang: Keduanya saling melengkapi untuk deteksi stres |
 
 **Threshold default:** 0.5 untuk semua label (dapat diubah di UI atau `.env`).
 
@@ -232,14 +232,14 @@ SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
 # Override per label (format: {LABEL}_SIGLIP_WEIGHT / {LABEL}_LANDMARK_WEIGHT)
-BOREDOM_SIGLIP_WEIGHT=0.35
-BOREDOM_LANDMARK_WEIGHT=0.65
-ENGAGEMENT_SIGLIP_WEIGHT=0.45
-ENGAGEMENT_LANDMARK_WEIGHT=0.55
-CONFUSION_SIGLIP_WEIGHT=0.75
-CONFUSION_LANDMARK_WEIGHT=0.25
-FRUSTRATION_SIGLIP_WEIGHT=0.65
-FRUSTRATION_LANDMARK_WEIGHT=0.35
+BOREDOM_SIGLIP_WEIGHT=0.50
+BOREDOM_LANDMARK_WEIGHT=0.50
+ENGAGEMENT_SIGLIP_WEIGHT=0.50
+ENGAGEMENT_LANDMARK_WEIGHT=0.50
+CONFUSION_SIGLIP_WEIGHT=0.50
+CONFUSION_LANDMARK_WEIGHT=0.50
+FRUSTRATION_SIGLIP_WEIGHT=0.50
+FRUSTRATION_LANDMARK_WEIGHT=0.50
 ```
 
 ---
