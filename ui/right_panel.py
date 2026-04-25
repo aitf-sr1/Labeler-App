@@ -106,7 +106,7 @@ class RightPanel:
         self.lbl_batch_status.pack(anchor="w", padx=14, pady=(0, 2))
 
         self.btn_restart_batch = ctk.CTkButton(
-            parent, text="🔄 Restart Batch", command=self.app._restart_batch,
+            parent, text="Restart Batch", command=self.app._restart_batch,
             fg_color="#f59e0b", hover_color="#d97706",
             font=("Poppins", 9), height=24, width=120,
         )

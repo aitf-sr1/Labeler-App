@@ -119,7 +119,7 @@ class VideoLabelerApp:
         ).pack(side="left", padx=(14, 4), pady=8)
 
         ctk.CTkButton(
-            bar, text="📁 Output", command=self._change_output_folder,
+            bar, text="Output", command=self._change_output_folder,
             font=self.font_sm, fg_color="#6366f1", hover_color="#4f46e5",
             width=80, height=30,
         ).pack(side="left", padx=(0, 10), pady=8)
@@ -151,13 +151,13 @@ class VideoLabelerApp:
         bar.grid_propagate(False)
 
         ctk.CTkButton(
-            bar, text="◀  Prev", command=self.prev_video,
+            bar, text="Prev", command=self.prev_video,
             font=self.font_sm, fg_color=("#9ca3af", "#4b5563"),
             hover_color=("#6b7280", "#374151"), width=90, height=30,
         ).pack(side="left", padx=(14, 6), pady=8)
 
         ctk.CTkButton(
-            bar, text="⏭  Skip", command=self.skip_video,
+            bar, text="Skip", command=self.skip_video,
             font=self.font_sm, fg_color=("#f59e0b", "#b45309"),
             hover_color=("#d97706", "#92400e"), width=90, height=30,
         ).pack(side="left", padx=(6, 6), pady=8)
@@ -169,7 +169,7 @@ class VideoLabelerApp:
         self.chk_flag.pack(side="left", padx=16)
 
         ctk.CTkButton(
-            bar, text="Save & Next  ▶", command=self.save_and_next,
+            bar, text="Save & Next", command=self.save_and_next,
             font=self.font_bold, fg_color="#3b82f6", hover_color="#2563eb",
             width=130, height=30,
         ).pack(side="right", padx=14, pady=8)
@@ -294,7 +294,7 @@ class VideoLabelerApp:
         self.batch_history = {}
         save_batch_history(self.path_json_batch_history, self.batch_history)
         self.right_panel.lbl_batch_status.configure(
-            text="Batch history direset ✓", text_color="#10b981"
+            text="Batch history direset", text_color="#10b981"
         )
         print("[Batch] History direset — semua video akan diproses ulang.")
 
@@ -302,7 +302,7 @@ class VideoLabelerApp:
         """Perbarui label counter flag di topbar."""
         n = len(self.flagged_data)
         if n > 0:
-            self.lbl_flag_count.configure(text=f"🚩 {n} flagged")
+            self.lbl_flag_count.configure(text=f"{n} flagged")
         else:
             self.lbl_flag_count.configure(text="")
 
@@ -725,7 +725,7 @@ class VideoLabelerApp:
                 self._refresh_all_label_buttons()
                 self.save_current_state()
                 self.refresh_frame_gallery()
-                self.right_panel.lbl_batch_status.configure(text="Selesai ✓", text_color="#10b981")
+                self.right_panel.lbl_batch_status.configure(text="Selesai", text_color="#10b981")
 
             self.root.after(0, update_ui)
 
@@ -777,7 +777,7 @@ class VideoLabelerApp:
                     skipped_count += 1
                     def upd_skip(i=idx, r=rel_path, sc=skipped_count):
                         self.right_panel.lbl_batch_status.configure(
-                            text=f"Skip (sudah ada) {i+1}/{total}: {os.path.basename(r)}  ✓{sc} cached",
+                            text=f"Skip (sudah ada) {i+1}/{total}: {os.path.basename(r)}  {sc} cached",
                             text_color="#6b7280",
                         )
                     self.root.after(0, upd_skip)
@@ -869,7 +869,7 @@ class VideoLabelerApp:
 
             def on_finish():
                 self.batch_running = False
-                msg = "Dibatalkan" if self.cancel_batch else "Selesai ✓"
+                msg = "Dibatalkan" if self.cancel_batch else "Selesai"
                 self.right_panel.lbl_batch_status.configure(text=msg, text_color="#10b981" if not self.cancel_batch else "#ef4444")
                 self.right_panel.btn_proses_semua.configure(
                     text="Proses Semua (Batch)", fg_color="#6366f1", hover_color="#4f46e5"

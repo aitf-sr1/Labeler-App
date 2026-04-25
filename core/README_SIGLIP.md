@@ -40,24 +40,21 @@ Alur:
 
 Setiap label memiliki 6 prompt positif yang ditulis di `ui/constants.py`. Prompt dirancang untuk mendeskripsikan ekspresi visual spesifik dalam konteks belajar siswa (bukan deskripsi emosi generik).
 
-### Per-Group Sigmoid Shift
+### Murni Sigmoid (Independent Scoring)
 
-Ini adalah teknik kunci yang membuat scoring menjadi **independen per emosi**:
+Berbeda dengan model berbasis Softmax di mana kelas-kelas bersaing, SigLIP (Sigmoid-Loss Image-Language Pretraining) dilatih menggunakan fungsi Sigmoid independen untuk setiap *image-text pair*.
+
+Oleh karena itu, logit asli bisa (dan harus) langsung dimasukkan ke `sigmoid()` untuk mendapatkan probabilitas valid:
 
 ```python
-# Untuk setiap emosi i dan setiap frame f:
-group_logits = logits[f, prompt_indices[i]]       # [6 logit]
-max_logit    = max(group_logits)
-shifted      = group_logits - max_logit + 2.0     # best prompt → 2.0
-probs        = sigmoid(shifted)                    # best prompt → sigmoid(2.0) ≈ 0.88
-siglip_score[f][i] = mean(probs)                  # rata-rata 6 prompt
+# Untuk setiap emosi i:
+group_logits = logits[:, prompt_indices[i]]       # [n_frames, 6]
+probs        = torch.sigmoid(group_logits)        # probabilitas (0-1) murni
+siglip_score[i] = mean(probs, dim=1)              # rata-rata 6 prompt per frame
 ```
 
-**Mengapa shift ke 2.0?**  
-`sigmoid(2.0) ≈ 0.88` memberikan skor tinggi yang masuk akal untuk prompt terbaik dalam grup. Tanpa shift, semua logit bernilai negatif (cosine similarity rendah) dan sigmoid-nya akan sangat kecil.
-
-**Mengapa per-group, bukan global?**  
-Jika semua 24 prompt (4 emosi × 6 prompt) dinormalisasi bersama, emosi dengan logit paling tinggi (biasanya Engagement) akan selalu mendominasi. Per-group shift memastikan setiap emosi **dinilai relatif terhadap prompt terbaiknya sendiri**.
+**Mengapa ini penting?**  
+Pendekatan sebelumnya menggunakan normalisasi "Per-Group Max Shift" (mengurangi logit dengan logit tertinggi di grup + 2.0). Secara matematis ini fatal karena memaksa logit tertinggi di setiap grup untuk *selalu* menjadi probabilitas ~0.88, bahkan jika logit aslinya sangat negatif (misalnya saat emosi tersebut tidak ada). Dengan **Murni Sigmoid**, probabilitas benar-benar mencerminkan tingkat kecocokan absolut model terhadap prompt, tanpa false-positive buatan.
 
 ---
 
@@ -98,7 +95,7 @@ Lihat [README.md](../README.md#aturan-scoring--perhitungan) untuk formula lengka
 hybrid_score = α × siglip_score + β × landmark_score
 
 # α dan β dibaca dari env, berbeda per label:
-# - Boredom:     α=0.45, β=0.55  (landmark dominan)
+# - Boredom:     α=0.35, β=0.65  (landmark dominan)
 # - Engagement:  α=0.45, β=0.55  (landmark dominan)
 # - Confusion:   α=0.75, β=0.25  (SigLIP dominan)
 # - Frustration: α=0.65, β=0.35  (SigLIP dominan)
@@ -127,8 +124,8 @@ SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
 # Override per label (LABEL = BOREDOM | ENGAGEMENT | CONFUSION | FRUSTRATION)
-BOREDOM_SIGLIP_WEIGHT=0.45
-BOREDOM_LANDMARK_WEIGHT=0.55
+BOREDOM_SIGLIP_WEIGHT=0.35
+BOREDOM_LANDMARK_WEIGHT=0.65
 ```
 
 Urutan prioritas: **per-label env** → **global env** → **hardcoded default**.

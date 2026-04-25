@@ -110,15 +110,13 @@ Ini adalah bagian inti dari sistem. Skor akhir per label dihitung melalui dua ta
 Frame (1-16) × Prompt (6 per label) → Logits [n_frames × n_prompts]
 ```
 
-**Per-Group Sigmoid Shift** (diterapkan per emosi, bukan global):
+**Murni Sigmoid (Independent Scoring)**:
 ```
-max_in_group  = max(logit) dalam 6 prompt emosi ke-i, per frame
-shifted       = logit - max_in_group + 2.0   # best prompt → 2.0
-sigmoid_score = sigmoid(shifted)              # best prompt → ~0.88
+sigmoid_score = sigmoid(logit)               # hitung probabilitas (0-1) secara independen
 siglip_score  = mean(sigmoid_score)           # rata-rata 6 prompt per frame
 ```
 
-*Kenapa per-group?* Jika di-shift secara global (24 prompt bersaing), Engagement selalu mendominasi karena logit-nya cenderung lebih tinggi. Per-group shift memastikan setiap emosi dinilai secara **independen**.
+*Kenapa Sigmoid langsung?* SigLIP (Sigmoid-Loss Image-Language Pretraining) secara arsitektur dilatih menggunakan fungsi Sigmoid independen, bukan Softmax yang saling berkompetisi. Oleh karena itu, logit asli bisa langsung dimasukkan ke `sigmoid()` untuk mendapatkan probabilitas kemunculan emosi tersebut secara mandiri.
 
 ### 2. Landmark Scoring (Geometri Wajah)
 
@@ -198,7 +196,7 @@ prediction = 1 if avg_score >= threshold else 0
 
 | Label | α (SigLIP) | β (Landmark) | Alasan |
 |---|---|---|---|
-| Boredom | 0.45 | 0.55 | Landmark (head yaw) paling reliabel untuk boredom |
+| Boredom | 0.35 | 0.65 | Landmark (head yaw + temporal restlessness) paling reliabel |
 | Engagement | 0.45 | 0.55 | Landmark (forward gaze gate) paling reliabel |
 | Confusion | 0.75 | 0.25 | SigLIP dominan — blendshapes subtle & tangan jarang |
 | Frustration | 0.65 | 0.35 | SigLIP dominan — coverage ekspresi wajah lebih luas |
@@ -234,8 +232,8 @@ SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
 # Override per label (format: {LABEL}_SIGLIP_WEIGHT / {LABEL}_LANDMARK_WEIGHT)
-BOREDOM_SIGLIP_WEIGHT=0.45
-BOREDOM_LANDMARK_WEIGHT=0.55
+BOREDOM_SIGLIP_WEIGHT=0.35
+BOREDOM_LANDMARK_WEIGHT=0.65
 ENGAGEMENT_SIGLIP_WEIGHT=0.45
 ENGAGEMENT_LANDMARK_WEIGHT=0.55
 CONFUSION_SIGLIP_WEIGHT=0.75
