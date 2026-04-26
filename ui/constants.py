@@ -8,43 +8,50 @@ LABEL_COLORS = {
 
 DEFAULT_PROMPT_GROUPS = [
     # 0 — Boredom
+    # Karena input adalah crop wajah, fokus pada EKSPRESI (mata ngantuk, menguap, tatapan kosong)
+    # bukan sekadar "noleh" (yang sudah ditangani MediaPipe).
     (
-        "a student looking away from the screen with no interest\n"
-        "a student turning their face away from the monitor\n"
-        "a student not paying attention and looking around the room\n"
-        "a student yawning with mouth wide open\n"
-        "a student with eyes not directed at the screenor looking down\n"
-        "a student appearing completely inattentive and distracted",
+        "a face of a student with heavy droopy eyelids looking extremely sleepy and tired\n"
+        "a face of a student yawning widely with an open mouth showing pure exhaustion\n"
+        "a face of a student with a completely blank, expressionless, and dull stare\n"
+        "a face of a student resting their chin on their hand with lazy unfocused eyes\n"
+        "a face of a student with half-closed eyes appearing mentally absent and disengaged\n"
+        "a face of a student with relaxed facial muscles and a vacant bored expression",
         "",
     ),
     # 1 — Engagement
     (
-        "a student staring intently at the screen with focused eyes\n"
-        "a student with eyes fully directed at the monitor\n"
-        "a student laughing and looking cheerful while learning\n"
-        "a student smiling happily and enjoying the lesson\n"
-        "a student looking motivated and enthusiastic\n"
-        "a student leaning forward with great interest and energy",
+        "a face of a student making direct eye contact with clear focus and engaged attention\n"
+        "a face of a student with bright wide alert eyes actively watching and learning\n"
+        "a face of a student with an attentive expression and a subtle interested smile\n"
+        "a face of a student nodding and reacting with lively responsive facial features\n"
+        "a face of a student with slightly raised eyebrows showing curiosity and focus\n"
+        "a face of a student with a sharp, present, and actively involved expression",
         "",
     ),
     # 2 — Confusion
+    # Fokus pada kerutan alis spesifik dan mata menyipit
     (
-        "a student with a blank distant stare and mind elsewhere\n"
-        "a student daydreaming with eyes not focused on anything\n"
-        "a student resting chin or face on hand while staring blankly\n"
-        "a student squinting as if trying hard to understand\n"
-        "a student with a puzzled expression showing they do not understand\n"
-        "a student looking lost and confused by the material",
+        "a face of a student with deeply furrowed eyebrows looking puzzled and uncertain\n"
+        "a face of a student squinting their eyes with visible mental effort to understand\n"
+        "a face of a student with a slightly open mouth and raised brow looking lost\n"
+        "a face of a student tilting their head with a questioning and perplexed look\n"
+        "a face of a student with a thinking expression, pursed lips, and furrowed eyebrows\n"
+        "a face of a student scratching their head feeling puzzled and confused\n"
+        "a face of a student concentrating hard with a slightly open mouth and squinting eyes",
         "",
     ),
     # 3 — Frustration
+    # Fokus pada otot tegang: rahang, bibir ditekan, mata tertutup kesal
     (
-        "a student looking exhausted and mentally drained from studying\n"
-        "a student covering their face with both hands\n"
-        "a student looking visibly stressed and overwhelmed\n"
-        "a student with a vacant empty stare showing exhaustion\n"
-        "a student pressing hands against face or forehead in frustration\n"
-        "a student appearing burned out and unable to continue",
+        "a face of a student looking extremely angry and stressed with a clenched jaw\n"
+        "a face of a student with a fierce angry expression and gritting teeth\n"
+        "a face of a student sighing heavily with eyes squeezed shut in frustration\n"
+        "a face of a student pinching the bridge of their nose showing mental fatigue\n"
+        "a face of a student resting their head on their hand looking completely stressed out\n"
+        "a face of a student rubbing their eyes forcefully looking completely overwhelmed",
         "",
     ),
 ]
+
+
