@@ -227,34 +227,79 @@ Keluaran murni dari model SigLIP berupa *logits* (skor mentah yang bisa bernilai
 
 | Label | α (SigLIP) | β (Landmark) | Alasan & Pembagian Tugas (*Ratio Justification*) |
 |---|---|---|---|
-| Boredom | 0.50 | 0.50 | MediaPipe sangat kuat mendeteksi kepala menunduk (pose), SigLIP kuat mendeteksi aura mengantuk/kosong. |
-| Engagement | 0.50 | 0.50 | MediaPipe mendeteksi kepala tegak, SigLIP mendeteksi "tatapan fokus ke monitor". |
-| Confusion | 0.50 | 0.50 | MediaPipe mendeteksi kerutan dahi fisik, SigLIP memvalidasi niat "sedang berpikir keras". |
-| Frustration | 0.50 | 0.50 | MediaPipe mendeteksi gestur fisik ekstrem (facepalm/otot tegang), SigLIP menangkap *stress/anger*. |
+| Boredom | 0.15 | 0.85 | Landmark jauh lebih akurat mendeteksi arah wajah/yaw dan lirik mata dibanding SigLIP pada crop wajah. |
+| Engagement | 0.15 | 0.85 | Fokus pada kepala tegak dan mata lurus (Gate Logic) yang hanya bisa dihitung pasti oleh Landmark. |
+| Confusion | 0.60 | 0.40 | SigLIP lebih unggul menangkap "niat" ekspresi berpikir halus dibanding rumus landmark yang kaku. |
+| Frustration | 0.50 | 0.50 | Seimbang: Landmark mendeteksi gestur fisik (facepalm), SigLIP menangkap aura stres/marah. |
 
 ---
 
-### 4. Strategi Prompting SigLIP 2
+### 4. Strategi Prompting SigLIP 2 (Full List)
 
-Kualitas SigLIP sangat bergantung pada deskripsi bahasa (*Prompt Engineering*). Prompt dirancang secara spesifik untuk menghindari kata *overlap* (tumpang tindih) yang membingungkan AI.
+SigLIP bekerja dengan membandingkan gambar dengan deskripsi teks. Berikut adalah daftar lengkap prompt yang digunakan beserta tujuan dan terjemahannya:
 
-#### Confusion Prompts
-Fokus utama: Berpikir keras, bingung, tidak yakin.
-*   **EN:** *"a face of a student with a thinking expression, pursed lips, and furrowed eyebrows"*
-    *   **ID:** *"wajah siswa dengan ekspresi berpikir, bibir mengerucut, dan alis berkerut"*
-    *   **Alasan:** Spesifik memisahkan 'berpikir' dari 'marah'.
-*   **EN:** *"a face of a student scratching their head feeling puzzled and confused"*
-    *   **ID:** *"wajah siswa yang menggaruk kepalanya merasa kebingungan"*
-    *   **Alasan:** Secara eksplisit menyebutkan "garuk kepala" agar SigLIP bisa mem-backup MediaPipe saat tangan gagal terdeteksi utuh.
+#### A. Boredom (Label 0)
+Fokus pada kelelahan fisik dan hilangnya fokus.
+1. **"a face of a student with heavy droopy eyelids looking extremely sleepy and tired"**
+   *(wajah siswa dengan kelopak mata berat tampak sangat mengantuk dan lelah)*
+2. **"a face of a student yawning widely with an open mouth showing pure exhaustion"**
+   *(wajah siswa menguap lebar dengan mulut terbuka menunjukkan kelelahan luar biasa)*
+3. **"a face of a student with a completely blank, expressionless, and dull stare"**
+   *(wajah siswa dengan tatapan kosong, tanpa ekspresi, dan kusam)*
+4. **"a face of a student resting their chin on their hand with lazy unfocused eyes"**
+   *(wajah siswa menopang dagu dengan tangan dengan mata malas yang tidak fokus)*
+5. **"a face of a student with half-closed eyes appearing mentally absent and disengaged"**
+   *(wajah siswa dengan mata setengah tertutup tampak tidak hadir secara mental)*
+6. **"a face of a student with relaxed facial muscles and a vacant bored expression"**
+   *(wajah siswa dengan otot wajah rileks dan ekspresi bosan yang kosong)*
 
-#### Frustration Prompts
-Fokus utama: Stres berat, kemarahan, tekanan mental berlebihan.
-*   **EN:** *"a face of a student looking extremely angry and stressed with a clenched jaw"*
-    *   **ID:** *"wajah siswa yang terlihat sangat marah dan stres dengan rahang mengeras"*
-    *   **Alasan:** Menghapus kata abu-abu seperti *"strained"* (tegang) yang sering disalahartikan sebagai tegang memikirkan tugas (*Confusion*). Diganti dengan *"extremely angry/stressed"* yang mutlak.
-*   **EN:** *"a face of a student resting their head on their hand looking completely stressed out"*
-    *   **ID:** *"wajah siswa yang menopang kepalanya di tangan terlihat sangat stres"*
-    *   **Alasan:** Mendefinisikan gestur *facepalm/topang dagu* secara harfiah.
+#### B. Engagement (Label 1)
+Fokus pada kehadiran mental dan fokus visual.
+1. **"a face of a student making direct eye contact with clear focus and engaged attention"**
+   *(wajah siswa melakukan kontak mata langsung dengan fokus yang jelas)*
+2. **"a face of a student with bright wide alert eyes actively watching and learning"**
+   *(wajah siswa dengan mata terang dan waspada sedang menonton dan belajar secara aktif)*
+3. **"a face of a student with an attentive expression and a subtle interested smile"**
+   *(wajah siswa dengan ekspresi penuh perhatian dan senyum ketertarikan tipis)*
+4. **"a face of a student nodding and reacting with lively responsive facial features"**
+   *(wajah siswa mengangguk dan bereaksi dengan fitur wajah yang responsif)*
+5. **"a face of a student with slightly raised eyebrows showing curiosity and focus"**
+   *(wajah siswa dengan alis sedikit terangkat menunjukkan rasa ingin tahu)*
+6. **"a face of a student with a sharp, present, and actively involved expression"**
+   *(wajah siswa dengan ekspresi yang tajam, hadir, dan terlibat aktif)*
+
+#### C. Confusion (Label 2)
+Fokus pada upaya kognitif dan ketidakpastian.
+1. **"a face of a student with deeply furrowed eyebrows looking puzzled and uncertain"**
+   *(wajah siswa dengan alis berkerut dalam tampak bingung dan tidak yakin)*
+2. **"a face of a student squinting their eyes with visible mental effort to understand"**
+   *(wajah siswa menyipitkan mata dengan upaya mental untuk memahami)*
+3. **"a face of a student with a slightly open mouth and raised brow looking lost"**
+   *(wajah siswa dengan mulut sedikit terbuka dan alis terangkat tampak linglung)*
+4. **"a face of a student tilting their head with a questioning and perplexed look"**
+   *(wajah siswa memiringkan kepala dengan tatapan bertanya dan bingung)*
+5. **"a face of a student with a thinking expression, pursed lips, and furrowed eyebrows"**
+   *(wajah siswa dengan ekspresi berpikir, bibir mengerucut, dan alis berkerut)*
+6. **"a face of a student scratching their head feeling puzzled and confused"**
+   *(wajah siswa menggaruk kepala merasa bingung dan kebingungan)*
+
+#### D. Frustration (Label 3)
+Fokus pada ketegangan emosional dan stres berat.
+1. **"a face of a student looking extremely angry and stressed with a clenched jaw"**
+   *(wajah siswa tampak sangat marah dan stres dengan rahang mengatup kuat)*
+2. **"a face of a student with a fierce angry expression and gritting teeth"**
+   *(wajah siswa dengan ekspresi marah yang garang dan menggertakkan gigi)*
+3. **"a face of a student sighing heavily with eyes squeezed shut in frustration"**
+   *(wajah siswa mendesah berat dengan mata tertutup rapat karena frustrasi)*
+4. **"a face of a student pinching the bridge of their nose showing mental fatigue"**
+   *(wajah siswa mencubit pangkal hidung menunjukkan kelelahan mental)*
+5. **"a face of a student resting their head on their hand looking completely stressed out"**
+   *(wajah siswa menopang kepala di tangan tampak benar-benar stres)*
+6. **"a face of a student rubbing their eyes forcefully looking completely overwhelmed"**
+   *(wajah siswa mengucek mata dengan paksa tampak benar-benar kewalahan)*
+
+#### E. Threshold & Kalibrasi (Empirical Bias)
+Agar skor SigLIP tidak terlalu rendah (karena logit mentah sering bernilai negatif), sistem menggunakan **Empirical Bias sebesar +3.5**. Nilai ini menggeser kurva sigmoid ke area yang lebih sensitif (0.3 - 0.9) sehingga hybrid scoring bisa berjalan lebih seimbang.
 
 Dengan pemisahan leksikal ini, SigLIP tidak lagi kebingungan membedakan orang yang mengerutkan dahi karena mikir (*Confusion*) dan orang yang mengerutkan dahi karena frustrasi (*Frustration*).
 

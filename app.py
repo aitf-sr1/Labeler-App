@@ -21,6 +21,7 @@ import os
 import glob
 import time
 import threading
+import concurrent.futures
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -84,6 +85,7 @@ class VideoLabelerApp:
         self.viz_images = []   # Cache viz PIL images untuk video aktif
 
         self.batch_running, self.cancel_batch = False, False
+        self.save_lock = threading.RLock()
 
         self._build_ui()
 
@@ -245,6 +247,8 @@ class VideoLabelerApp:
         if saved:
             for i, val in enumerate(saved):
                 self.right_panel.threshold_vars[i].set(val)
+                if i < len(self.right_panel.threshold_labels):
+                    self.right_panel.threshold_labels[i].configure(text=f"{float(val):.2f}")
             print(f"[Threshold] Dimuat dari disk: {[f'{v:.2f}' for v in saved]}")
 
     def _save_current_thresholds(self):
@@ -652,7 +656,8 @@ class VideoLabelerApp:
             },
             "thresholds": res["thresholds"],
         }
-        save_batch_history(self.path_json_batch_history, self.batch_history)
+        with self.save_lock:
+            save_batch_history(self.path_json_batch_history, self.batch_history)
 
         if update_label_vars:
             for i, lbl in enumerate(LABELS):
@@ -782,25 +787,23 @@ class VideoLabelerApp:
         self.right_panel.btn_proses_satu.configure(state="disabled")
 
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
-
         def worker():
             total         = len(self.video_files)
             already_done  = set(self.batch_history.keys())
-            skipped_count = 0
+            max_workers   = int(os.getenv("MAX_WORKERS", "2"))
 
-            for idx, vp in enumerate(self.video_files):
-                if self.cancel_batch: break
+            def process_video(idx, vp):
+                if self.cancel_batch: return
                 rel_path = os.path.relpath(vp, self.root_folder)
 
                 if rel_path in already_done:
-                    skipped_count += 1
-                    def upd_skip(i=idx, r=rel_path, sc=skipped_count):
+                    def upd_skip(i=idx, r=rel_path):
                         self.right_panel.lbl_batch_status.configure(
-                            text=f"Skip (sudah ada) {i+1}/{total}: {os.path.basename(r)}  {sc} cached",
+                            text=f"Skip (sudah ada) {i+1}/{total}: {os.path.basename(r)}",
                             text_color="#6b7280",
                         )
                     self.root.after(0, upd_skip)
-                    continue
+                    return
 
                 def upd_status(i=idx, r=rel_path):
                     self.right_panel.lbl_batch_status.configure(
@@ -813,13 +816,13 @@ class VideoLabelerApp:
                     imgs, no_face_count, multi_face_count, landmark_results, _ = prepare_cropped_frames(
                         vp, self.root_folder, self.path_dir_cropped
                     )
-                    if not imgs: continue
+                    if not imgs: return
 
-                    # Auto-flag jika frame kurang dari 16 (video terlalu pendek, mis. <1 detik)
                     if len(imgs) < 16:
-                        self.flagged_data.add(rel_path)
-                        self.annotations_data.pop(rel_path, None)
-                        save_flagged(self.path_csv_flagged, self.flagged_data)
+                        with self.save_lock:
+                            self.flagged_data.add(rel_path)
+                            self.annotations_data.pop(rel_path, None)
+                            save_flagged(self.path_csv_flagged, self.flagged_data)
                         self.root.after(0, self._update_flag_count)
                         def upd_shortflag(r=rel_path, nf=len(imgs)):
                             self.right_panel.lbl_batch_status.configure(
@@ -827,13 +830,13 @@ class VideoLabelerApp:
                                 text_color="#ef4444",
                             )
                         self.root.after(0, upd_shortflag)
-                        continue
+                        return
 
-                    # Auto-flag jika >50% frame tidak terdeteksi wajah
                     if no_face_count > 8:
-                        self.flagged_data.add(rel_path)
-                        self.annotations_data.pop(rel_path, None)
-                        save_flagged(self.path_csv_flagged, self.flagged_data)
+                        with self.save_lock:
+                            self.flagged_data.add(rel_path)
+                            self.annotations_data.pop(rel_path, None)
+                            save_flagged(self.path_csv_flagged, self.flagged_data)
                         self.root.after(0, self._update_flag_count)
                         def upd_autoflag(r=rel_path, nf=no_face_count):
                             self.right_panel.lbl_batch_status.configure(
@@ -841,14 +844,14 @@ class VideoLabelerApp:
                                 text_color="#ef4444",
                             )
                         self.root.after(0, upd_autoflag)
-                        continue
+                        return
 
-                    # Auto-flag jika terlalu banyak frame dengan >1 wajah
                     mf_thr = int(os.getenv("MULTI_FACE_FRAMES_THRESHOLD", "4"))
                     if multi_face_count > mf_thr:
-                        self.flagged_data.add(rel_path)
-                        self.annotations_data.pop(rel_path, None)
-                        save_flagged(self.path_csv_flagged, self.flagged_data)
+                        with self.save_lock:
+                            self.flagged_data.add(rel_path)
+                            self.annotations_data.pop(rel_path, None)
+                            save_flagged(self.path_csv_flagged, self.flagged_data)
                         self.root.after(0, self._update_flag_count)
                         def upd_multiface(r=rel_path, mfc=multi_face_count):
                             self.right_panel.lbl_batch_status.configure(
@@ -856,17 +859,18 @@ class VideoLabelerApp:
                                 text_color="#ef4444",
                             )
                         self.root.after(0, upd_multiface)
-                        continue
+                        return
 
                     res = run_siglip_on_frames(imgs, prompts, ths,
                                                landmark_results=landmark_results)
 
-                    self._apply_siglip_result(rel_path, res, update_label_vars=False)
-
-                    if rel_path not in self.flagged_data:
-                        self.annotations_data[rel_path] = [
-                            str(res["per_label"][i]["prediction"]) for i in range(4)
-                        ]
+                    with self.save_lock:
+                        self._apply_siglip_result(rel_path, res, update_label_vars=False)
+                        if rel_path not in self.flagged_data:
+                            self.annotations_data[rel_path] = [
+                                str(1 if res["per_label"][i]["vote_pos"] >= 8 else 0) for i in range(len(LABELS))
+                            ]
+                            save_annotations(self.path_csv_annotations, self.annotations_data)
 
                     current_rel = os.path.relpath(
                         self.video_files[self.current_index], self.root_folder
@@ -885,6 +889,11 @@ class VideoLabelerApp:
 
                 except Exception as e:
                     print(f"[Error] Failed to process {rel_path}: {e}")
+
+            # Eksekusi semua video dengan Multi-threading
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(process_video, idx, vp) for idx, vp in enumerate(self.video_files)]
+                concurrent.futures.wait(futures)
 
             def on_finish():
                 self.batch_running = False

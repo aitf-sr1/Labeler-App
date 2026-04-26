@@ -45,6 +45,7 @@ class RightPanel:
         self.ai_score_labels   = {}
         self.acc_bodies        = []
         self.acc_open_flags    = []
+        self.threshold_labels  = []
 
         self._build(parent)
 
@@ -260,6 +261,7 @@ class RightPanel:
         thr_lbl_w = ctk.CTkLabel(thr_row, text="0.50",
                                   font=("Poppins", 9), text_color="gray", width=32)
         thr_lbl_w.pack(side="right")
+        self.threshold_labels.append(thr_lbl_w)
 
         def _make_cb(ref=thr_lbl_w):
             def cb(v):

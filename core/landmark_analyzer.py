@@ -15,6 +15,7 @@ Model diunduh otomatis ke ~/.cache/siglip_labeler/ pada pertama kali digunakan.
 import os
 import math
 import urllib.request
+import threading
 from dataclasses import dataclass, field
 
 import cv2
@@ -68,56 +69,60 @@ class LandmarkResult:
 
 
 # ── Lazy-load FaceLandmarker ─────────────────────────────────────────────────
+_face_lock = threading.Lock()
 def _get_landmarker():
     global _landmarker
-    if _landmarker is None:
-        from mediapipe.tasks import python as mp_tasks
-        from mediapipe.tasks.python import vision as mp_vision
+    with _face_lock:
+        if _landmarker is None:
+            from mediapipe.tasks import python as mp_tasks
+            from mediapipe.tasks.python import vision as mp_vision
 
-        cache_dir  = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
-        os.makedirs(cache_dir, exist_ok=True)
-        model_path = os.path.join(cache_dir, _LANDMARKER_NAME)
+            cache_dir  = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
+            os.makedirs(cache_dir, exist_ok=True)
+            model_path = os.path.join(cache_dir, _LANDMARKER_NAME)
 
-        if not os.path.exists(model_path):
-            print(f"Mengunduh FaceLandmarker model ke {model_path}…")
-            urllib.request.urlretrieve(_LANDMARKER_URL, model_path)
+            if not os.path.exists(model_path):
+                print(f"Mengunduh FaceLandmarker model ke {model_path}…")
+                urllib.request.urlretrieve(_LANDMARKER_URL, model_path)
 
-        base_opts = mp_tasks.BaseOptions(model_asset_path=model_path)
-        opts = mp_vision.FaceLandmarkerOptions(
-            base_options=base_opts,
-            output_face_blendshapes=True,
-            output_facial_transformation_matrixes=True,
-            num_faces=1,
-            min_face_detection_confidence=0.40,
-            min_face_presence_confidence=0.40,
-        )
-        _landmarker = mp_vision.FaceLandmarker.create_from_options(opts)
+            base_opts = mp_tasks.BaseOptions(model_asset_path=model_path)
+            opts = mp_vision.FaceLandmarkerOptions(
+                base_options=base_opts,
+                output_face_blendshapes=True,
+                output_facial_transformation_matrixes=True,
+                num_faces=1,
+                min_face_detection_confidence=0.40,
+                min_face_presence_confidence=0.40,
+            )
+            _landmarker = mp_vision.FaceLandmarker.create_from_options(opts)
     return _landmarker
 
 
 # ── Lazy-load HandLandmarker ─────────────────────────────────────────────────
+_hand_lock = threading.Lock()
 def _get_hand_landmarker():
     global _hand_landmarker
-    if _hand_landmarker is None:
-        from mediapipe.tasks import python as mp_tasks
-        from mediapipe.tasks.python import vision as mp_vision
+    with _hand_lock:
+        if _hand_landmarker is None:
+            from mediapipe.tasks import python as mp_tasks
+            from mediapipe.tasks.python import vision as mp_vision
 
-        cache_dir  = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
-        os.makedirs(cache_dir, exist_ok=True)
-        model_path = os.path.join(cache_dir, _HAND_NAME)
+            cache_dir  = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
+            os.makedirs(cache_dir, exist_ok=True)
+            model_path = os.path.join(cache_dir, _HAND_NAME)
 
-        if not os.path.exists(model_path):
-            print(f"Mengunduh HandLandmarker model ke {model_path}…")
-            urllib.request.urlretrieve(_HAND_URL, model_path)
+            if not os.path.exists(model_path):
+                print(f"Mengunduh HandLandmarker model ke {model_path}…")
+                urllib.request.urlretrieve(_HAND_URL, model_path)
 
-        base_opts = mp_tasks.BaseOptions(model_asset_path=model_path)
-        opts = mp_vision.HandLandmarkerOptions(
-            base_options=base_opts,
-            num_hands=2,
-            min_hand_detection_confidence=0.30,
-            min_hand_presence_confidence=0.30,
-        )
-        _hand_landmarker = mp_vision.HandLandmarker.create_from_options(opts)
+            base_opts = mp_tasks.BaseOptions(model_asset_path=model_path)
+            opts = mp_vision.HandLandmarkerOptions(
+                base_options=base_opts,
+                num_hands=2,
+                min_hand_detection_confidence=0.30,
+                min_hand_presence_confidence=0.30,
+            )
+            _hand_landmarker = mp_vision.HandLandmarker.create_from_options(opts)
     return _hand_landmarker
 
 
