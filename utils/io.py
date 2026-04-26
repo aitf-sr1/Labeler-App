@@ -136,3 +136,30 @@ def save_skipped(json_path: str, skipped_videos: set) -> None:
             json.dump(list(skipped_videos), f, indent=4)
     except Exception as e:
         print(f"Gagal menyimpan skipped_videos: {e}")
+
+
+def load_thresholds(json_path: str, labels: list) -> list | None:
+    """
+    Baca thresholds.json. Return list float per label, atau None jika belum ada.
+
+    Format file: {"Boredom": 0.45, "Engagement": 0.50, ...}
+    """
+    if not os.path.exists(json_path):
+        return None
+    try:
+        with open(json_path, "r") as f:
+            data = json.load(f)
+        return [data.get(lbl, 0.5) for lbl in labels]
+    except Exception:
+        return None
+
+
+def save_thresholds(json_path: str, labels: list, thresholds: list) -> None:
+    """Simpan threshold per label ke thresholds.json. Dipanggil saat threshold diubah."""
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+    data = {lbl: round(thr, 2) for lbl, thr in zip(labels, thresholds)}
+    try:
+        with open(json_path, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Gagal menyimpan thresholds: {e}")

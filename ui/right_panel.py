@@ -45,6 +45,7 @@ class RightPanel:
         self.ai_score_labels   = {}
         self.acc_bodies        = []
         self.acc_open_flags    = []
+        self.threshold_labels  = []
 
         self._build(parent)
 
@@ -57,6 +58,7 @@ class RightPanel:
         right.columnconfigure(0, weight=1)
 
         self._build_action_buttons(right)
+        self._build_statistics_panel(right)
         self._build_label_accordions(right)
 
     @staticmethod
@@ -105,9 +107,54 @@ class RightPanel:
         )
         self.lbl_batch_status.pack(anchor="w", padx=14, pady=(0, 2))
 
+        self.btn_restart_batch = ctk.CTkButton(
+            parent, text="Restart Batch", command=self.app._restart_batch,
+            fg_color="#f59e0b", hover_color="#d97706",
+            font=("Poppins", 9), height=24, width=120,
+        )
+        self.btn_restart_batch.pack(anchor="w", padx=14, pady=(0, 2))
+
         ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
             fill="x", padx=12, pady=(2, 6)
         )
+
+    def _build_statistics_panel(self, parent):
+        stats_frame = ctk.CTkFrame(parent, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
+        stats_frame.pack(fill="x", padx=12, pady=(0, 6))
+
+        hdr = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        hdr.pack(fill="x", padx=8, pady=(4, 0))
+        ctk.CTkLabel(hdr, text="Statistik AI", font=("Poppins", 10, "bold"), text_color="gray").pack(side="left")
+        
+        self.lbl_stat_total = ctk.CTkLabel(hdr, text="Total: 0", font=("Poppins", 9, "bold"), text_color="#10b981")
+        self.lbl_stat_total.pack(side="right")
+
+        grid = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        grid.pack(fill="x", padx=8, pady=(2, 6))
+        
+        self.stat_labels = {}
+        for i, lbl in enumerate(LABELS):
+            color = LABEL_COLORS[lbl]
+            row = i // 2
+            col = i % 2
+            var_label = ctk.CTkLabel(grid, text=f"{lbl}: 0", font=("Poppins", 9), text_color=color)
+            var_label.grid(row=row, column=col, sticky="w", padx=(0, 15))
+            self.stat_labels[lbl] = var_label
+
+    def update_statistics(self, batch_history: dict):
+        total = len(batch_history)
+        self.lbl_stat_total.configure(text=f"Total: {total}")
+        
+        counts = {lbl: 0 for lbl in LABELS}
+        for vid_data in batch_history.values():
+            per_label = vid_data.get("per_label", {})
+            for i, lbl in enumerate(LABELS):
+                pred = per_label.get(str(i), {}).get("prediction")
+                if str(pred) == "1":
+                    counts[lbl] += 1
+                    
+        for lbl in LABELS:
+            self.stat_labels[lbl].configure(text=f"{lbl}: {counts[lbl]}")
 
     def _build_label_accordions(self, parent):
         scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent", label_text="")
@@ -214,9 +261,12 @@ class RightPanel:
         thr_lbl_w = ctk.CTkLabel(thr_row, text="0.50",
                                   font=("Poppins", 9), text_color="gray", width=32)
         thr_lbl_w.pack(side="right")
+        self.threshold_labels.append(thr_lbl_w)
 
         def _make_cb(ref=thr_lbl_w):
-            def cb(v): ref.configure(text=f"{float(v):.2f}")
+            def cb(v):
+                ref.configure(text=f"{float(v):.2f}")
+                self.app._save_current_thresholds()
             return cb
 
         ctk.CTkSlider(
