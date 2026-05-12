@@ -8,7 +8,7 @@ Catatan: modul ini adalah duplikat dari core/ + utils/video.py yang dibuat khusu
 untuk kebutuhan API tanpa bergantung pada struktur paket app.py.
 
 Flow prepare_cropped_frames:
-    video_path -> extract_16_frames() -> crop_face() per frame
+    video_path -> extract_6_frames() -> crop_face() per frame
               -> simpan ke disk (cache) -> return list PIL.Image
 
 Flow run_siglip_on_frames:
@@ -82,7 +82,7 @@ def _get_mp_detector():
     return _mp_detector
 
 
-def crop_face(frame_bgr, padding_scale: float = 0.60):
+def crop_face(frame_bgr, padding_scale: float = 0.20):
     """
     Crop area wajah terbesar dari frame BGR.
 
@@ -124,9 +124,9 @@ def crop_face(frame_bgr, padding_scale: float = 0.60):
     ]
 
 
-def extract_16_frames(video_path: str) -> list:
+def extract_6_frames(video_path: str) -> list:
     """
-    Ekstrak 16 frame dari video secara merata dari awal hingga akhir.
+    Ekstrak 4 frame dari video secara merata dari awal hingga akhir.
 
     Args:
         video_path: Path absolut ke file video.
@@ -140,7 +140,7 @@ def extract_16_frames(video_path: str) -> list:
         cap.release()
         return []
 
-    indices = [int(total * i / 16) for i in range(16)]
+    indices = [int(total * i / 4) for i in range(4)]
     frames  = []
     for idx in indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
@@ -153,9 +153,9 @@ def extract_16_frames(video_path: str) -> list:
 
 def prepare_cropped_frames(video_path: str, root_folder: str, crop_dir_base: str) -> list:
     """
-    Siapkan 16 frame crop wajah dari video dalam format PIL.Image.
+    Siapkan 6 frame crop wajah dari video dalam format PIL.Image.
 
-    Jika cache sudah ada (16 file frame_*.jpg), langsung load dari disk.
+    Jika cache sudah ada (6 file frame_*.jpg), langsung load dari disk.
     Jika belum, ekstrak frame -> crop wajah -> simpan ke disk -> return PIL list.
 
     Args:
@@ -164,7 +164,7 @@ def prepare_cropped_frames(video_path: str, root_folder: str, crop_dir_base: str
         crop_dir_base: Folder dasar tempat cache crop disimpan.
 
     Returns:
-        List of 16 PIL.Image RGB. Kosong jika video tidak bisa diproses.
+        List of 6 PIL.Image RGB. Kosong jika video tidak bisa diproses.
     """
     rel_path        = os.path.relpath(video_path, root_folder)
     base_name       = os.path.splitext(rel_path)[0]
@@ -172,10 +172,10 @@ def prepare_cropped_frames(video_path: str, root_folder: str, crop_dir_base: str
     os.makedirs(target_crop_dir, exist_ok=True)
 
     saved_files = sorted(glob.glob(os.path.join(target_crop_dir, "frame_*.jpg")))
-    if len(saved_files) == 16:
+    if len(saved_files) == 4:
         return [Image.open(f).convert("RGB") for f in saved_files]
 
-    frames_bgr = extract_16_frames(video_path)
+    frames_bgr = extract_6_frames(video_path)
     if not frames_bgr:
         return []
 
@@ -196,10 +196,10 @@ def run_siglip_on_frames(
     ambiguity_margin: float = 0.02,
 ) -> dict:
     """
-    Jalankan inferensi SigLIP2 pada 16 frame dari satu video.
+    Jalankan inferensi SigLIP2 pada 6 frame dari satu video.
 
     Args:
-        pil_images:       List of PIL.Image — 16 frame hasil crop wajah.
+        pil_images:       List of PIL.Image — 6 frame hasil crop wajah.
         prompt_groups:    List of (pos_lines, _) per label.
         thresholds:       List of float threshold per label.
         ambiguity_margin: Tidak digunakan. Dipertahankan untuk kompatibilitas.

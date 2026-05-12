@@ -49,7 +49,7 @@ def analyze_video(req: InferenceRequest):
 
     Flow:
         1. Validasi path video
-        2. prepare_cropped_frames() -> ekstrak 16 frame + crop wajah
+        2. prepare_cropped_frames() -> ekstrak 6 frame + crop wajah
         3. run_siglip_on_frames()   -> inferensi label emosi
         4. Kembalikan hasil inferensi sebagai JSON
     """
