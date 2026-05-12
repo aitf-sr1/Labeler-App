@@ -56,11 +56,11 @@ def run_siglip_on_frames(
     landmark_results: list  = None,
 ) -> dict:
     """
-    Inferensi SigLIP2 pada 16 frame dari satu video, dengan hybrid scoring
+    Inferensi SigLIP2 pada 4 frame dari satu video, dengan hybrid scoring
     opsional menggunakan MediaPipe FaceLandmarker.
 
     Args:
-        pil_images:       List[PIL.Image] — 16 frame crop wajah.
+        pil_images:       List[PIL.Image] — 4 frame crop wajah.
         prompt_groups:    List[(pos_lines, _)] per label.
         thresholds:       List[float] — satu threshold per label.
         ambiguity_margin: Tidak digunakan, dipertahankan untuk kompatibilitas API.
@@ -150,7 +150,7 @@ def run_siglip_on_frames(
             # Ini menangkap pola 'tolah-toleh' yang tidak bisa dideteksi per-frame.
             if i == 0:
                 yaws = [r.yaw for r in landmark_results if r.face_found]
-                if len(yaws) >= 4:
+                if len(yaws) >= 2:
                     import numpy as np
                     yaw_std = float(np.std(yaws))
                     # std >= 3° mulai bonus, >= 10° = bonus penuh (0.15)
@@ -171,7 +171,7 @@ def run_siglip_on_frames(
         frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
 
         per_label_result[i] = {
-            "prediction":   1 if vote_pos >= 8 else 0,
+            "prediction":   1 if vote_pos >= 2 else 0,
             "vote_pos":     vote_pos,
             "vote_neg":     n_frames - vote_pos,
             "skipped":      0,
