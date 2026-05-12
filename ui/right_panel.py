@@ -26,8 +26,6 @@ class RightPanel:
     Atribut publik yang diakses dari App:
         pos_textboxes[i]       -- CTkTextbox prompt positif per label
         threshold_vars[i]      -- DoubleVar threshold per label
-        label_toggle_btns[lbl] -- tuple (btn_0, btn_1)
-        score_bars[lbl]        -- Canvas vote bar per label
         ai_score_canvases[lbl] -- tuple (Canvas, color) untuk AI score
         ai_score_labels[lbl]   -- StringVar teks nilai AI score
         lbl_batch_status       -- CTkLabel status proses batch
@@ -39,8 +37,6 @@ class RightPanel:
         self.app = app
         self.pos_textboxes     = []
         self.threshold_vars    = [ctk.DoubleVar(value=0.50) for _ in LABELS]
-        self.label_toggle_btns = {}
-        self.score_bars        = {}
         self.ai_score_canvases = {}
         self.ai_score_labels   = {}
         self.acc_bodies        = []
@@ -114,6 +110,13 @@ class RightPanel:
         )
         self.btn_restart_batch.pack(anchor="w", padx=14, pady=(0, 2))
 
+        self.btn_reset_label = ctk.CTkButton(
+            parent, text="Reset Label Video Ini", command=self.app.reset_current_labels,
+            fg_color="#b91c1c", hover_color="#991b1b",
+            font=("Poppins", 9), height=24, width=120,
+        )
+        self.btn_reset_label.pack(anchor="w", padx=14, pady=(6, 2))
+
         ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
             fill="x", padx=12, pady=(2, 6)
         )
@@ -142,16 +145,23 @@ class RightPanel:
             self.stat_labels[lbl] = var_label
 
     def update_statistics(self, batch_history: dict):
-        total = len(batch_history)
-        self.lbl_stat_total.configure(text=f"Total: {total}")
-        
+        total_frames = 0
         counts = {lbl: 0 for lbl in LABELS}
+        
         for vid_data in batch_history.values():
             per_label = vid_data.get("per_label", {})
+            
+            # Hitung total frame dari array frame_preds label pertama
+            try:
+                total_frames += len(per_label.get("0", {}).get("frame_preds", []))
+            except:
+                total_frames += 6
+                
             for i, lbl in enumerate(LABELS):
-                pred = per_label.get(str(i), {}).get("prediction")
-                if str(pred) == "1":
-                    counts[lbl] += 1
+                v_pos = per_label.get(str(i), {}).get("vote_pos", 0)
+                counts[lbl] += v_pos
+                
+        self.lbl_stat_total.configure(text=f"Total: {total_frames} img")
                     
         for lbl in LABELS:
             self.stat_labels[lbl].configure(text=f"{lbl}: {counts[lbl]}")
@@ -183,43 +193,11 @@ class RightPanel:
             inner = ctk.CTkFrame(body, fg_color="transparent")
             inner.pack(fill="x", padx=8, pady=6)
 
-            self._build_label_toggle(inner, lbl, i)
-            self._build_vote_bar(inner, lbl)
             self._build_ai_score_bar(inner, lbl, color)
             self._build_prompt_editor(inner, i)
             self._build_threshold_slider(inner, i)
 
             self.acc_bodies.append(body)
-
-    def _build_label_toggle(self, parent, lbl: str, idx: int):
-        lbl_row = ctk.CTkFrame(parent, fg_color="transparent")
-        lbl_row.pack(fill="x", pady=(0, 4))
-        ctk.CTkLabel(lbl_row, text="Label video",
-                     font=("Poppins", 9), text_color="gray").pack(side="left")
-        btn_1 = ctk.CTkButton(
-            lbl_row, text="1", width=38, height=24, font=self.app.font_sm,
-            fg_color=("e5e7eb", "#2a2a3a"), text_color=("gray", "gray"),
-            hover_color=("d1d5db", "#333344"),
-            command=lambda l=lbl: self.app._set_label(l, "1"),
-        )
-        btn_1.pack(side="right")
-        btn_0 = ctk.CTkButton(
-            lbl_row, text="0", width=38, height=24, font=self.app.font_sm,
-            fg_color=("e5e7eb", "#2a2a3a"), text_color=("gray", "gray"),
-            hover_color=("d1d5db", "#333344"),
-            command=lambda l=lbl: self.app._set_label(l, "0"),
-        )
-        btn_0.pack(side="right", padx=(0, 4))
-        self.label_toggle_btns[lbl] = (btn_0, btn_1)
-
-    def _build_vote_bar(self, parent, lbl: str):
-        ctk.CTkLabel(parent, text="Frame votes",
-                     font=("Poppins", 9), text_color="gray").pack(anchor="w")
-        bar_bg = ctk.CTkFrame(parent, fg_color=("d1d5db", "#2a2a3a"), height=4, corner_radius=2)
-        bar_bg.pack(fill="x", pady=(2, 6))
-        vc = tk.Canvas(bar_bg, height=4, bg="#2a2a3a", highlightthickness=0)
-        vc.pack(fill="x")
-        self.score_bars[lbl] = vc
 
     def _build_ai_score_bar(self, parent, lbl: str, color: str):
         ai_row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -292,23 +270,6 @@ class RightPanel:
             body.pack(fill="x", pady=(2, 0))
             btn.configure(text=f"  {lbl}")
 
-    def update_vote_bar(self, label: str, ratio: float):
-        """
-        Update bar vote frame untuk label tertentu.
-
-        Args:
-            label: Nama label (dari LABELS).
-            ratio: Rasio frame yang positif (0.0 - 1.0).
-        """
-        cv    = self.score_bars[label]
-        color = LABEL_COLORS[label]
-        cv.update_idletasks()
-        w = cv.winfo_width() or 200
-        cv.delete("all")
-        fill_w = int(w * ratio)
-        if fill_w > 0:
-            cv.create_rectangle(0, 0, fill_w, 4, fill=color, outline="")
-
     def update_ai_score_bar(self, label: str, score: float):
         """
         Update bar AI score dan teks nilai numeriknya untuk label tertentu.
@@ -325,25 +286,6 @@ class RightPanel:
         if fill_w > 0:
             sc.create_rectangle(0, 0, fill_w, 4, fill=color, outline="")
         self.ai_score_labels[label].set(f"{score:.2f}")
-
-    def refresh_label_buttons(self, label: str, value: str):
-        """
-        Highlight tombol 0 atau 1 sesuai nilai label saat ini.
-
-        Tombol yang aktif diberi warna label, tombol yang tidak aktif menjadi abu.
-
-        Args:
-            label: Nama label (dari LABELS).
-            value: '0' atau '1'.
-        """
-        btn0, btn1 = self.label_toggle_btns[label]
-        color = LABEL_COLORS[label]
-        if value == "1":
-            btn0.configure(fg_color=("e5e7eb", "#2a2a3a"), text_color=("gray", "gray"))
-            btn1.configure(fg_color=color, text_color="#ffffff")
-        else:
-            btn0.configure(fg_color=color, text_color="#ffffff")
-            btn1.configure(fg_color=("e5e7eb", "#2a2a3a"), text_color=("gray", "gray"))
 
     def get_prompts_and_thresholds(self) -> tuple:
         """
