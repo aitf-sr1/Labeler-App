@@ -1,7 +1,7 @@
 """
 ui/left_panel.py
 
-Panel kiri: video player, slider, dan galeri 16 frame dengan tab label aktif.
+Panel kiri: video player, slider, dan galeri 6 frame dengan tab label aktif.
 
 Semua callback (seek, toggle_frame, toggle_play, slider) di-inject dari App.
 Panel ini tidak menyimpan state anotasi — hanya tampilan.
@@ -21,7 +21,7 @@ class LeftPanel:
 
     Bertanggung jawab atas:
         - Canvas video player + slider posisi
-        - Grid 4x4 galeri frame (16 thumbnail)
+        - Grid 2x3 galeri frame (6 thumbnail)
         - Tab selector untuk label aktif per frame
 
     Interaksi frame:
@@ -102,6 +102,7 @@ class LeftPanel:
             font=self.app.font_sm, text_color="gray",
         ).pack(side="left")
 
+
         tab_row = ctk.CTkFrame(hdr, fg_color="transparent")
         tab_row.pack(side="right")
         for lbl in LABELS:
@@ -117,27 +118,69 @@ class LeftPanel:
             b.pack(side="left", padx=3)
             self._emotion_tab_btns[lbl] = b
 
+        self.lbl_frame_quality = ctk.CTkLabel(
+            gallery_scroll, text="", font=("Poppins", 9), text_color="#f59e0b"
+        )
+        self.lbl_frame_quality.pack(anchor="w", padx=12, pady=(0, 4))
+
         grid_frame = ctk.CTkFrame(gallery_scroll, fg_color="transparent")
         grid_frame.pack(expand=True, fill="both", padx=10, pady=(0, 8))
-        for col in range(4):
+        for col in range(2):
             grid_frame.columnconfigure(col, weight=1)
 
-        for i in range(16):
-            row_g, col_g = i // 4, i % 4
+        for i in range(4):
+            row_g, col_g = i // 2, i % 2
             cv_widget = tk.Canvas(
-                grid_frame, width=110, height=110,
+                grid_frame, width=240, height=240,
                 bg="#111", highlightthickness=2, highlightbackground="#333",
             )
             cv_widget.grid(row=row_g, column=col_g, padx=8, pady=8)
             cv_widget.bind("<Button-1>", lambda e, idx=i: self.app.seek_to_frame(idx))
             cv_widget.bind("<Button-3>", lambda e, idx=i: self.app.toggle_single_frame(idx))
+            cv_widget.bind("<Double-Button-1>", lambda e, idx=i: self.app.toggle_frame_reject(idx))
             self.frame_canvases.append(cv_widget)
 
         ctk.CTkLabel(
             gallery_scroll,
-            text="Klik kiri: seek video  |  Klik kanan: toggle label",
+            text="Klik kiri: seek  |  Klik kanan: toggle label  |  Double-klik: tolak frame",
             font=("Poppins", 9), text_color="#6b7280",
         ).pack(pady=(0, 6))
+
+    def show_loading(self):
+        """Tampilkan state loading di semua canvas frame (saat prepare_cropped_frames berjalan)."""
+        for cv_widget in self.frame_canvases:
+            cv_widget.delete("all")
+            cv_widget.configure(highlightbackground="#333")
+            cv_widget.create_text(
+                120, 120, text="memuat...", fill="#4b5563",
+                font=("Poppins", 10), anchor="center",
+            )
+        self.lbl_frame_quality.configure(text="")
+
+    def update_frame_quality(
+        self,
+        no_face_count: int,
+        multi_face_count: int = 0,
+        rejected_count: int = 0,
+        n_frames: int = 4,
+    ):
+        """Tampilkan info kualitas frame di atas galeri."""
+        parts = []
+        if rejected_count > 0:
+            parts.append(f"{rejected_count}/{n_frames} frame ditolak")
+        if no_face_count > 0:
+            parts.append(f"{no_face_count}/{n_frames} frame tanpa wajah")
+        if multi_face_count > 0:
+            parts.append(f"{multi_face_count}/{n_frames} frame multi-wajah")
+
+        if not parts:
+            self.lbl_frame_quality.configure(text="")
+        else:
+            color = "#ef4444" if (rejected_count > 0 or no_face_count == n_frames) else "#f59e0b"
+            self.lbl_frame_quality.configure(
+                text="⚠  " + "   |   ".join(parts),
+                text_color=color,
+            )
 
     def set_active_tab_highlight(self, active_label: str):
         """
@@ -158,13 +201,13 @@ class LeftPanel:
 
     def render_frames(self, pil_images: list, frame_annotations_for_video: dict, active_label: str):
         """
-        Render ulang semua 16 canvas dengan thumbnail dan highlight label aktif.
+        Render ulang semua 6 canvas dengan thumbnail dan highlight label aktif.
 
         Border canvas berwarna jika frame tersebut di-label positif untuk label aktif.
         Jika frame kosong (tidak ada gambar), canvas di-clear.
 
         Args:
-            pil_images:                  List of PIL.Image dari 16 frame video.
+            pil_images:                  List of PIL.Image dari 6 frame video.
             frame_annotations_for_video: Dict {frame_idx: {label: 0|1}} untuk video saat ini.
             active_label:                Label yang sedang aktif di tab selector.
         """
@@ -177,14 +220,25 @@ class LeftPanel:
                 cv_widget.configure(highlightbackground="#333")
                 continue
 
-            img    = pil_images[i].resize((110, 110))
+            img    = pil_images[i].resize((240, 240))
             tk_img = ImageTk.PhotoImage(img)
             self.frame_image_refs.append(tk_img)
             cv_widget.delete("all")
             cv_widget.create_image(0, 0, anchor="nw", image=tk_img)
 
-            status = frame_annotations_for_video.get(str(i), {}).get(active_label, 0)
-            cv_widget.configure(highlightbackground=active_color if status == 1 else "#333")
+            frame_data  = frame_annotations_for_video.get(str(i), {})
+            is_rejected = frame_data.get("_rejected", False)
+
+            if is_rejected:
+                cv_widget.configure(highlightbackground="#ef4444")
+                cv_widget.create_rectangle(0, 0, 240, 240, fill="#2a0000", stipple="gray50")
+                cv_widget.create_text(
+                    120, 120, text="FRAME DITOLAK", fill="#ef4444",
+                    font=("Poppins", 11, "bold"), anchor="center",
+                )
+            else:
+                status = frame_data.get(active_label, 0)
+                cv_widget.configure(highlightbackground=active_color if status == 1 else "#333")
 
     def update_single_frame_highlight(self, frame_idx: int, active_label: str, status: int):
         """
