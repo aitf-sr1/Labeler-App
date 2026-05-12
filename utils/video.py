@@ -3,7 +3,7 @@ utils/video.py
 --------------
 Utilitas ekstraksi frame dari video.
 Fungsi utama:
-  - extract_16_frames(video_path)      → list of BGR numpy arrays
+  - extract_6_frames(video_path)      → list of BGR numpy arrays
   - prepare_cropped_frames(...)        → list of PIL.Image
 """
 
@@ -16,15 +16,18 @@ from PIL import Image
 from core.face_detector import crop_face
 
 
-def extract_16_frames(video_path: str) -> list:
-    """Ambil 16 frame yang terdistribusi merata dari video."""
+_N_FRAMES = 4  # jumlah frame yang diambil per video
+
+
+def extract_6_frames(video_path: str) -> list:
+    """Ambil _N_FRAMES frame yang terdistribusi merata dari video."""
     cap   = cv2.VideoCapture(video_path)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total < 1:
         cap.release()
         return []
 
-    indices = [int(total * i / 16) for i in range(16)]
+    indices = [int(total * i / _N_FRAMES) for i in range(_N_FRAMES)]
     frames  = []
     for idx in indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
@@ -49,43 +52,60 @@ def prepare_cropped_frames(
 
     Returns:
         (pil_images, no_face_count, landmark_results, viz_pil_images)
-        - pil_images       : list[PIL.Image] — 16 crop bersih untuk SigLIP
+        - pil_images       : list[PIL.Image] — 6 crop bersih untuk SigLIP
         - no_face_count    : int — jumlah frame tanpa deteksi wajah (dari FaceLandmarker)
         - landmark_results : list[LandmarkResult] — satu per frame
         - viz_pil_images   : list[PIL.Image] — crop dengan overlay landmark untuk galeri viz
         - multi_face_count : int — jumlah frame dengan >1 wajah terdeteksi (untuk auto-flag)
     """
-    from core.landmark_analyzer import analyze_frame, compute_emotion_scores, draw_landmark_viz
+    from core.landmark_analyzer import (
+        analyze_frame, compute_emotion_scores, draw_landmark_viz,
+        detect_hands_from_full_frame
+    )
 
     rel_path        = os.path.relpath(video_path, root_folder)
     base_name       = os.path.splitext(rel_path)[0]
-    target_crop_dir = os.path.join(crop_dir_base, base_name)
-    os.makedirs(target_crop_dir, exist_ok=True)
+    
+    clean_crop_dir  = os.path.join(crop_dir_base, "clean", base_name)
+    viz_crop_dir    = os.path.join(crop_dir_base, "viz", base_name)
+    
+    os.makedirs(clean_crop_dir, exist_ok=True)
+    os.makedirs(viz_crop_dir, exist_ok=True)
 
     # ── Load atau generate clean crops ─────────────────────────────────────
-    saved_files = sorted(glob.glob(os.path.join(target_crop_dir, "frame_*.jpg")))
+    saved_files = sorted(glob.glob(os.path.join(clean_crop_dir, "frame_*.jpg")))
     # Filter hanya yang clean (tanpa _viz suffix)
     clean_files = [f for f in saved_files if "_viz" not in os.path.basename(f)]
 
-    if len(clean_files) == 16:
+    frames_bgr_full = []
+    face_bboxes     = []
+
+    if len(clean_files) == _N_FRAMES:
         pil_images       = [Image.open(f).convert("RGB") for f in clean_files]
         multi_face_count = 0  # tidak diketahui dari cache
+        # Re-extract frame asli agar hand detection bisa berjalan dari full frame
+        frames_bgr_full = extract_6_frames(video_path)
+        for frame in frames_bgr_full:
+            _, _, _, face_bbox = crop_face(frame)
+            face_bboxes.append(face_bbox)
     else:
-        frames_bgr = extract_16_frames(video_path)
+        frames_bgr = extract_6_frames(video_path)
         if not frames_bgr:
             return [], 0, 0, [], []
 
         pil_images       = []
         multi_face_count = 0
+        frames_bgr_full  = frames_bgr  # simpan frame asli untuk hand detection
         for i, frame in enumerate(frames_bgr):
-            cropped_sq, _, n_faces = crop_face(frame)
+            cropped_sq, _, n_faces, face_bbox = crop_face(frame)
             if n_faces > 1:
                 multi_face_count += 1
             resized_full = cv2.resize(cropped_sq, (512, 512), interpolation=cv2.INTER_AREA)
-            cv2.imwrite(os.path.join(target_crop_dir, f"frame_{i:02d}.jpg"), resized_full)
+            cv2.imwrite(os.path.join(clean_crop_dir, f"frame_{i:02d}.jpg"), resized_full)
             pil_images.append(
                 Image.fromarray(cv2.cvtColor(resized_full, cv2.COLOR_BGR2RGB))
             )
+            face_bboxes.append(face_bbox)
 
     # ── Landmark analysis + viz ──────────────────────────────────────────────
     landmark_results = []
@@ -94,14 +114,23 @@ def prepare_cropped_frames(
 
     for i, pil_img in enumerate(pil_images):
         bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-        lr  = analyze_frame(bgr)
+
+        # Deteksi tangan dari full frame, remap ke ruang crop wajah
+        injected_hand = None
+        if frames_bgr_full and i < len(frames_bgr_full) and face_bboxes:
+            hand_top, hand_mid_bot, hand_pts_px, hand_raw = detect_hands_from_full_frame(
+                frames_bgr_full[i], face_bboxes[i], crop_size=512
+            )
+            injected_hand = (hand_top, hand_mid_bot, hand_pts_px, hand_raw)
+
+        lr  = analyze_frame(bgr, injected_hand=injected_hand)
         if not lr.face_found:
             no_face_count += 1
         landmark_results.append(lr)
 
         emotion_sc = compute_emotion_scores(lr)
         viz_bgr    = draw_landmark_viz(bgr, lr, emotion_sc)
-        viz_path   = os.path.join(target_crop_dir, f"frame_{i:02d}_viz.jpg")
+        viz_path   = os.path.join(viz_crop_dir, f"frame_{i:02d}_viz.jpg")
         cv2.imwrite(viz_path, viz_bgr)
         viz_pil_images.append(
             Image.fromarray(cv2.cvtColor(viz_bgr, cv2.COLOR_BGR2RGB))
