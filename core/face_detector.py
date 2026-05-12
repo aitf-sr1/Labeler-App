@@ -42,12 +42,12 @@ def _get_mp_detector():
 
 
 def _get_crop_padding() -> float:
-    """Baca FACE_CROP_PADDING dari .env. Default 0.60 jika tidak di-set."""
+    """Baca FACE_CROP_PADDING dari .env. Default 0.20 jika tidak di-set."""
     import os
     try:
-        return float(os.getenv("FACE_CROP_PADDING", "0.60"))
+        return float(os.getenv("FACE_CROP_PADDING", "0.20"))
     except ValueError:
-        return 0.60
+        return 0.20
 
 
 def crop_face(frame_bgr, padding_scale: float = None):
@@ -83,14 +83,15 @@ def crop_face(frame_bgr, padding_scale: float = None):
         x1, y1  = max(0, cx - half_dim), max(0, cy - half_dim)
         x2, y2  = min(w, cx + half_dim), min(h, cy + half_dim)
         crop    = frame_bgr[y1:y2, x1:x2]
-        return (crop if crop.size > 0 else frame_bgr), True, n_faces
+        if crop.size > 0:
+            return crop, True, n_faces, (x1, y1, x2, y2)
+        return frame_bgr, True, n_faces, (0, 0, w, h)
 
     # Fallback: center crop — wajah tidak terdeteksi
     cx, cy   = w // 2, h // 2
     half_dim = int(min(w, h) * 0.40)
-    fallback = frame_bgr[
-        max(0, cy - half_dim): cy + half_dim,
-        max(0, cx - half_dim): cx + half_dim,
-    ]
-    return fallback, False, 0
+    x1 = max(0, cx - half_dim); y1 = max(0, cy - half_dim)
+    x2 = cx + half_dim;         y2 = cy + half_dim
+    fallback = frame_bgr[y1:y2, x1:x2]
+    return fallback, False, 0, (x1, y1, x2, y2)
 
