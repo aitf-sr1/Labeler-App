@@ -1,407 +1,422 @@
 # Labeler Emosi SigLIP2
 
-Aplikasi desktop untuk melabeli emosi pada video secara manual maupun semi-otomatis. Menggunakan model SigLIP2 (Google) dikombinasikan dengan analisis geometri wajah 3D dari MediaPipe (Hybrid Scoring).
+Aplikasi desktop untuk melabeli emosi siswa pada video secara manual maupun semi-otomatis. Menggunakan **SigLIP2** (Google VLM) dikombinasikan dengan **MediaPipe FaceLandmarker** (geometri wajah 3D) sebagai Hybrid Scoring.
+
+---
 
 ## Daftar Isi
 
-1. [Deskripsi](#deskripsi)
-2. [Prasyarat & Instalasi](#prasyarat--instalasi)
-3. [Menjalankan Aplikasi](#menjalankan-aplikasi)
-4. [Panduan Penggunaan](#panduan-penggunaan)
-5. [Aturan Scoring & Perhitungan](#aturan-scoring--perhitungan)
-6. [Konfigurasi (.env)](#konfigurasi-env)
-7. [Struktur Kode](#struktur-kode)
-8. [File Output](#file-output)
-9. [FAQ](#faq)
+1. [Ciri-ciri Setiap Emosi (Panduan Anotasi)](#1-ciri-ciri-setiap-emosi-panduan-anotasi)
+2. [Prasyarat & Instalasi](#2-prasyarat--instalasi)
+3. [Menjalankan Aplikasi](#3-menjalankan-aplikasi)
+4. [Panduan Penggunaan Aplikasi](#4-panduan-penggunaan-aplikasi)
+5. [Cara Kerja Sistem Scoring](#5-cara-kerja-sistem-scoring)
+6. [Konfigurasi (.env)](#6-konfigurasi-env)
+7. [Struktur Kode](#7-struktur-kode)
+8. [File Output](#8-file-output)
+9. [FAQ & Troubleshooting](#9-faq--troubleshooting)
 
 ---
 
-## Deskripsi
+## 1. Ciri-ciri Setiap Emosi (Panduan Anotasi)
 
-Aplikasi ini melabeli video dengan 4 kelas emosi. Setiap label bernilai `0` (tidak ada) atau `1` (ada). Sistem menggunakan pendekatan **multi-label** — satu video dapat memiliki lebih dari satu emosi aktif secara bersamaan.
+> Ini adalah bagian paling penting untuk labeler. Baca sebelum mulai anotasi.
 
-| Label | Kode | Arti |
-|---|---|---|
-| Boredom | 0 | Siswa terlihat bosan, tidak memperhatikan |
-| Engagement | 1 | Siswa terlihat fokus dan terlibat aktif |
-| Confusion | 2 | Siswa terlihat bingung atau tidak mengerti |
-| Frustration | 3 | Siswa terlihat frustrasi atau kesal |
-
-Ada tiga mode pelabelan:
-- **Manual** — nilai tiap label ditentukan secara manual oleh labeler
-- **Semi-otomatis** — AI memberikan saran awal, labeler melakukan koreksi
-- **Batch AI** — AI memproses seluruh dataset secara berurutan di background thread
+Sistem menggunakan **4 label biner** yang bersifat **multi-label** (lebih dari satu boleh aktif bersamaan).
 
 ---
 
-## Prasyarat & Instalasi
+### BOREDOM (Kebosanan) — Label 0
+
+**Kapan beri label 1 (positif)?**
+
+| Tanda Visual | Keterangan |
+|---|---|
+| **Kelopak mata berat / setengah tertutup** | Mata tidak terbuka penuh, terlihat mengantuk |
+| **Menguap** | Mulut terbuka lebar (tidak harus sampai 100% — sudah cukup jika terlihat menguap) |
+| **Kepala noleh ke samping** | Tidak memandang ke depan/kamera, kepala miring ≥8° |
+| **Tatapan mata ke samping** | Bola mata terlihat melihat ke kiri/kanan, bukan ke depan |
+| **Ekspresi datar/kosong** | Tidak ada reaksi, otot wajah rileks total, tatapan hampa |
+| **Kepala menengadah** | Kepala mendongak ke atas (sering disertai mata mengantuk) |
+
+**Kapan beri label 0 (negatif)?**
+- Wajah masih menghadap depan meskipun ekspresi biasa
+- Mata terbuka normal meski tidak tersenyum
+- Hanya sekilas noleh (bukan konsisten sepanjang frame)
+
+**Catatan sistem:** Landmark menggunakan `gaze_dev` (deviasi gaze 2D) sebagai sinyal utama. Dead zone 5°, penuh di 25°. Menguap, mata berat, dan kepala mendongak sebagai sinyal pendukung (maks 0.70 dari nilai penuh) agar siswa yang hanya menguap tapi masih menghadap depan tidak langsung mendapat skor 1.0.
+
+---
+
+### ENGAGEMENT (Keterlibatan) — Label 1
+
+**Kapan beri label 1 (positif)?**
+
+| Tanda Visual | Keterangan |
+|---|---|
+| **Mata terbuka penuh menatap lurus** | Memandang ke depan/layar/kamera secara langsung |
+| **Kepala tegak menghadap depan** | Yaw kepala < 10°, tidak menoleh |
+| **Respons wajah aktif** | Mengangguk, alis sedikit terangkat, senyum tipis tanda tertarik |
+| **Ekspresi segar dan hadir** | Terlihat sadar dan memperhatikan, bukan hanya duduk diam |
+
+**Kapan beri label 0 (negatif)?**
+- Kepala menoleh, terlihat melamun
+- Mata melirik ke arah lain secara dominan
+- Terlihat mengantuk atau tatapan kosong
+
+**Catatan sistem:** Engagement menggunakan metrik `gaze_dev` yang sama dengan Boredom — keduanya **inversely related**. Semakin tinggi deviasi gaze, semakin tinggi Boredom dan semakin rendah Engagement. Gate Engagement mulai turun dari gaze_dev ≥ 5° dan mencapai nol di ≥ 17°.
+
+---
+
+### CONFUSION (Kebingungan) — Label 2
+
+**Kapan beri label 1 (positif)?**
+
+| Tanda Visual | Keterangan |
+|---|---|
+| **Alis berkerut/turun** | Dahi mengerut, kedua alis turun ke tengah (bukan satu sisi) |
+| **Alis bagian dalam naik** | Bagian tengah alis terangkat membentuk pola "∧" atau "V terbalik" |
+| **Mata menyipit / melirik ke atas** | Squinting saat berusaha memahami, atau bola mata melirik ke atas saat berpikir |
+| **Mulut sedikit terbuka** | Mulut menganga tipis (BUKAN menguap lebar — batas: mulut tidak terbuka >40% penuh) |
+| **Bibir mengerucut (pucker)** | Bibir sedikit maju/mengerut saat berpikir keras |
+| **Kepala miring/mendongak sedikit** | Kepala miring ke samping atau sedikit mendongak saat berpikir |
+| **Tangan menggaruk kepala** | Tangan di atas garis mata (area dahi/kepala) |
+
+**Kapan beri label 0 (negatif)?**
+- Ekspresi netral tanpa alis berkerut
+- Wajah terlihat datar meski sedang diam
+- Hanya satu ciri ringan tanpa kombinasi
+
+**PENTING — Perbedaan Confusion vs Frustration:**
+Confusion = **berpikir keras** (masih sabar, ingin mengerti). Frustration = **stres/marah** (sudah menyerah, kesal). Jika alis berkerut tapi wajah masih "tenang", itu Confusion. Jika alis berkerut sambil mengernyit hidung atau bibir ditekan keras, itu Frustration.
+
+**Catatan sistem:** `browInnerUp` (alis dalam naik) hanya aktif jika bersamaan dengan sinyal mata (lirik atas, lookUp) atau kepala (pitch). Ini mencegah false positive pada siswa yang bentuk alisnya secara natural melengkung ke atas.
+
+---
+
+### FRUSTRATION (Frustrasi) — Label 3
+
+**Kapan beri label 1 (positif)?**
+
+| Tanda Visual | Keterangan |
+|---|---|
+| **Kombinasi otot tegang** | HARUS ada minimal 2 dari: alis turun keras + bibir ditekan + mata menyipit tajam + pipi menegang |
+| **Mengernyit hidung (nose sneer)** | Hidung berkerut seperti ekspresi jijik/marah — sinyal terkuat, satu ini sudah cukup |
+| **Mata tertutup rapat/dipaksa** | Bukan mengantuk — tapi menutup mata karena frustrasi (eye squint tajam) |
+| **Bibir ditekan keras (lip press)** | Bibir merapatkan bersama secara kuat, bukan sekedar mulut tertutup biasa |
+| **Tangan menutupi wajah** | Facepalm, tangan di pipi/hidung/mulut, atau menopang kepala dengan telapak tangan |
+| **Ekspresi marah/stres ekstrem** | Bukan hanya "berpikir", tapi terlihat kesal, mau menangis, atau sangat lelah mental |
+
+**Kapan beri label 0 (negatif)?**
+- Hanya satu otot yang sedikit tegang (misalnya hanya bibir rapat tapi wajah lainnya rileks)
+- Alis berkerut tapi tidak ada otot lain yang tegang → itu Confusion, bukan Frustration
+- Tangan menyentuh wajah tapi bukan facepalm/menutupi (misalnya hanya memegang pipi santai)
+
+**Catatan sistem:** Frustration menggunakan **SUM logic** (bukan MAX) — satu sinyal saja tidak cukup. Kecuali `noseSneer` (mengernyit hidung) yang sangat jarang terjadi secara natural, sehingga satu signal ini sudah dianggap kuat.
+
+---
+
+### Bolehkah Multi-Label?
+
+**Ya.** Contoh kombinasi yang valid:
+- `Confusion=1, Engagement=1` — siswa memperhatikan tapi tampak tidak mengerti
+- `Boredom=1, Confusion=0` — siswa noleh, tidak bingung, hanya tidak tertarik
+- `Confusion=1, Frustration=1` — siswa sangat bingung sampai terlihat stres
+- **Tidak lazim:** `Boredom=1, Engagement=1` (kontradiktif, hindari kecuali frame ambigu)
+
+---
+
+## 2. Prasyarat & Instalasi
 
 **Persyaratan sistem:**
 - Python 3.9 atau lebih baru
-- pip
-- GPU NVIDIA (opsional) — inferensi juga bisa berjalan di CPU
+- GPU NVIDIA (opsional — inferensi juga berjalan di CPU, lebih lambat)
 
-**Instalasi:**
 ```bash
 pip install -r requirements.txt
 ```
 
-Model SigLIP2 (~400 MB) dan MediaPipe FaceLandmarker (~30 MB) diunduh secara otomatis pada pertama kali aplikasi dijalankan.
+Model SigLIP2 (~400 MB) dan MediaPipe FaceLandmarker (~30 MB) diunduh otomatis saat pertama dijalankan.
 
 ---
 
-## Menjalankan Aplikasi
+## 3. Menjalankan Aplikasi
 
 ```bash
 # Salin dan sesuaikan konfigurasi (opsional)
 cp .env.example .env
 
-# Jalankan aplikasi
+# Jalankan aplikasi utama
 python app.py
 ```
 
 ---
 
-## Panduan Penggunaan
+## 4. Panduan Penggunaan Aplikasi
 
 ### Membuka Dataset
 
-Klik tombol **Buka Folder** di pojok kiri atas, lalu pilih folder root yang berisi file `.mp4`. Aplikasi akan:
+Klik **Buka Folder** → pilih folder root yang berisi file `.mp4`. Aplikasi akan:
 1. Mencari semua file video secara rekursif
 2. Membuat folder `hasil_label6/` sebagai direktori output
-3. Memuat ulang label yang sudah pernah disimpan secara otomatis
+3. Memuat ulang label yang sudah tersimpan
 
 ### Memutar Video
 
-Video diputar otomatis saat pertama dimuat. Klik area video untuk pause/play. Di bawah slider terdapat 16 thumbnail yang mewakili titik distribusi merata sepanjang video.
+Video diputar otomatis saat dimuat. Klik area video untuk pause/play. Di bawah video terdapat **4 thumbnail** (2×2) yang mewakili 4 titik terdistribusi merata sepanjang video. FPS yang terdeteksi ditampilkan di status bar; jika codec melaporkan nilai tidak valid (> 60 atau ≤ 0), aplikasi otomatis mengestimasi FPS dari timestamp frame.
 
-### Labeling Manual
+### Labeling Per-Frame (Manual)
 
-Panel kanan berisi tombol `0` dan `1` untuk setiap label emosi. Untuk labeling per-frame:
-1. Pilih tab label aktif (misalnya `Engagement`) di atas galeri frame
-2. Klik kanan pada frame untuk toggle — border berwarna = positif, abu = negatif
-3. Jika **8 atau lebih dari 16 frame** ditandai positif, nilai label video otomatis berubah menjadi `1`
+1. Pilih tab label aktif di atas galeri (misal `Confusion`)
+2. **Klik kiri pada thumbnail** untuk seek ke posisi frame tersebut
+3. **Klik kanan pada thumbnail** untuk toggle label aktif pada frame tersebut
+   - Border berwarna = positif (label = 1)
+   - Border abu-abu = negatif (label = 0)
+4. **Double-klik pada thumbnail** untuk menandai frame sebagai "ditolak" (overlay merah)
+5. Jika **≥2 dari 4 frame** positif → label video = 1
 
 ### Menggunakan AI (Hybrid Scoring)
 
-Panel kanan bawah berisi kontrol inferensi SigLIP2 + MediaPipe.
+- **Proses Video Ini** — jalankan inferensi pada video aktif
+- **Batch Semua** — inferensi seluruh dataset di background thread
 
-- **Proses Video Ini** — inferensi dijalankan pada video yang sedang ditampilkan
-- **Batch Semua** — inferensi dijalankan pada seluruh dataset secara berurutan
+Bar di kanan tiap label menunjukkan **Hybrid Score** (0.0–1.0). Video yang sudah diproses otomatis di-skip saat batch ulang (berdasarkan `batch_history.json`).
 
-Bar di samping tiap label menunjukkan **Hybrid Score** (gabungan SigLIP + Landmark). Video yang sudah diproses akan di-skip otomatis berdasarkan `batch_history.json`.
+### Toggle Landmark Viz
 
-### Flag Otomatis
+Aktifkan switch **Viz** di topbar untuk melihat overlay landmark pada thumbnail: face mesh 3D tesselation (putih tipis), skeleton tangan (hijau), per-eye gaze arrow (kuning), blendshape signal bars (kanan), dan emotion score bars (bawah). Berguna untuk debugging mengapa AI memberi skor tertentu.
 
-Jika MediaPipe tidak mendeteksi wajah pada lebih dari 50% frame, video akan secara otomatis di-flag (ditandai merah di daftar). Jumlah video terflag ditampilkan di topbar. Video terflag masih bisa dilabeli manual.
+### Reset Label Video Ini
+
+Tombol **Reset Label Video Ini** (merah) di panel kanan menghapus semua frame annotations dan riwayat AI untuk video aktif, lalu meresetnya ke nol tanpa konfirmasi. Gunakan jika hasil AI perlu diulang dari awal.
+
+### Flag / Reject
+
+Toggle **Flag/Reject** untuk menandai video yang tidak layak dilabeli (kualitas buruk, wajah tidak jelas). Video terflag tidak dimasukkan ke dataset training.
 
 ---
 
-## Aturan Scoring & Perhitungan
+## 5. Cara Kerja Sistem Scoring
 
-Ini adalah bagian inti dari sistem. Skor akhir per label dihitung melalui dua tahap: **SigLIP Scoring** dan **Landmark Scoring**, lalu digabungkan menjadi **Hybrid Score**.
+### Hybrid Score Formula
 
-### 1. SigLIP Scoring (Visual)
-
-**Input:** 16 frame crop wajah (PIL Image) + prompt teks per label.
-
-**Alur:**
 ```
-Frame (1-16) × Prompt (6 per label) → Logits [n_frames × n_prompts]
+hybrid_score[frame] = α × siglip_score[frame] + β × landmark_score[frame]
+label_video = 1  jika avg(hybrid_score) ≥ threshold
 ```
 
-**Murni Sigmoid (Independent Scoring)**:
+### SigLIP Scoring (Visual)
+
+SigLIP2 membandingkan gambar wajah dengan prompt teks per label:
+
 ```
-sigmoid_score = sigmoid(logit)               # hitung probabilitas (0-1) secara independen
-siglip_score  = mean(sigmoid_score)           # rata-rata 6 prompt per frame
+logit[frame, prompt] → sigmoid(logit + 3.5) → avg per label → siglip_score
 ```
 
-*Kenapa Sigmoid langsung?* SigLIP (Sigmoid-Loss Image-Language Pretraining) secara arsitektur dilatih menggunakan fungsi Sigmoid independen, bukan Softmax yang saling berkompetisi. Oleh karena itu, logit asli bisa langsung dimasukkan ke `sigmoid()` untuk mendapatkan probabilitas kemunculan emosi tersebut secara mandiri.
+Bias `+3.5` diperlukan karena logit zero-shot SigLIP sering bernilai negatif; bias ini menggeser kurva ke area sensitivitas 0.2–0.9.
 
-### 2. Landmark Scoring (Geometri Wajah)
+### Landmark Scoring (Geometri Wajah MediaPipe)
 
-**Input:** Frame BGR → MediaPipe FaceLandmarker + HandLandmarker.
+Setiap frame dianalisis dengan FaceLandmarker (478 titik) + HandLandmarker. Output per frame: skor 0.0–1.0 per emosi.
 
-**Output per frame:** Skor 0.0–1.0 untuk setiap emosi.
+#### Boredom & Engagement — Unified `gaze_dev`
 
-#### Boredom (label 0)
+Kedua emosi ini diturunkan dari satu metrik tunggal `gaze_dev` (deviasi angular 2D dari arah kamera), sehingga keduanya **inversely related** — tidak bisa tinggi bersamaan.
+
 ```
-sig_yaw = clamp((|yaw| - 8°) / 10, 0, 1)       # noleh ≥8° mulai naik
-sig_iris = clamp((|iris_x| - 0.12) / 0.23, 0, 1) # mata lirik ≥0.12 mulai naik
-sig_arah = max(sig_yaw, sig_iris)                # OR logic: salah satu cukup
+# Komponen horizontal — direction-aware (iris berlawanan yaw = kompensasi)
+gaze_h    = yaw + iris_x × 35
 
-# Faktor pendukung (ekspresi):
-blink_v    = clamp(max(eyeBlinkL, eyeBlinkR) / 0.4, 0, 1)
-yawn_v     = clamp(jawOpen / 0.35, 0, 1)   # hanya jika pitch < 8°
+# Komponen vertikal — dengan fallback bentuk kelopak (eyeLookDown)
+gaze_v    = max(|-pitch + iris_y × 25|, eyeLookDown × 40)
+gaze_v_eff = max(0, gaze_v - 15°)    # dead zone 15° untuk squinting & layar di bawah mata
+
+# Tiga floor untuk horizontal — mencegah kompensasi penuh
+iris_side  = |iris_x| × 35 × 2.0    # iris_x=0.2 → 14°, iris_x=0.3 → 21°
+gaze_h_eff = max(|gaze_h|, iris_side, |yaw|)
+
+gaze_dev   = sqrt(gaze_h_eff² + gaze_v_eff²)
+
+# BOREDOM: dead zone 5°, penuh di 25°
+bore_gaze  = clamp((gaze_dev - 5) / 20, 0, 1)
+
+blink_v    = clamp((max(eyeBlinkL, eyeBlinkR) - 0.20) / 0.50, 0, 1)  # dead zone 0.20
+yawn_v     = clamp(jawOpen / 0.35, 0, 1)   # aktif jika pitch < 15°
 pitch_up_v = clamp((pitch - 20°) / 25, 0, 1)
-sig_expr   = max(blink_v, yawn_v, pitch_up_v) × 0.5
+sig_expr   = max(blink_v, yawn_v, pitch_up_v) × 0.70
 
-# Soft OR logic: (Tangan dihapus dari Boredom, pindah ke Frustration)
-base_bore = max(sig_arah, sig_expr)
-bore = clamp(base_bore × 0.85 + (sig_arah + sig_expr) × 0.15, 0, 1)
+bore = clamp(max(bore_gaze, sig_expr) × 0.85 + (bore_gaze + sig_expr) × 0.15, 0, 1)
+
+# ENGAGEMENT: metrik gaze_dev yang sama, inversely related
+gate        = clamp(1 - max(0, gaze_dev - 5) / 12, 0, 1)  # 0 di ≥17°
+blink_heavy = max(0, max(eyeBlinkL, eyeBlinkR) - 0.50) / 0.50  # hanya >0.50 = droopy
+eng         = gate × max(0.30, 1.0 - blink_heavy)
 ```
 
-#### Engagement (label 1)
+> **Kenapa tiga floor untuk `gaze_h_eff`?** (1) `gaze_h` memungkinkan iris mengkompensasi yaw — wajar jika kepala miring dan mata melihat balik ke kamera. (2) `iris_side` mencegah kompensasi penuh: iris yang jelas ke samping tetap berkontribusi walau kepala sedikit mengimbangi. (3) `|yaw|` sebagai floor minimum — kepala miring = gaze_dev minimal sebesar sudut itu, tidak bisa nol.
+
+#### Confusion
 ```
-# AND logic: semua gate harus non-zero
-gate_yaw  = clamp(1 - max(0, |yaw|-3°) / 7,  0, 1)   # dead zone ≤3°, 0 di ≥10°
-### 2. Evaluasi Skor Emosi (Landmark-based)
+iris_up_v  = clamp((-iris_y - 0.15) / 0.30, 0, 1)   # pupil ke atas (dead zone 0.15)
+look_up_v  = clamp(max(lookUpL, lookUpR) / 0.35, 0, 1)
+pitch_cu   = clamp((pitch - 5°) / 15, 0, 1)          # mendongak mulai 5°
+brow_dn_v  = clamp(mean(browDownL, browDownR) / 0.23, 0, 1)
+co_signal  = max(iris_up_v, look_up_v, pitch_cu)     # sinyal penguat untuk browInnerUp
+brow_in_v  = clamp(browInnerUp / 0.30, 0, 1) × clamp(co_signal / 0.25, 0, 1)
 
-Setiap kelas memiliki kombinasi "otot wajah" spesifik (Blendshapes) dan posisi kepala. Rentang nilai selalu **0.0 - 1.0** menggunakan fungsi `clamp()`.
+jo = jawOpen
+jaw_co = bell(0.05–0.25 puncak, 0.40 batas atas)    # mangap sedikit, bukan menguap
+pucker_co = clamp(mouthPucker / 0.30, 0, 1)
 
-#### A. Zonasi Tangan (Hand Zoning 5-Titik)
-Untuk membedakan gestur *mikir/bingung* dengan gestur *stres/frustrasi*, tangan dibagi menjadi zona:
-1. **Zona Atas (`y < 0.25`)**: Gestur **menggaruk kepala**. Langsung memicu *Confusion* (1.0).
-2. **Zona Tengah & Bawah (`0.25 <= y <= 1.20`)**: Gestur **facepalm, kucek mata, atau menopang dagu**. Langsung memicu *Frustration* (1.0).
+base_conf = max(brow_dn_v, brow_in_v, iris_up_v, look_up_v, jaw_co, pucker_co, hand_chin)
+conf = clamp(base_conf × 0.85 + (pitch_cu + brow_signal) × 0.15, 0, 1)
 
-**Pertimbangan Matematis & Akurasi:**
-- **Threshold 5 Titik:** MediaPipe membutuhkan 21 titik untuk 1 tangan penuh. Namun, saat siswa melakukan *facepalm* atau bertopang dagu dari bawah *frame* kamera, seringkali **hanya ujung jarinya saja (sekitar 5 titik)** yang tertangkap. Dengan menetapkan ambang batas proporsional ke 5 titik (dibagi 5), kita menjamin bahwa ujung jari yang menutupi wajah pun sudah cukup untuk memicu nilai tangan `1.0` secara maksimal.
-- **Filter Noise:** Jika total titik tangan di area tengah kurang dari 5, sistem akan membuangnya menjadi `0.0`. Ini mencegah *noise* (seperti MediaPipe salah mengira kerah baju sebagai jari) menghancurkan skor emosi.
-
-#### B. Confusion (label 2)
-Fokus pada ekspresi berpikir: mengerutkan alis, memiringkan kepala, mulut mengerucut, atau **menggaruk kepala**.
-
-```python
-iris_up_v  = clamp((-iris_y - 0.15) / 0.35, 0, 1) # Lirik ke atas
-look_up_v  = clamp(max(eyeLookUpL, eyeLookUpR) / 0.3, 0, 1)
-pitch_cu   = clamp((pitch - 8) / 17, 0, 1)        # Kepala mendongak/miring
-brow_dn_v  = clamp(mean(browDownL, browDownR) / 0.15, 0, 1) # Alis mengkerut (mikir)
-brow_in_v  = clamp(browInnerUp / 0.15, 0, 1)      # Alis dalam naik (bingung)
-
-# Mulut sedikit terbuka (mangap bingung) atau bibir mengerucut (mikir keras)
-jaw_co = clamp(jaw_val_conf - smile_pen × 1.5, 0, 1)
-pucker_co = clamp(mouthPucker / 0.20, 0, 1)
-
-# Jika garuk kepala (hand_top), base_conf menjadi tinggi
-base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, hand_top)
-conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
-
-# PEMBATALAN MUTLAK (Suppression Logic):
-# Jika tangan berada di area wajah/dagu (Frustration), Confusion HARUS dimatikan jadi 0.
-# Namun, jika tangan sedang menggaruk kepala (hand_top dominan), Confusion dibiarkan hidup.
-suppression = hand_mid_bot if hand_top < 0.5 else 0.0
+# Suppression: tangan menutupi wajah (bukan garuk kepala) → kurangi skor confusion
+suppression = hand_forehead if hand_chin < 0.5 else 0.0
 conf = clamp(conf - suppression, 0, 1)
 ```
 
-#### C. Frustration (label 3)
-Fokus pada ketegangan ekstrem: marah, mengernyit jijik, menutup mata rapat, merapatkan bibir, dan **menyentuh wajah/menopang dagu**.
+> **Kenapa `browInnerUp` butuh co_signal?** Beberapa siswa secara natural punya alis melengkung (browInnerUp = 1.0 terus). Tanpa co_signal, confusion akan selalu tinggi meski tidak ada ekspresi bingung. Co_signal memastikan ada bukti lain dari mata/iris/kepala sebelum browInnerUp dihitung.
 
-**Alasan Penggunaan SUM Logic (Bukan MAX):**
-Pada versi awal, digunakan logika `MAX`. Jika salah satu otot saja bernilai tinggi (misal: bibir merapat karena sedang diam/ngelamun santai), maka *Frustration* langsung tembus 1.0. Ini menyebabkan siswa yang diam salah terdeteksi sebagai Frustrasi.
-Oleh karena itu, sistem diubah menjadi **SUM Logic (Kombinasi Rata-rata)**. *Frustration* wajah HANYA akan tembus 1.0 jika siswa secara bersamaan memadukan beberapa otot stres (alis tegang + bibir rapat + mata menyipit tajam).
-
-```python
-# Threshold dinaikkan drastis (0.40) agar ekspresi mikir biasa tidak bocor ke Frustrasi
+#### Frustration
+```
 br_fr = clamp(mean(browDownL, browDownR) / 0.40, 0, 1)
-ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.20, 0, 1)
+ns_fr = clamp(max(noseSneerL, noseSneerR) / 0.20, 0, 1)  # sinyal terkuat
 ck_fr = clamp(mean(cheekSquintL, cheekSquintR) / 0.40, 0, 1)
 lp_fr = clamp(mean(mouthPressL, mouthPressR) / 0.40, 0, 1)
 ey_fr = clamp(mean(eyeSquintL, eyeSquintR) / 0.40, 0, 1)
-jw_fr = clamp((max(0.0, jawOpen - 0.10) - smile_pen × 1.5) / 0.20, 0, 1)
 
-# SUM LOGIC: Butuh kombinasi beberapa otot tegang (kecuali noseSneer yang mutlak)
+# SUM logic: noseSneer kuat + kombinasi otot lain
 sig_wajah_frus = clamp(ns_fr + (br_fr + lp_fr + ey_fr + ck_fr) / 2.0, 0, 1)
-sig_wajah_frus = clamp(sig_wajah_frus - smile_pen × 1.5, 0, 1)
 
-# Jika tangan menutupi wajah bawah/tengah (hand_mid_bot), skor ditambah secara absolut
-hand_trigger_frus = hand_mid_bot
-base_frus = clamp(sig_wajah_frus + hand_trigger_frus, 0, 1)
-frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
+frus = clamp((sig_wajah_frus + hand_forehead) × 0.85 + (cheek + jaw) × 0.15, 0, 1)
 ```
 
-### 3. Hybrid Ratio Scoring & Sigmoid SigLIP
+### Zonasi Tangan
 
-Sistem menggunakan metode **Late Fusion (Ensemble)** untuk menggabungkan dua model AI yang berbeda secara fundamental:
-1. **MediaPipe (Landmark):** AI Geometris yang menghitung jarak dan ketegangan otot fisik secara matematis. Sangat akurat untuk posisi kepala dan kedipan mata, tetapi buta terhadap "niat" (konteks).
-2. **SigLIP 2 (Vision-Language):** AI Semantik berbasis VLM (Vision-Language Model). Memahami "niat" dari bahasa tubuh dan tatapan, tetapi tidak presisi dalam menghitung derajat miringnya kepala.
+Dalam crop wajah 512×512:
 
-Skor akhir didapatkan dengan rumus penggabungan berbobot (*Ratio Scoring*):
-```python
-hybrid_score = (α × sigmoid(siglip_score)) + (β × landmark_score)
-```
-
-**Kenapa menggunakan Sigmoid pada keluaran SigLIP?**
-Keluaran murni dari model SigLIP berupa *logits* (skor mentah yang bisa bernilai negatif atau positif tak hingga). Agar dapat digabungkan dengan skor MediaPipe (yang memiliki batas pasti 0.0 hingga 1.0), nilai *logits* SigLIP dimasukkan ke dalam fungsi `Sigmoid(x) = 1 / (1 + e^-x)`. Ini memampatkan skor menjadi probabilitas 0% hingga 100% yang mulus, sehingga *hybrid scoring* berjalan seimbang tanpa salah satu AI mendominasi.
-
-**Rasio Bobot Default per Label:**
-
-| Label | α (SigLIP) | β (Landmark) | Alasan & Pembagian Tugas (*Ratio Justification*) |
+| Zona | Posisi Y di Crop | Interpretasi | Efek |
 |---|---|---|---|
-| Boredom | 0.15 | 0.85 | Landmark jauh lebih akurat mendeteksi arah wajah/yaw dan lirik mata dibanding SigLIP pada crop wajah. |
-| Engagement | 0.15 | 0.85 | Fokus pada kepala tegak dan mata lurus (Gate Logic) yang hanya bisa dihitung pasti oleh Landmark. |
-| Confusion | 0.60 | 0.40 | SigLIP lebih unggul menangkap "niat" ekspresi berpikir halus dibanding rumus landmark yang kaku. |
-| Frustration | 0.50 | 0.50 | Seimbang: Landmark mendeteksi gestur fisik (facepalm), SigLIP menangkap aura stres/marah. |
+| Atas (`y < 0.25`) | Di atas mata / forehead area | Menggaruk kepala | +Confusion |
+| Tengah & Bawah (`y 0.25–1.20`) | Menutup wajah / menopang dagu | Facepalm / stres | +Frustration, −Confusion |
+
+### Bobot Hybrid per Label
+
+Nilai saat ini di `.env` (dapat diubah):
+
+| Label | α (SigLIP) | β (Landmark) | Alasan |
+|---|---|---|---|
+| Boredom | 0.50 | 0.50 | Landmark baik untuk yaw/iris; SigLIP baik untuk ekspresi lelah/kosong |
+| Engagement | 0.50 | 0.50 | Gate logic Landmark sangat presisi; SigLIP mendukung konteks visual |
+| Confusion | **0.60** | **0.40** | SigLIP lebih baik menangkap ekspresi berpikir halus yang sulit dikuantifikasi |
+| Frustration | 0.50 | 0.50 | Seimbang: Landmark untuk gestur tangan, SigLIP untuk aura stres |
+
+### Temporal Restlessness Bonus (Khusus Boredom)
+
+Jika std deviasi yaw kepala ≥3° di 4 frame (kepala bergerak bolak-balik), skor Boredom mendapat bonus maksimum +0.15. Ini menangkap pola tolah-toleh yang tidak terlihat dari satu frame saja.
 
 ---
 
-### 4. Strategi Prompting SigLIP 2 (Full List)
-
-SigLIP bekerja dengan membandingkan gambar dengan deskripsi teks. Berikut adalah daftar lengkap prompt yang digunakan beserta tujuan dan terjemahannya:
-
-#### A. Boredom (Label 0)
-Fokus pada kelelahan fisik dan hilangnya fokus.
-1. **"a face of a student with heavy droopy eyelids looking extremely sleepy and tired"**
-   *(wajah siswa dengan kelopak mata berat tampak sangat mengantuk dan lelah)*
-2. **"a face of a student yawning widely with an open mouth showing pure exhaustion"**
-   *(wajah siswa menguap lebar dengan mulut terbuka menunjukkan kelelahan luar biasa)*
-3. **"a face of a student with a completely blank, expressionless, and dull stare"**
-   *(wajah siswa dengan tatapan kosong, tanpa ekspresi, dan kusam)*
-4. **"a face of a student resting their chin on their hand with lazy unfocused eyes"**
-   *(wajah siswa menopang dagu dengan tangan dengan mata malas yang tidak fokus)*
-5. **"a face of a student with half-closed eyes appearing mentally absent and disengaged"**
-   *(wajah siswa dengan mata setengah tertutup tampak tidak hadir secara mental)*
-6. **"a face of a student with relaxed facial muscles and a vacant bored expression"**
-   *(wajah siswa dengan otot wajah rileks dan ekspresi bosan yang kosong)*
-
-#### B. Engagement (Label 1)
-Fokus pada kehadiran mental dan fokus visual.
-1. **"a face of a student making direct eye contact with clear focus and engaged attention"**
-   *(wajah siswa melakukan kontak mata langsung dengan fokus yang jelas)*
-2. **"a face of a student with bright wide alert eyes actively watching and learning"**
-   *(wajah siswa dengan mata terang dan waspada sedang menonton dan belajar secara aktif)*
-3. **"a face of a student with an attentive expression and a subtle interested smile"**
-   *(wajah siswa dengan ekspresi penuh perhatian dan senyum ketertarikan tipis)*
-4. **"a face of a student nodding and reacting with lively responsive facial features"**
-   *(wajah siswa mengangguk dan bereaksi dengan fitur wajah yang responsif)*
-5. **"a face of a student with slightly raised eyebrows showing curiosity and focus"**
-   *(wajah siswa dengan alis sedikit terangkat menunjukkan rasa ingin tahu)*
-6. **"a face of a student with a sharp, present, and actively involved expression"**
-   *(wajah siswa dengan ekspresi yang tajam, hadir, dan terlibat aktif)*
-
-#### C. Confusion (Label 2)
-Fokus pada upaya kognitif dan ketidakpastian.
-1. **"a face of a student with deeply furrowed eyebrows looking puzzled and uncertain"**
-   *(wajah siswa dengan alis berkerut dalam tampak bingung dan tidak yakin)*
-2. **"a face of a student squinting their eyes with visible mental effort to understand"**
-   *(wajah siswa menyipitkan mata dengan upaya mental untuk memahami)*
-3. **"a face of a student with a slightly open mouth and raised brow looking lost"**
-   *(wajah siswa dengan mulut sedikit terbuka dan alis terangkat tampak linglung)*
-4. **"a face of a student tilting their head with a questioning and perplexed look"**
-   *(wajah siswa memiringkan kepala dengan tatapan bertanya dan bingung)*
-5. **"a face of a student with a thinking expression, pursed lips, and furrowed eyebrows"**
-   *(wajah siswa dengan ekspresi berpikir, bibir mengerucut, dan alis berkerut)*
-6. **"a face of a student scratching their head feeling puzzled and confused"**
-   *(wajah siswa menggaruk kepala merasa bingung dan kebingungan)*
-
-#### D. Frustration (Label 3)
-Fokus pada ketegangan emosional dan stres berat.
-1. **"a face of a student looking extremely angry and stressed with a clenched jaw"**
-   *(wajah siswa tampak sangat marah dan stres dengan rahang mengatup kuat)*
-2. **"a face of a student with a fierce angry expression and gritting teeth"**
-   *(wajah siswa dengan ekspresi marah yang garang dan menggertakkan gigi)*
-3. **"a face of a student sighing heavily with eyes squeezed shut in frustration"**
-   *(wajah siswa mendesah berat dengan mata tertutup rapat karena frustrasi)*
-4. **"a face of a student pinching the bridge of their nose showing mental fatigue"**
-   *(wajah siswa mencubit pangkal hidung menunjukkan kelelahan mental)*
-5. **"a face of a student resting their head on their hand looking completely stressed out"**
-   *(wajah siswa menopang kepala di tangan tampak benar-benar stres)*
-6. **"a face of a student rubbing their eyes forcefully looking completely overwhelmed"**
-   *(wajah siswa mengucek mata dengan paksa tampak benar-benar kewalahan)*
-
-#### E. Threshold & Kalibrasi (Empirical Bias)
-Agar skor SigLIP tidak terlalu rendah (karena logit mentah sering bernilai negatif), sistem menggunakan **Empirical Bias sebesar +3.5**. Nilai ini menggeser kurva sigmoid ke area yang lebih sensitif (0.3 - 0.9) sehingga hybrid scoring bisa berjalan lebih seimbang.
-
-Dengan pemisahan leksikal ini, SigLIP tidak lagi kebingungan membedakan orang yang mengerutkan dahi karena mikir (*Confusion*) dan orang yang mengerutkan dahi karena frustrasi (*Frustration*).
-
-### 4. Aturan Label Video (Voting)
-
-Prediksi akhir **level video** ditentukan dari skor rata-rata (bukan voting mayoritas):
-```
-label_video = 1  if avg_score >= threshold
-label_video = 0  otherwise
-```
-
-Untuk labeling **manual per-frame** (klik kanan di galeri):
-```
-label_video = 1  if jumlah frame positif >= 8 dari 16
-label_video = 0  otherwise
-```
-
----
-
-## Konfigurasi (.env)
-
-Salin `.env.example` ke `.env` dan sesuaikan:
+## 6. Konfigurasi (.env)
 
 ```env
-# Model SigLIP2 yang digunakan
+# Model SigLIP2
 SIGLIP_MODEL_ID=google/siglip2-base-patch16-224
 
-# Bobot hybrid global (fallback jika per-label tidak diset)
-SIGLIP_WEIGHT=0.5
-LANDMARK_WEIGHT=0.5
+# Folder output (relatif terhadap folder dataset)
+OUTPUT_DIR=hasil_label6
 
-# Override per label (format: {LABEL}_SIGLIP_WEIGHT / {LABEL}_LANDMARK_WEIGHT)
+# Padding crop wajah (0.20 = ketat, 0.40 = longgar)
+FACE_CROP_PADDING=0.30
+
+# Bobot hybrid GLOBAL (fallback jika per-label tidak diset)
+SIGLIP_WEIGHT=0.50
+LANDMARK_WEIGHT=0.50
+
+# Override per-label
 BOREDOM_SIGLIP_WEIGHT=0.50
 BOREDOM_LANDMARK_WEIGHT=0.50
 ENGAGEMENT_SIGLIP_WEIGHT=0.50
 ENGAGEMENT_LANDMARK_WEIGHT=0.50
-CONFUSION_SIGLIP_WEIGHT=0.50
-CONFUSION_LANDMARK_WEIGHT=0.50
+CONFUSION_SIGLIP_WEIGHT=0.60
+CONFUSION_LANDMARK_WEIGHT=0.40
 FRUSTRATION_SIGLIP_WEIGHT=0.50
 FRUSTRATION_LANDMARK_WEIGHT=0.50
+
+# Auto-flag jika frame dengan >1 wajah melebihi threshold ini (default 1)
+MULTI_FACE_FRAMES_THRESHOLD=1
 ```
 
 ---
 
-## Struktur Kode
+## 7. Struktur Kode
 
 ```
-siglip2_Labeler_App/
-├── app.py                      # Entry point — GUI utama & event orchestration
-├── ai_service.py               # FastAPI microservice (opsional, headless mode)
+Labeler-App-Siglip-2/
+├── app.py                  # Entry point — GUI & event orchestration
+├── ai_service.py           # Headless REST mode (opsional)
 ├── requirements.txt
-├── .env.example
+├── .env / .env.example
 │
 ├── core/
-│   ├── siglip_model.py         # Singleton loader model SigLIP2 (lazy load)
-│   ├── inference.py            # Hybrid scoring: SigLIP + Landmark fusion
-│   ├── landmark_analyzer.py    # MediaPipe head pose, iris, blendshapes, hand
-│   ├── face_detector.py        # Crop wajah dari frame video
-│   └── README_SIGLIP.md        # Dokumentasi teknis pipeline inferensi
+│   ├── siglip_model.py     # Singleton loader SigLIP2 (lazy load GPU/CPU)
+│   ├── inference.py        # Hybrid scoring: SigLIP × Landmark fusion
+│   ├── landmark_analyzer.py # MediaPipe: head pose, iris, blendshapes, hand zones
+│   ├── face_detector.py    # BlazeFace crop wajah + return bbox
+│   └── README_SIGLIP.md    # Dokumentasi teknis pipeline SigLIP
 │
 ├── ui/
-│   ├── constants.py            # Label, warna, prompt default
-│   ├── left_panel.py           # Panel kiri: daftar video
-│   ├── right_panel.py          # Panel kanan: tombol label & kontrol AI
-│   └── video_player.py         # Widget video player + galeri frame
+│   ├── constants.py        # LABELS, LABEL_COLORS, DEFAULT_PROMPT_GROUPS
+│   ├── left_panel.py       # Panel kiri: video player + galeri 6 frame
+│   └── right_panel.py      # Panel kanan: AI score bars, prompt editor, threshold
 │
 └── utils/
-    ├── io.py                   # Baca/tulis CSV output
-    └── video.py                # Ekstraksi frame dari file video
+    ├── io.py               # Baca/tulis CSV/JSON annotations
+    └── video.py            # Ekstraksi frame + pipeline crop + landmark analysis
 ```
 
 ---
 
-## File Output
+## 8. File Output
 
-Setiap video yang dilabeli menghasilkan satu baris di file CSV output (`hasil_label6/labels.csv`):
+Semua output tersimpan di `hasil_label6/` (atau nilai `OUTPUT_DIR` di `.env`):
 
-| Kolom | Tipe | Keterangan |
+| File | Format | Isi |
 |---|---|---|
-| `video_path` | str | Path relatif ke file video |
-| `Boredom` | 0/1 | Label boredom |
-| `Engagement` | 0/1 | Label engagement |
-| `Confusion` | 0/1 | Label confusion |
-| `Frustration` | 0/1 | Label frustration |
-| `labeled_by` | str | `"manual"` atau `"ai"` |
-| `timestamp` | str | Waktu pelabelan |
+| `annotations_bener.csv` | CSV | Label per video (Boredom/Engagement/Confusion/Frustration: 0 atau 1) |
+| `frame_annotations.json` | JSON | Label per frame per video (6 frame × 4 label) |
+| `batch_history.json` | JSON | Riwayat skor AI: avg_score, siglip_avg, landmark_avg, frame_scores |
+| `flagged_videos.csv` | CSV | Daftar video yang di-flag/reject |
+| `skipped_videos.json` | JSON | Daftar video yang di-skip |
+| `thresholds.json` | JSON | Nilai threshold slider yang terakhir disimpan |
+| `cropped_faces/clean/` | JPG | Crop wajah bersih untuk training |
+| `cropped_faces/viz/` | JPG | Crop wajah dengan overlay landmark untuk debugging |
 
 ---
 
-## FAQ
+## 9. FAQ & Troubleshooting
+
+**Q: Kenapa AI skor Confusion selalu rendah?**
+A: Pastikan threshold slider Confusion tidak terlalu tinggi (coba turunkan ke 0.40). Skor confusion bergantung pada ekspresi alis dan mata — jika wajah siswa terlihat bingung tapi skor tetap rendah, pertimbangkan untuk melabeli manual.
+
+**Q: Kenapa AI tidak mendeteksi siswa menguap sebagai Boredom?**
+A: Sistem mendeteksi menguap (`jawOpen > 0.35`) sebagai sinyal bosan kuat. Namun jika kepala siswa mendongak terlalu jauh (pitch > 15°) saat menguap, atau mulut tidak terbuka cukup lebar, sinyal bisa lemah. Gunakan viz mode untuk cek nilai signal `Yawn`.
+
+**Q: Confusion dan Frustration terdeteksi bersamaan — apakah normal?**
+A: Ya, bisa terjadi. Siswa yang sangat bingung sampai stres bisa memiliki kedua emosi aktif. Namun jika sering bersamaan padahal wajah tidak menunjukkan tanda stres, turunkan threshold Frustration.
+
+**Q: Kenapa video di-flag otomatis?**
+A: Tiga kondisi auto-flag:
+1. Wajah tidak terdeteksi di **semua** 4 frame (kualitas video/pencahayaan buruk)
+2. Video terlalu pendek (<4 frame yang bisa diekstrak)
+3. Lebih dari 1 frame berisi >1 wajah — bisa diubah via `MULTI_FACE_FRAMES_THRESHOLD` di `.env`
 
 **Q: Berapa lama proses Batch AI?**
-A: Sekitar 3–8 detik per video tergantung panjang video dan apakah GPU tersedia. MediaPipe berjalan di CPU secara paralel dengan SigLIP di GPU.
+A: ~3–8 detik per video dengan GPU, ~15–30 detik per video di CPU.
 
-**Q: Apakah bisa dipakai tanpa GPU?**
-A: Bisa. Inferensi akan berjalan di CPU, sekitar 3–5× lebih lambat.
+**Q: Apakah bisa mengubah prompt SigLIP?**
+A: Ya. Klik header label di panel kanan untuk expand, lalu edit prompt di textbox. Perubahan langsung berlaku untuk inferensi berikutnya (tidak perlu restart).
 
-**Q: Kenapa ada video yang terflag merah?**
-A: MediaPipe tidak berhasil mendeteksi wajah pada >50% frame. Ini biasanya terjadi pada video dengan kualitas rendah, pencahayaan buruk, atau wajah yang terlalu kecil/terhalang.
-
-**Q: Bagaimana cara mengubah threshold?**
-A: Slider threshold tersedia di panel kanan bawah. Perubahan hanya berlaku untuk sesi saat ini, kecuali disimpan ke `.env`.
-
-**Q: Apakah skor SigLIP dan Landmark bisa dilihat terpisah?**
-A: Ya. Hover pada bar skor di panel kanan untuk melihat detail `siglip_avg` dan `landmark_avg` secara terpisah.
+**Q: Apa itu `batch_history.json` dan kapan harus di-reset?**
+A: Menyimpan skor AI dari setiap video yang sudah diproses. Video yang sudah ada di history akan di-skip saat Batch Semua. Klik **Restart Batch** di panel kanan untuk menghapus history dan memproses ulang semua video dari awal.

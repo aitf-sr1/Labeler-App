@@ -2,14 +2,17 @@
 
 Dokumen ini menjelaskan arsitektur teknis dan alur matematis dari pipeline inferensi emosi pada `core/`.
 
+> Untuk panduan anotasi dan ciri-ciri setiap emosi, lihat [README.md utama](../README.md).
+
 ## Ringkasan Alur
 
 ```
 Video (MP4)
-  └─► face_detector.py     → Crop wajah 512×512 per frame (16 frame)
-        └─► inference.py   → SigLIP scoring + Landmark scoring → Hybrid score
-              ├─► siglip_model.py        → SigLIP2 zero-shot visual scoring
-              └─► landmark_analyzer.py   → MediaPipe 3D geometry scoring
+  └─► face_detector.py      → Crop wajah 512×512 per frame (4 frame)
+  └─► landmark_analyzer.py  → detect_hands_from_full_frame() sebelum crop
+        └─► inference.py    → SigLIP scoring + Landmark scoring → Hybrid score
+              ├─► siglip_model.py       → SigLIP2 zero-shot visual scoring
+              └─► landmark_analyzer.py  → MediaPipe 3D geometry scoring
 ```
 
 ---
@@ -17,13 +20,15 @@ Video (MP4)
 ## 1. Ekstraksi Frame & Crop Wajah (`face_detector.py`)
 
 **Input:** File video MP4.  
-**Output:** 16 frame PIL Image (crop wajah 512×512 atau resize dari frame asli).
+**Output:** 4 frame PIL Image (crop wajah 512×512).
 
 Alur:
-1. Sampel 16 frame dari distribusi merata sepanjang durasi video.
-2. Deteksi wajah menggunakan MediaPipe Face Detector (BlazeFace).
-3. Jika wajah ditemukan: crop area wajah + padding 20%, resize ke 512×512.
-4. Jika tidak ditemukan: gunakan frame asli diresized ke 224×224 (di-flag).
+1. Sampel **4 frame** dari distribusi merata sepanjang durasi video.
+2. Deteksi wajah menggunakan MediaPipe BlazeFace.
+3. Jika wajah ditemukan: crop area wajah + padding (default 0.30), resize ke 512×512.
+4. Jika tidak ditemukan: fallback ke center crop 80%.
+
+`crop_face()` mengembalikan 4-tuple `(crop_bgr, face_found, n_faces, (x1,y1,x2,y2))`. Bounding box wajah disimpan dan dipakai oleh `detect_hands_from_full_frame()` agar deteksi tangan berjalan dari frame penuh (bukan dari crop yang terlalu ketat).
 
 ---
 
@@ -31,31 +36,33 @@ Alur:
 
 ### Model
 
-- **Model:** `google/siglip2-base-patch16-224` (default, dapat diubah via env)
-- **Tipe:** Vision-Language Contrastive Model (zero-shot classification)
+- **Model:** `google/siglip2-base-patch16-224` (default, dapat diubah via `SIGLIP_MODEL_ID` di `.env`)
+- **Tipe:** Vision-Language Contrastive Model (zero-shot multi-label classification)
 - **Input:** Image 224×224 + teks prompt
 - **Output:** Logit cosine similarity antara gambar dan teks
 
 ### Prompt per Label
 
-Setiap label memiliki 6 prompt positif yang ditulis di `ui/constants.py`. Prompt dirancang untuk mendeskripsikan ekspresi visual spesifik dalam konteks belajar siswa (bukan deskripsi emosi generik).
+Setiap label memiliki 6 prompt positif di `ui/constants.py`. Prompt ditulis untuk mendeskripsikan ekspresi visual spesifik dalam konteks siswa belajar — bukan deskripsi emosi generik. Prompt bisa diedit langsung dari UI panel kanan.
 
-### Murni Sigmoid (Independent Scoring)
+### Murni Sigmoid + Empirical Bias
 
-Berbeda dengan model berbasis Softmax di mana kelas-kelas bersaing, SigLIP (Sigmoid-Loss Image-Language Pretraining) dilatih menggunakan fungsi Sigmoid independen untuk setiap *image-text pair*.
-
-Oleh karena itu, logit asli bisa (dan harus) langsung dimasukkan ke `sigmoid()` untuk mendapatkan probabilitas valid:
+SigLIP (Sigmoid-Loss Image-Language Pretraining) dilatih dengan fungsi Sigmoid independen, bukan Softmax. Logit asli langsung dimasukkan ke `sigmoid()`:
 
 ```python
-# Untuk setiap emosi i:
-group_logits = logits[:, prompt_indices[i]]       # [n_frames, 6]
-# Karena logit zero-shot seringkali negatif, kita tambahkan bias empiris statis
-probs        = torch.sigmoid(group_logits + 3.5)  # probabilitas (0-1) murni + bias
-siglip_score[i] = mean(probs, dim=1)              # rata-rata 6 prompt per frame
+EMPIRICAL_BIAS = 3.5  # menggeser logit negatif ke area sensitivitas sigmoid
+
+for i in range(n_labels):
+    group_logits = logits[:, prompt_indices[i]]          # [n_frames, 6]
+    probs        = torch.sigmoid(group_logits + EMPIRICAL_BIAS)  # [n_frames, 6]
+    siglip_score[i] = probs.mean(dim=1)                  # [n_frames]
 ```
 
-**Mengapa ini penting?**  
-Pendekatan sebelumnya menggunakan normalisasi "Per-Group Max Shift" (mengurangi logit dengan logit tertinggi di grup + 2.0). Secara matematis ini fatal karena memaksa logit tertinggi di setiap grup untuk *selalu* menjadi probabilitas ~0.88, bahkan jika logit aslinya sangat negatif (misalnya saat emosi tersebut tidak ada). Dengan **Murni Sigmoid + Bias Statis**, probabilitas benar-benar mencerminkan tingkat kecocokan absolut model terhadap prompt, namun skalanya tetap masuk akal untuk dibandingkan dengan threshold 0.5.
+**Kenapa Empirical Bias?**  
+Logit zero-shot SigLIP untuk deskripsi spesifik seringkali bernilai negatif (-3 sampai -6). Tanpa bias, `sigmoid(-5)` ≈ 0.007 — terlalu kecil untuk hybrid scoring yang bermakna. Bias +3.5 menggeser kurva ke area 0.2–0.9 tanpa memanipulasi distribusi relatif antar prompt.
+
+**Kenapa bukan normalisasi min-max?**  
+Normalisasi min-max per frame memaksa nilai tertinggi di setiap grup *selalu* menjadi 1.0 — bahkan ketika emosi tersebut tidak ada sama sekali. Sigmoid + bias mempertahankan keyakinan absolut model.
 
 ---
 
@@ -63,85 +70,99 @@ Pendekatan sebelumnya menggunakan normalisasi "Per-Group Max Shift" (mengurangi 
 
 ### Model
 
-- **FaceLandmarker:** Menghasilkan 478 landmark 3D, head pose matrix, dan 52 blendshapes.
-- **HandLandmarker:** Menghasilkan landmark tangan untuk deteksi gesture Frustration/Confusion.
+- **FaceLandmarker:** 478 landmark 3D, head pose matrix 4×4, 52 blendshapes.
+- **HandLandmarker:** 21 landmark per tangan, deteksi dari **full frame** (bukan crop).
 
 ### Koordinat & Sinyal Utama
 
 | Sinyal | Definisi | Digunakan untuk |
 |---|---|---|
-| `yaw` | Rotasi kepala horizontal (derajat) | Boredom, Engagement |
-| `pitch` | Rotasi kepala vertikal (derajat) | Engagement, Confusion |
+| `yaw` | Rotasi kepala horizontal (derajat, + = kanan) | Boredom, Engagement |
+| `pitch` | Rotasi kepala vertikal (derajat, + = mendongak) | Engagement, Confusion, Boredom |
 | `iris_x` | Offset iris horizontal relatif ke sudut mata (−1..+1) | Boredom, Engagement |
 | `iris_y` | Offset iris vertikal relatif ke sudut mata (−1..+1) | Confusion |
-| Blendshapes | 52 koefisien otot wajah (0..1) | Semua label |
-| `hand_forehead` | Proporsi titik tangan di zona dahi (y < 0.45) | Frustration |
-| `hand_chin` | Proporsi titik tangan di zona pipi/dagu (y 0.45–0.80) | Confusion |
+| Blendshapes | 52 koefisien otot wajah (0..1) dari MediaPipe | Semua label |
+| `hand_chin` (field) | Proporsi titik tangan di **zona y < 0.25** crop (atas frame) | +Confusion |
+| `hand_forehead` (field) | Proporsi titik tangan di **zona y 0.25–1.20** crop (tengah/bawah) | +Frustration, −Confusion |
 
-### Catatan Penting: Koordinat Iris
+> **Catatan penamaan:** `hand_chin` menyimpan skor zona ATAS crop (y < 0.25 = area di atas mata/kepala → menggaruk kepala → Confusion). `hand_forehead` menyimpan skor zona TENGAH/BAWAH (y 0.25–1.20 = area wajah/dagu → facepalm → Frustration). Penamaan ini berlawanan intuisi tapi konsisten di seluruh kode.
 
-Karena frame yang diinput adalah **crop yang sudah mengikuti wajah** (`face_detector.py`), posisi iris **relatif ke frame (iris_img_x/y) tidak dipakai** — nilainya akan selalu mendekati 0.5 karena wajah selalu di tengah crop.
+### Catatan: Koordinat Iris
 
-Yang dipakai adalah `iris_x` (posisi pupil relatif ke **sudut mata kiri-kanan**), yang masih mengandung informasi arah pandangan yang valid meski frame sudah di-crop.
+Frame yang diinput adalah **crop yang sudah mengikuti wajah**, sehingga `iris_img_x/y` (posisi iris relatif ke pusat frame) selalu ≈ 0 dan tidak dipakai. Yang dipakai adalah `iris_x` (posisi pupil relatif ke **sudut dalam/luar mata**), yang tetap valid meski frame sudah di-crop.
 
-### Formula Scoring per Emosi
+### Deteksi Tangan dari Full Frame
 
-Lihat [README.md](../README.md#aturan-scoring--perhitungan) untuk formula lengkap dengan semua koefisien.
+HandLandmarker memerlukan telapak tangan untuk tahap deteksi pertama. Dengan padding crop 0.20–0.30, telapak sering terpotong. Solusi: tangan dideteksi dari **full frame video asli**, lalu koordinatnya di-remap ke ruang crop wajah:
+
+```python
+# utils/video.py — alur per frame:
+crop, face_found, n_faces, face_bbox = crop_face(full_frame)
+hand_top, hand_mid_bot, hand_pts_px, hand_raw = detect_hands_from_full_frame(
+    full_frame, face_bbox, crop_size=512
+)
+lr = analyze_frame(crop_bgr, injected_hand=(hand_top, hand_mid_bot, hand_pts_px, hand_raw))
+```
 
 ---
 
 ## 4. Hybrid Scoring (`inference.py`)
 
 ```python
-hybrid_score = α × siglip_score + β × landmark_score
-
-# α dan β dibaca dari env, berbeda per label:
-# - Boredom:     α=0.50, β=0.50  (Seimbang)
-# - Engagement:  α=0.50, β=0.50  (Seimbang)
-# - Confusion:   α=0.50, β=0.50  (Seimbang)
-# - Frustration: α=0.50, β=0.50  (Seimbang)
+hybrid_score[frame] = α × siglip_score[frame] + β × landmark_score[frame]
+avg_score            = mean(hybrid_score for 4 frames)
+prediction           = 1 if vote_pos >= 2 else 0   # mayoritas: ≥2 dari 4 frame positif
 ```
 
-**Alasan bobot berbeda per label:**
+**Bobot per label (nilai aktual di `.env`, dapat diubah):**
 
-- **Boredom & Engagement**: Landmark menangani sinyal geometri yang pasti (arah muka/mata noleh), sedangkan SigLIP dioptimalkan untuk melihat mikro-ekspresi dari muka yang di-crop (misal: kelopak mata berat, tatapan kosong). Keduanya saling melengkapi (50/50).
-- **Confusion & Frustration**: SigLIP menangkap tensi muka keseluruhan, sedangkan Landmark menangkap indikator spesifik (kerutan dahi, rahang terbuka). Keduanya saling melengkapi seimbang (50/50).
+| Label | α (SigLIP) | β (Landmark) | Alasan |
+|---|---|---|---|
+| Boredom | 0.50 | 0.50 | Landmark baik untuk yaw/iris; SigLIP baik untuk ekspresi lelah/kosong |
+| Engagement | 0.50 | 0.50 | AND gate Landmark sangat presisi; SigLIP mendukung visual |
+| Confusion | **0.60** | **0.40** | SigLIP lebih baik untuk ekspresi berpikir halus; landmark mudah false-positive/negative |
+| Frustration | 0.50 | 0.50 | Landmark untuk gestur tangan; SigLIP untuk aura stres |
 
-**Prediksi akhir:**
-```python
-avg_score  = mean(hybrid_score for all 16 frames)
-prediction = 1 if avg_score >= threshold else 0
-```
+**Temporal Restlessness Bonus (Boredom):**  
+Jika std deviasi yaw ≥ 3° di 4 frame, skor Boredom mendapat bonus hingga +0.15. Menangkap pola tolah-toleh yang tidak terlihat per-frame.
 
 ---
 
 ## 5. Konfigurasi Bobot via Environment
 
-Semua bobot dapat dikonfigurasi tanpa mengubah kode:
-
 ```env
-# Bobot global (fallback)
+# Bobot global (fallback jika per-label tidak diset)
 SIGLIP_WEIGHT=0.5
 LANDMARK_WEIGHT=0.5
 
-# Override per label (LABEL = BOREDOM | ENGAGEMENT | CONFUSION | FRUSTRATION)
+# Override per label
 BOREDOM_SIGLIP_WEIGHT=0.50
 BOREDOM_LANDMARK_WEIGHT=0.50
+ENGAGEMENT_SIGLIP_WEIGHT=0.50
+ENGAGEMENT_LANDMARK_WEIGHT=0.50
+CONFUSION_SIGLIP_WEIGHT=0.60    # ← SigLIP lebih dominan
+CONFUSION_LANDMARK_WEIGHT=0.40
+FRUSTRATION_SIGLIP_WEIGHT=0.50
+FRUSTRATION_LANDMARK_WEIGHT=0.50
 ```
 
-Urutan prioritas: **per-label env** → **global env** → **hardcoded default**.
+Urutan prioritas: **per-label env** → **global env** → **hardcoded default (0.50/0.50)**.
 
 ---
 
 ## 6. Debug Output
 
-Saat `_DBG_LAND = True` di `landmark_analyzer.py`, setiap frame mencetak:
+Saat `_DBG_LAND = True` di `landmark_analyzer.py` (default aktif), setiap frame mencetak:
 
 ```
-[LAND] yaw=+12.3 iris_x=+0.210 | sig_yaw=0.73 sig_iris=0.44 arah=0.73 | gate_yaw=0.00 gate_iris=0.81 gate=0.00 | B=0.547 E=0.000 C=0.124 F=0.089
+[LAND] yaw=+12.3 iris_x=+0.210 iris_y=-0.031 lookDn=0.04 | gH=+19.7° gV=0.0° dev=19.7° | boreGaze=0.73 gate=0.00 | B=0.621 E=0.000 C=0.081 F=0.043
+[CONF] brow_dn=0.43 brow_in=0.00 iris_up=0.12 look_up=0.34 jaw=0.10 pucker=0.03 pitch_cu=0.00 base=0.43
+[HAND-FULL] Terdeteksi 1 tangan, in_crop=12, pts_top=3, pts_mid=6, pts_bot=3
 ```
 
-Set `_DBG_LAND = False` untuk mode production.
+Format log `[LAND]`: `gH` = komponen horizontal gaze (°), `gV` = komponen vertikal (°), `dev` = total `gaze_dev`, `boreGaze` = kontribusi gaze ke Boredom, `gate` = gate Engagement dari gaze yang sama.
+
+Set `_DBG_LAND = False` untuk mematikan log di mode production/batch.
 
 ---
 
