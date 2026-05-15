@@ -10,23 +10,29 @@ DEFAULT_PROMPT_GROUPS = [
     # 0 — Boredom
     # Karena input adalah crop wajah, fokus pada EKSPRESI (mata ngantuk, menguap, tatapan kosong)
     # bukan sekadar "noleh" (yang sudah ditangani MediaPipe).
+    # Termasuk: kepala nunduk + ekspresi kosong/mengantuk = bosan.
     (
         "a face of a student with heavy droopy eyelids looking extremely sleepy and tired\n"
         "a face of a student yawning widely with an open mouth showing pure exhaustion\n"
         "a face of a student with a completely blank, expressionless, and dull stare\n"
         "a face of a student resting their chin on their hand with lazy unfocused eyes\n"
         "a face of a student with half-closed eyes appearing mentally absent and disengaged\n"
-        "a face of a student with relaxed facial muscles and a vacant bored expression",
+        "a face of a student with relaxed facial muscles and a vacant bored expression\n"
+        "a face of a student with head tilted down staring blankly completely zoned out and daydreaming",
         "",
     ),
     # 1 — Engagement
+    # Termasuk: mata lihat bawah ke keyboard/layar dengan ekspresi fokus = engaged.
+    # Kepala tidak harus menghadap ke kamera — yang penting ekspresi aktif dan alert.
     (
         "a face of a student making direct eye contact with clear focus and engaged attention\n"
         "a face of a student with bright wide alert eyes actively watching and learning\n"
         "a face of a student with an attentive expression and a subtle interested smile\n"
         "a face of a student nodding and reacting with lively responsive facial features\n"
         "a face of a student with slightly raised eyebrows showing curiosity and focus\n"
-        "a face of a student with a sharp, present, and actively involved expression",
+        "a face of a student with a sharp, present, and actively involved expression\n"
+        "a face of a student looking down at keyboard or notes with an alert focused and engaged expression\n"
+        "a face of a student with eyes directed downward actively typing with an attentive concentrated look",
         "",
     ),
     # 2 — Confusion

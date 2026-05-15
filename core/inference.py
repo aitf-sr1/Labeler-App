@@ -49,11 +49,14 @@ def _get_label_weights(label_idx: int) -> tuple:
 
 
 def run_siglip_on_frames(
-    pil_images:     list,
-    prompt_groups:  list,
-    thresholds:     list,
+    pil_images:       list,
+    prompt_groups:    list,
+    thresholds:       list,
     ambiguity_margin: float = 0.02,
     landmark_results: list  = None,
+    cfg:              dict  = None,
+    siglip_cache_path: str  = None,
+    rel_path:         str   = None,
 ) -> dict:
     """
     Inferensi SigLIP2 pada 4 frame dari satu video, dengan hybrid scoring
@@ -74,6 +77,11 @@ def run_siglip_on_frames(
          "n_frames": int, "thresholds": list}
     """
     from core.landmark_analyzer import compute_emotion_scores
+    from core.rules import DEFAULT_RULES
+    import datetime
+
+    if cfg is None:
+        cfg = DEFAULT_RULES
 
     device           = get_device()
     model, processor = get_siglip()
@@ -102,16 +110,8 @@ def run_siglip_on_frames(
 
     n_frames = len(pil_images)
 
-    # ── MURNI SIGMOID (Sesuai Arsitektur Asli SigLIP) ───────────────────────
-    # Logit dari SigLIP secara bawaan sudah didesain sebagai input untuk Sigmoid
-    # untuk menghasilkan probabilitas independen (multi-label).
-    # Kita tidak boleh melakukan normalisasi max() per frame karena akan merusak
-    # keyakinan absolut model. Namun, karena logit zero-shot untuk teks yang spesifik 
-    # seringkali berada di rentang negatif (misal -3.0 hingga -6.0), nilai sigmoid murni
-    # akan sangat kecil (mendekati 0).
-    # Solusinya: Gunakan Bias Kalibrasi Statis (Empirical Bias) untuk menggeser kurva
-    # tanpa memanipulasi distribusi antar-frame.
-    EMPIRICAL_BIAS = 3.5
+    # ── SIGMOID dengan Empirical Bias ─────────────────────────────────────────
+    EMPIRICAL_BIAS = cfg["hybrid"]["empirical_bias"]
 
     norm_by_label = []
     for i in range(n_labels):
@@ -122,12 +122,42 @@ def run_siglip_on_frames(
     # Pre-compute landmark scores per frame (jika tersedia)
     land_scores_per_frame = None
     if landmark_results and len(landmark_results) == n_frames:
-        land_scores_per_frame = [compute_emotion_scores(r) for r in landmark_results]
+        land_scores_per_frame = [compute_emotion_scores(r, cfg) for r in landmark_results]
+
+    # Simpan siglip scores per frame ke cache (sebelum hybrid)
+    if siglip_cache_path:
+        try:
+            import os
+            os.makedirs(os.path.dirname(siglip_cache_path), exist_ok=True)
+            siglip_frame_data = []
+            for f in range(n_frames):
+                per_label_scores = [
+                    round(norm_by_label[i][f].item(), 4) for i in range(n_labels)
+                ]
+                siglip_frame_data.append({
+                    "frame_idx": f,
+                    "siglip_scores": per_label_scores,
+                })
+            import json
+            with open(siglip_cache_path, "w") as fp:
+                json.dump({
+                    "video_rel": rel_path or "",
+                    "generated_at": datetime.datetime.now().isoformat(),
+                    "empirical_bias": EMPIRICAL_BIAS,
+                    "frames": siglip_frame_data,
+                }, fp, indent=2)
+        except Exception as e:
+            print(f"[SigLIP Cache] Gagal simpan: {e}")
 
     per_label_result = {}
     for i in range(n_labels):
-        # Bobot per-label dari env
-        siglip_w, land_w = _get_label_weights(i)
+        # Bobot per-label dari cfg (fallback ke env)
+        hcfg = cfg["hybrid"]
+        sw_raw = hcfg["siglip_w"][i] if i < len(hcfg["siglip_w"]) else 0.5
+        lw_raw = hcfg["land_w"][i]   if i < len(hcfg["land_w"])   else 0.5
+        total  = (sw_raw + lw_raw) or 1.0
+        siglip_w = sw_raw / total
+        land_w   = lw_raw / total
 
         # SigLIP score per frame
         siglip_scores = [
@@ -146,15 +176,15 @@ def run_siglip_on_frames(
             )
 
             # ── Temporal Restlessness Bonus (khusus Boredom, i=0) ────────
-            # Jika kepala bergerak bolak-balik (std yaw tinggi), naikkan skor boredom.
-            # Ini menangkap pola 'tolah-toleh' yang tidak bisa dideteksi per-frame.
             if i == 0:
                 yaws = [r.yaw for r in landmark_results if r.face_found]
                 if len(yaws) >= 2:
                     import numpy as np
                     yaw_std = float(np.std(yaws))
-                    # std >= 3° mulai bonus, >= 10° = bonus penuh (0.15)
-                    restless_bonus = min(max((yaw_std - 3.0) / 7.0, 0.0), 1.0) * 0.15
+                    std_min   = hcfg["restless_std_min"]
+                    std_range = hcfg["restless_std_range"]
+                    bonus_max = hcfg["restless_bonus_max"]
+                    restless_bonus = min(max((yaw_std - std_min) / std_range, 0.0), 1.0) * bonus_max
                     if restless_bonus > 0.01:
                         hybrid_scores = [
                             round(min(s + restless_bonus, 1.0), 4) for s in hybrid_scores
