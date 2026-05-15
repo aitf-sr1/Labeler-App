@@ -61,8 +61,8 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        "siglip_w": [0.50, 0.50, 0.60, 0.50],   # per label [Bore, Eng, Conf, Frus]
-        "land_w":   [0.50, 0.50, 0.40, 0.50],
+        "siglip_w": [0.50, 0.50, 0.50, 0.50],   # per label [Bore, Eng, Conf, Frus]
+        "land_w":   [0.50, 0.50, 0.50, 0.50],
         "restless_bonus_max": 0.15,
         "restless_std_min": 3.0,
         "restless_std_range": 7.0,
