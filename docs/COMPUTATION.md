@@ -339,19 +339,18 @@ gaze_v_raw = -pitch + iris_y × scale_v
            = 3.50 - 1.25
            = 2.25°
 
-head_nunduk = pitch < -pitch_nunduk_th = -3.50 < -12.0 → False
-  (kepala hanya nunduk 3.5°, belum melewati threshold 12°)
+look_down_v = (eyeLookDownLeft + eyeLookDownRight) / 2 = 0.11
 
-look_down_fallback = 0.0   (head_nunduk = False, jadi tidak aktif)
-
-gaze_v = max(|2.25|, 0.0) = 2.25°
+gaze_v = max(|gaze_v_raw|, look_down_v × 40)
+       = max(|2.25|, 0.11 × 40)
+       = max(2.25, 4.40)
+       = 4.40°
 
 gaze_v_eff = max(0, gaze_v - v_dead_zone)
-           = max(0, 2.25 - 15.0)
-           = max(0, -12.75)
+           = max(0, 4.40 - 15.0)
            = 0.0°
 
-→ gaze_v_eff = 0 karena gerakan vertikal hanya 2.25°, masih dalam
+→ gaze_v_eff = 0 karena gerakan vertikal 4.4° masih jauh dari
   dead zone 15° (kompensasi untuk layar yang ada di bawah level mata).
 ```
 
@@ -402,59 +401,19 @@ Karena gaze_v_eff = 0, deviasi murni dari komponen horizontal.
 ### Langkah 1: bore_gaze dari gaze_dev
 
 ```python
-gaze_dead_zone = 8.0
-gaze_range     = 12.0
+gaze_dead_zone = 5.0
+gaze_range     = 20.0
 
 bore_gaze = clamp((gaze_dev - gaze_dead_zone) / gaze_range, 0, 1)
-          = clamp((19.65 - 8.0) / 12.0, 0, 1)
-          = clamp(11.65 / 12.0, 0, 1)
-          = clamp(0.971, 0, 1)
-          = 0.971
+          = clamp((19.65 - 5.0) / 20.0, 0, 1)
+          = clamp(14.65 / 20.0, 0, 1)
+          = clamp(0.733, 0, 1)
+          = 0.733
 
-→ Gaze sangat jauh (19.65°), bore_gaze hampir 1.0
+→ Gaze jauh (19.65°), bore_gaze 0.73
 ```
 
-### Langkah 2: Pitch Modifikasi bore_gaze
-
-```python
-pitch = -3.50°
-
-# Nunduk check:
-head_nunduk = pitch < -pitch_nunduk_th = -3.50 < -12.0 → False
-# (kepala belum nunduk cukup dalam, skip)
-
-# Mendongak check:
-PITCH_UP_TH = 8.0
-pitch > 8.0? → -3.50 > 8.0 → False
-# (kepala tidak mendongak, skip)
-
-bore_gaze tidak berubah = 0.971
-```
-
-### Langkah 3: Frustration Suppression
-
-```python
-# Hitung head-eye dissonance (apakah mata "lawan arah" kepala?)
-yaw_eye_dissonance = max(0, |yaw| - |gaze_h|)
-                   = max(0, |12.30| - |19.65|)
-                   = max(0, 12.30 - 19.65)
-                   = max(0, -7.35)
-                   = 0.0
-
-frus_restless = clamp((0.0 - restless_dead) / restless_range, 0, 1)
-              = clamp((0.0 - 5.0) / 10.0, 0, 1)
-              = clamp(-0.5, 0, 1)
-              = 0.0
-
-bore_gaze = bore_gaze × (1.0 - frus_restless × frus_suppress)
-          = 0.971 × (1.0 - 0.0 × 0.70)
-          = 0.971 × 1.0
-          = 0.971
-
-→ Tidak ada suppression (frus_restless = 0)
-```
-
-### Langkah 4: Sinyal Ekspresi Pendukung
+### Langkah 2: Sinyal Ekspresi Pendukung
 
 ```python
 # eyeBlink (mata ngantuk)
@@ -489,24 +448,23 @@ sig_expr = max(blink_v, yawn_v, pitch_up_v) × sig_expr_weight
          = 0.120
 ```
 
-### Langkah 5: Blend Final
+### Langkah 3: Blend Final
 
 ```python
 blend_a = 0.85
 blend_b = 0.15
 
 base_bore = max(bore_gaze, sig_expr)
-          = max(0.971, 0.120)
-          = 0.971
+          = max(0.733, 0.120)
+          = 0.733
 
 bore = clamp(base_bore × blend_a + (bore_gaze + sig_expr) × blend_b, 0, 1)
-     = clamp(0.971 × 0.85 + (0.971 + 0.120) × 0.15, 0, 1)
-     = clamp(0.8254 + 1.091 × 0.15, 0, 1)
-     = clamp(0.8254 + 0.1637, 0, 1)
-     = clamp(0.9891, 0, 1)
-     = 0.9891
+     = clamp(0.733 × 0.85 + (0.733 + 0.120) × 0.15, 0, 1)
+     = clamp(0.623 + 0.853 × 0.15, 0, 1)
+     = clamp(0.623 + 0.128, 0, 1)
+     = 0.751
 
-→ BOREDOM = 0.989 (sangat tinggi — kepala jelas menoleh jauh)
+→ BOREDOM = 0.751 (tinggi — kepala menoleh jauh)
 ```
 
 ---
@@ -515,23 +473,20 @@ bore = clamp(base_bore × blend_a + (bore_gaze + sig_expr) × blend_b, 0, 1)
 
 Engagement menggunakan `gaze_dev` yang sama, tapi sebagai **gate** (mematikan Engagement jika gaze terlalu besar).
 
-**Input:** `gaze_dev = 19.65°`, `gaze_h_eff = 19.65°`
+**Input:** `gaze_dev = 19.65°`
 
 ```python
-head_nunduk = False   (dari atas)
-
-# Path "tegak" (bukan nunduk):
-tegak_dead_zone = 3.0
+tegak_dead_zone = 5.0
 tegak_range     = 12.0
 
 gate = clamp(1 - max(0, gaze_dev - tegak_dead_zone) / tegak_range, 0, 1)
-     = clamp(1 - max(0, 19.65 - 3.0) / 12.0, 0, 1)
-     = clamp(1 - 16.65 / 12.0, 0, 1)
-     = clamp(1 - 1.3875, 0, 1)
-     = clamp(-0.3875, 0, 1)
+     = clamp(1 - max(0, 19.65 - 5.0) / 12.0, 0, 1)
+     = clamp(1 - 14.65 / 12.0, 0, 1)
+     = clamp(1 - 1.221, 0, 1)
+     = clamp(-0.221, 0, 1)
      = 0.0
 
-# → gate = 0.0 karena gaze_dev (19.65°) jauh melampaui dead_zone + range = 15°
+# → gate = 0.0 karena gaze_dev (19.65°) melampaui dead_zone + range = 17°
 
 blink_heavy_th  = 0.50
 blink_heavy_min = 0.30
@@ -552,9 +507,9 @@ eng = gate × max(blink_heavy_min, 1.0 - blink_heavy)
 
 **Contoh siswa yang lurus:** `gaze_dev = 4°`
 ```
-gate = clamp(1 - max(0, 4 - 3) / 12, 0, 1) = clamp(1 - 0.083, 0, 1) = 0.917
-eng  = 0.917 × max(0.30, 1.0) = 0.917 × 1.0 = 0.917
-→ ENGAGEMENT = 0.917
+gate = clamp(1 - max(0, 4 - 5) / 12, 0, 1) = clamp(1 - 0, 0, 1) = 1.0
+eng  = 1.0 × max(0.30, 1.0) = 1.0 × 1.0 = 1.0
+→ ENGAGEMENT = 1.000 (penuh — gaze 4° masih dalam dead zone 5°)
 ```
 
 ---
@@ -654,19 +609,12 @@ smile_pen = max(0, 0.06 - smile_penalty_th)
 
 jaw_co = clamp(0.65 - 0.0 × 1.5, 0, 1) = 0.65
 
-# mouthPucker
-pucker_th      = 0.30
-pucker_gate_th = 0.30
+# mouthPucker (langsung, tanpa gate)
+pucker_th = 0.30
 
 sig_brow_conf = max(brow_dn_v, brow_in_v) = max(1.0, 1.0) = 1.0
 
-pucker_raw  = clamp(0.25 / 0.30, 0, 1) = clamp(0.833, 0, 1) = 0.833
-pucker_gate = clamp(max(jaw_co, sig_brow_conf) / 0.30, 0, 1)
-            = clamp(max(0.65, 1.0) / 0.30, 0, 1)
-            = clamp(1.0 / 0.30, 0, 1)
-            = clamp(3.33, 0, 1)
-            = 1.0
-pucker_co = pucker_raw × pucker_gate = 0.833 × 1.0 = 0.833
+pucker_co = clamp(0.25 / 0.30, 0, 1) = clamp(0.833, 0, 1) = 0.833
 ```
 
 ### Langkah 5: base_conf dan blend
@@ -686,20 +634,10 @@ conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
      = 1.0
 ```
 
-### Langkah 6: Gaze Gate & Suppression
+### Langkah 6: Suppression Tangan
 
 ```python
-gaze_gate_dead  = 8.0
-gaze_gate_range = 12.0
-
-conf_gaze_gate = clamp(1 - max(0, gaze_h_eff - 8.0) / 12.0, 0, 1)
-               = clamp(1 - max(0, 5.0 - 8.0) / 12.0, 0, 1)
-               = clamp(1 - 0.0, 0, 1)
-               = 1.0   ← gaze_h_eff (5°) masih dalam dead zone, tidak ada gate
-
-conf = conf × conf_gaze_gate = 1.0 × 1.0 = 1.0
-
-# Suppression dari tangan
+# Suppression dari tangan (tangan di zona tengah wajah membatalkan Confusion)
 suppression = hand_forehead if hand_chin < 0.5 else 0.0
             = 0.0   (tidak ada tangan)
 
@@ -722,7 +660,6 @@ eyeSquintLeft = 0.44, eyeSquintRight = 0.41
 jawOpen      = 0.08
 mouthSmile   = 0.02
 hand_forehead = 0.0
-frus_restless = 0.0
 ```
 
 ### Langkah 1: Sinyal Individual
@@ -790,10 +727,9 @@ sig_wajah_frus = clamp(1.0 - 0.0 × 1.5, 0, 1) = 1.0
 
 ```python
 blend_a = 0.85, blend_b = 0.15
-restless_w = 0.50
 
-base_frus = clamp(sig_wajah_frus + hand_forehead + frus_restless × restless_w, 0, 1)
-          = clamp(1.0 + 0.0 + 0.0 × 0.50, 0, 1)
+base_frus = clamp(sig_wajah_frus + hand_forehead, 0, 1)
+          = clamp(1.0 + 0.0, 0, 1)
           = 1.0
 
 frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
@@ -1142,13 +1078,13 @@ GAZE CALCULATION:
   gaze_dev = sqrt(23.25²) = 23.25°
 
 BOREDOM:
-  bore_gaze = clamp((23.25-8)/12, 0,1) = clamp(1.27, 0,1) = 1.0
+  bore_gaze = clamp((23.25-5)/20, 0,1) = clamp(0.913, 0,1) = 0.913
   blink_v = 0, yawn_v = clamp(0.10/0.35,0,1)=0.286
   sig_expr = 0.286×0.70 = 0.200
-  bore = clamp(1.0×0.85 + (1.0+0.200)×0.15, 0,1) = clamp(1.030, 0,1) = 1.0
+  bore = clamp(0.913×0.85 + (0.913+0.200)×0.15, 0,1) = clamp(0.776+0.167, 0,1) = 0.943
 
 ENGAGEMENT:
-  gate = clamp(1-(23.25-3)/12, 0,1) = clamp(1-1.69, 0,1) = 0.0
+  gate = clamp(1-(23.25-5)/12, 0,1) = clamp(1-1.52, 0,1) = 0.0
   eng = 0.0 × 1.0 = 0.0
 
 CONFUSION:
@@ -1160,14 +1096,9 @@ CONFUSION:
   brow_dn_v = clamp(mean(0.28,0.26)/0.23, 0,1) = clamp(1.174, 0,1) = 1.0
   brow_in_v = clamp(0.35/0.30,0,1) × clamp(0.714/0.25,0,1) = 1.0 × 1.0 = 1.0
   jaw_co: 0.05 < 0.10 ≤ 0.25 → (0.10-0.05)/(0.25-0.05) = 0.25
-  base_conf = max(1.0, 0.714, 0.25, ...) = 1.0
+  pucker_co = clamp(0/0.30, 0,1) = 0.0  (mouthPucker tidak ada di input)
+  base_conf = max(1.0, 0.714, 0.25, 0.0, 0.0) = 1.0
   conf = clamp(1.0×0.85 + (0.067+1.0)×0.15, 0,1) = clamp(1.010, 0,1) = 1.0
-  conf_gaze_gate = clamp(1-(23.25-8)/12, 0,1) = clamp(-0.27, 0,1) = 0.0 ← !!!
-  conf = 1.0 × 0.0 = 0.0
-
-→ Confusion = 0.0 meski alis berkerut, karena siswa NOLEH jauh (gaze gate)
-  Ini desain yang intentional: siswa yang noleh sambil muka bingung lebih
-  mungkin Boredom daripada benar-benar Confusion tentang materi.
 
 SigLIP: (asumsi)
   siglip_boredom_frame = 0.72
@@ -1194,8 +1125,8 @@ gaze_dev = sqrt(max(|yaw + iris_x×35|, |iris_x|×70, |yaw|)² + max(0, |gaze_v|
 
 BOREDOM   = blend(max(bore_gaze, sig_expr),  bore_gaze,  sig_expr)
 ENGAGEMENT = gate(gaze_dev) × max(0.30, 1-blink_heavy)
-CONFUSION  = blend(max_signals, pitch_cu, sig_brow) × gaze_gate × (1-hand_suppression)
-FRUSTRATION = blend(SUM(ns_fr, br_fr, lp_fr, ey_fr, ck_fr) + hand + restless, ck_fr, jw_fr)
+CONFUSION  = blend(max_signals, pitch_cu, sig_brow) × (1-hand_suppression)
+FRUSTRATION = blend(SUM(ns_fr, br_fr, lp_fr, ey_fr, ck_fr) + hand, ck_fr, jw_fr)
 
 SIGLIP[label][frame] = mean(sigmoid(logits[frame, label_prompts] + 3.5))
 

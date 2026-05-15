@@ -392,35 +392,15 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     gaze_v_raw = -r.pitch + r.iris_y * GAZE_SCALE_V
 
     look_down_v = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
-
-    PITCH_NUNDUK_TH = bcfg["pitch_nunduk_th"]
-    head_nunduk = r.pitch < -PITCH_NUNDUK_TH
-
-    look_down_fallback = look_down_v * 40 if head_nunduk else 0.0
-    gaze_v     = max(abs(gaze_v_raw), look_down_fallback)
+    gaze_v     = max(abs(gaze_v_raw), look_down_v * 40)
     gaze_v_eff = max(0.0, gaze_v - gcfg["v_dead_zone"])
 
     iris_side  = abs(r.iris_x) * GAZE_SCALE * gcfg["iris_side_mult"]
     gaze_h_eff = max(abs(gaze_h), iris_side, abs(r.yaw))
     gaze_dev   = (gaze_h_eff ** 2 + gaze_v_eff ** 2) ** 0.5
 
-    # Head-eye dissonance (Frustration restlessness, dihitung dulu agar bisa suppress Boredom)
-    yaw_eye_dissonance = max(0.0, abs(r.yaw) - abs(gaze_h))
-    frus_restless      = _clamp((yaw_eye_dissonance - fcfg["restless_dead"]) / fcfg["restless_range"], 0, 1)
-
     # == 0: BOREDOM ============================================================
     bore_gaze = _clamp((gaze_dev - bcfg["gaze_dead_zone"]) / bcfg["gaze_range"], 0, 1)
-
-    if head_nunduk:
-        bore_pitch_down = _clamp((-r.pitch - PITCH_NUNDUK_TH) / bcfg["pitch_nunduk_range"], 0, 1)
-        bore_gaze = max(bore_gaze, bore_pitch_down)
-
-    PITCH_UP_TH = bcfg["pitch_up_th"]
-    if r.pitch > PITCH_UP_TH:
-        bore_pitch_up = _clamp((r.pitch - PITCH_UP_TH) / bcfg["pitch_up_range"], 0, 1)
-        bore_gaze = max(bore_gaze, bore_pitch_up)
-
-    bore_gaze = bore_gaze * (1.0 - frus_restless * bcfg["frus_suppress"])
 
     blink_v    = _clamp((max(g("eyeBlinkLeft"), g("eyeBlinkRight")) - bcfg["blink_dead_zone"]) / bcfg["blink_range"], 0, 1)
     yawn_v     = _clamp(g("jawOpen") / bcfg["yawn_threshold"], 0, 1) if r.pitch < 15 else 0.0
@@ -431,10 +411,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     bore       = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr) * bcfg["blend_b"], 0, 1)
 
     # == 1: ENGAGEMENT =========================================================
-    if head_nunduk:
-        gate = _clamp(1 - gaze_h_eff / ecfg["nunduk_gate_range"], 0, 1)
-    else:
-        gate = _clamp(1 - max(0, gaze_dev - ecfg["tegak_dead_zone"]) / ecfg["tegak_range"], 0, 1)
+    gate = _clamp(1 - max(0, gaze_dev - ecfg["tegak_dead_zone"]) / ecfg["tegak_range"], 0, 1)
     blink_heavy = max(0.0, max(g("eyeBlinkLeft"), g("eyeBlinkRight")) - ecfg["blink_heavy_th"]) / ecfg["blink_heavy_th"]
     eng = gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy)
 
@@ -462,18 +439,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
 
     jaw_co = _clamp(jaw_val_conf - smile_pen * 1.5, 0, 1)
 
+    pucker_co  = _clamp(g("mouthPucker") / ccfg["pucker_th"], 0, 1)
+
     sig_brow_conf = max(brow_dn_v, brow_in_v)
     sig_mata_conf = max(iris_up_v, look_up_v)
 
-    pucker_raw  = _clamp(g("mouthPucker") / ccfg["pucker_th"], 0, 1)
-    pucker_gate = _clamp(max(jaw_co, sig_brow_conf) / ccfg["pucker_gate_th"], 0, 1)
-    pucker_co   = pucker_raw * pucker_gate
-
     base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, r.hand_chin)
     conf = _clamp(base_conf * ccfg["blend_a"] + (pitch_cu + sig_brow_conf) * ccfg["blend_b"], 0, 1)
-
-    conf_gaze_gate = _clamp(1 - max(0.0, gaze_h_eff - ccfg["gaze_gate_dead"]) / ccfg["gaze_gate_range"], 0, 1)
-    conf = conf * conf_gaze_gate
 
     suppression = r.hand_forehead if r.hand_chin < 0.5 else 0.0
     conf = _clamp(conf - suppression, 0, 1)
@@ -492,13 +464,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     sig_wajah_frus = _clamp(sig_wajah_frus - smile_pen * 1.5, 0, 1)
 
     hand_trigger_frus = r.hand_forehead
-    base_frus = _clamp(sig_wajah_frus + hand_trigger_frus + frus_restless * fcfg["restless_w"], 0, 1)
+    base_frus = _clamp(sig_wajah_frus + hand_trigger_frus, 0, 1)
     frus = _clamp(base_frus * fcfg["blend_a"] + (ck_fr + jw_fr) * fcfg["blend_b"], 0, 1)
 
     # Debug log
     if _DBG_LAND:
-        nunduk_tag = " [NUNDUK]" if head_nunduk else ""
-        print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f}{nunduk_tag} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
+        print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
               f"lookDn={look_down_v:.2f} | gH={gaze_h:+.1f}° gV={gaze_v:.1f}° dev={gaze_dev:.1f}° | "
               f"boreGaze={bore_gaze:.2f} gate={gate:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
