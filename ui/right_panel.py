@@ -110,6 +110,21 @@ class RightPanel:
         )
         self.btn_restart_batch.pack(anchor="w", padx=14, pady=(0, 2))
 
+        # ── Batch versioning ──────────────────────────────────────────────────
+        bv_frame = ctk.CTkFrame(parent, fg_color=("e8e8f0", "#1a1a2a"), corner_radius=4)
+        bv_frame.pack(fill="x", padx=14, pady=(4, 2))
+        self.batch_new_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            bv_frame, text="Buat batch baru:", variable=self.batch_new_var,
+            font=("Poppins", 9), text_color="gray",
+            checkbox_width=14, checkbox_height=14,
+        ).pack(side="left", padx=(6, 4), pady=4)
+        self.batch_name_entry = ctk.CTkEntry(
+            bv_frame, placeholder_text="nama file…", font=("Poppins", 9),
+            height=22, fg_color=("white", "#111122"),
+        )
+        self.batch_name_entry.pack(side="left", fill="x", expand=True, padx=(0, 6), pady=4)
+
         self.btn_reset_label = ctk.CTkButton(
             parent, text="Reset Label Video Ini", command=self.app.reset_current_labels,
             fg_color="#b91c1c", hover_color="#991b1b",
@@ -117,24 +132,78 @@ class RightPanel:
         )
         self.btn_reset_label.pack(anchor="w", padx=14, pady=(6, 2))
 
+        # ── Split Label 2D ────────────────────────────────────────────────────
+        split_hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        split_hdr.pack(fill="x", padx=14, pady=(6, 0))
+        self.btn_split_2d = ctk.CTkButton(
+            split_hdr, text="Split Label 2D", command=self.app._split_dataset_2d,
+            fg_color="#0ea5e9", hover_color="#0284c7",
+            font=("Poppins", 9, "bold"), height=26,
+        )
+        self.btn_split_2d.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ctk.CTkLabel(split_hdr, text="UUID idx:", font=("Poppins", 8), text_color="gray").pack(side="left")
+        self.split_uuid_depth_entry = ctk.CTkEntry(
+            split_hdr, width=30, height=26, font=("Poppins", 9),
+        )
+        self.split_uuid_depth_entry.insert(0, "2")
+        self.split_uuid_depth_entry.pack(side="left", padx=(2, 0))
+
+        sv_frame = ctk.CTkFrame(parent, fg_color=("e8e8f0", "#1a1a2a"), corner_radius=4)
+        sv_frame.pack(fill="x", padx=14, pady=(2, 2))
+        self.split_new_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            sv_frame, text="Folder baru:", variable=self.split_new_var,
+            font=("Poppins", 9), text_color="gray",
+            checkbox_width=14, checkbox_height=14,
+        ).pack(side="left", padx=(6, 4), pady=4)
+        ctk.CTkLabel(
+            sv_frame, text="← nama batch di atas",
+            font=("Poppins", 8), text_color="#6b7280",
+        ).pack(side="left", padx=(0, 6), pady=4)
+
         ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
-            fill="x", padx=12, pady=(2, 6)
+            fill="x", padx=12, pady=(4, 6)
         )
 
     def _build_statistics_panel(self, parent):
-        stats_frame = ctk.CTkFrame(parent, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
+        import os
+        stats_frame = ctk.CTkFrame(parent, fg_color=("#f0f0f5", "#1e1e2e"), corner_radius=6)
         stats_frame.pack(fill="x", padx=12, pady=(0, 6))
 
         hdr = ctk.CTkFrame(stats_frame, fg_color="transparent")
         hdr.pack(fill="x", padx=8, pady=(4, 0))
         ctk.CTkLabel(hdr, text="Statistik AI", font=("Poppins", 10, "bold"), text_color="gray").pack(side="left")
-        
+
         self.lbl_stat_total = ctk.CTkLabel(hdr, text="Total: 0", font=("Poppins", 9, "bold"), text_color="#10b981")
         self.lbl_stat_total.pack(side="right")
 
+        # ── Batch file dropdown ───────────────────────────────────────────────
+        brow = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        brow.pack(fill="x", padx=8, pady=(0, 2))
+
+        ctk.CTkLabel(brow, text="Baca:", font=("Poppins", 8), text_color="gray").pack(side="left", padx=(0, 3))
+
+        self._batch_file_var = ctk.StringVar(value="batch_history.json")
+        self._batch_file_menu = ctk.CTkOptionMenu(
+            brow, variable=self._batch_file_var,
+            values=["batch_history.json"],
+            width=175, height=22,
+            font=("Poppins", 8),
+            command=self._on_batch_file_select,
+        )
+        self._batch_file_menu.pack(side="left", fill="x", expand=True, padx=(0, 2))
+
+        ctk.CTkButton(
+            brow, text="↺", width=26, height=22,
+            font=("Poppins", 11), fg_color="transparent",
+            text_color=("gray", "#6b7280"), hover_color=("#e5e7eb", "#374151"),
+            command=self.refresh_batch_files,
+        ).pack(side="left")
+
+        # ── Label count grid ──────────────────────────────────────────────────
         grid = ctk.CTkFrame(stats_frame, fg_color="transparent")
         grid.pack(fill="x", padx=8, pady=(2, 6))
-        
+
         self.stat_labels = {}
         for i, lbl in enumerate(LABELS):
             color = LABEL_COLORS[lbl]
@@ -144,25 +213,59 @@ class RightPanel:
             var_label.grid(row=row, column=col, sticky="w", padx=(0, 15))
             self.stat_labels[lbl] = var_label
 
+    def refresh_batch_files(self, base_dir=None):
+        """Rescan folder output untuk daftar batch_history_*.json terbaru."""
+        import os, glob
+        if base_dir is None:
+            bh_path = getattr(self.app, "path_json_batch_history", "")
+            if not bh_path:
+                return
+            base_dir = os.path.dirname(bh_path)
+
+        files = []
+        if os.path.exists(os.path.join(base_dir, "batch_history.json")):
+            files.append("batch_history.json")
+        for f in sorted(glob.glob(os.path.join(base_dir, "batch_history_*.json"))):
+            files.append(os.path.basename(f))
+        if not files:
+            files = ["batch_history.json"]
+
+        self._batch_file_menu.configure(values=files)
+        if self._batch_file_var.get() not in files:
+            self._batch_file_var.set(files[0])
+
+    def _on_batch_file_select(self, filename: str):
+        """Load batch history yang dipilih dari dropdown dan update statistik."""
+        import os
+        bh_path = getattr(self.app, "path_json_batch_history", "")
+        if not bh_path:
+            return
+        full_path = os.path.join(os.path.dirname(bh_path), filename)
+        try:
+            from utils import load_batch_history
+            bh = load_batch_history(full_path)
+            self.update_statistics(bh)
+        except Exception as exc:
+            print(f"[Stats] Gagal load {filename}: {exc}")
+
     def update_statistics(self, batch_history: dict):
         total_frames = 0
         counts = {lbl: 0 for lbl in LABELS}
-        
+
         for vid_data in batch_history.values():
             per_label = vid_data.get("per_label", {})
-            
-            # Hitung total frame dari array frame_preds label pertama
+
             try:
                 total_frames += len(per_label.get("0", {}).get("frame_preds", []))
-            except:
+            except Exception:
                 total_frames += 6
-                
+
             for i, lbl in enumerate(LABELS):
                 v_pos = per_label.get(str(i), {}).get("vote_pos", 0)
                 counts[lbl] += v_pos
-                
+
         self.lbl_stat_total.configure(text=f"Total: {total_frames} img")
-                    
+
         for lbl in LABELS:
             self.stat_labels[lbl].configure(text=f"{lbl}: {counts[lbl]}")
 

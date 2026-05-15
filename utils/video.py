@@ -42,6 +42,8 @@ def prepare_cropped_frames(
     video_path: str,
     root_folder: str,
     crop_dir_base: str,
+    raw_cache_dir: str = None,
+    cfg: dict = None,
 ) -> tuple:
     """
     Ekstrak, crop wajah (BlazeFace), jalankan landmark analysis (FaceLandmarker),
@@ -128,13 +130,45 @@ def prepare_cropped_frames(
             no_face_count += 1
         landmark_results.append(lr)
 
-        emotion_sc = compute_emotion_scores(lr)
+        emotion_sc = compute_emotion_scores(lr, cfg)
         viz_bgr    = draw_landmark_viz(bgr, lr, emotion_sc)
         viz_path   = os.path.join(viz_crop_dir, f"frame_{i:02d}_viz.jpg")
         cv2.imwrite(viz_path, viz_bgr)
         viz_pil_images.append(
             Image.fromarray(cv2.cvtColor(viz_bgr, cv2.COLOR_BGR2RGB))
         )
+
+    # Simpan raw feature cache
+    if raw_cache_dir and landmark_results:
+        try:
+            import json, datetime
+            safe = rel_path.replace(os.sep, "__").replace("/", "__").replace("\\", "__")
+            safe = os.path.splitext(safe)[0]
+            cache_path = os.path.join(raw_cache_dir, safe + ".json")
+            os.makedirs(raw_cache_dir, exist_ok=True)
+            frames_data = []
+            for i, lr in enumerate(landmark_results):
+                frames_data.append({
+                    "frame_idx":    i,
+                    "face_found":   lr.face_found,
+                    "yaw":          lr.yaw,
+                    "pitch":        lr.pitch,
+                    "iris_x":       lr.iris_x,
+                    "iris_y":       lr.iris_y,
+                    "iris_img_x":   lr.iris_img_x,
+                    "iris_img_y":   lr.iris_img_y,
+                    "blendshapes":  lr.blendshapes,
+                    "hand_forehead": lr.hand_forehead,
+                    "hand_chin":    lr.hand_chin,
+                })
+            with open(cache_path, "w") as fp:
+                json.dump({
+                    "video_rel":    rel_path,
+                    "generated_at": datetime.datetime.now().isoformat(),
+                    "frames":       frames_data,
+                }, fp, indent=2)
+        except Exception as e:
+            print(f"[Raw Cache] Gagal simpan {rel_path}: {e}")
 
     return pil_images, no_face_count, multi_face_count, landmark_results, viz_pil_images
 

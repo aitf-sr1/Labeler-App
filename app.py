@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from ui import LABELS, LABEL_COLORS, LeftPanel, RightPanel
+from ui import LABELS, LABEL_COLORS, LeftPanel, RightPanel, RulesPanel
 from utils import (
     prepare_cropped_frames,
     load_annotations, save_annotations,
@@ -40,7 +40,7 @@ from utils import (
     load_skipped, save_skipped,
     load_thresholds, save_thresholds,
 )
-from core import run_siglip_on_frames
+from core import run_siglip_on_frames, load_rules, save_rules, DEFAULT_RULES, recalculate_batch
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -67,6 +67,12 @@ class VideoLabelerApp:
         self.path_json_batch_history = ""
         self.path_json_skipped       = ""
         self.path_json_thresholds    = ""
+        self.path_json_rules         = ""
+        self.path_dir_raw_cache      = ""
+        self.path_dir_siglip_cache   = ""
+
+        # Rules — parameter landmark & hybrid
+        self.rules = DEFAULT_RULES
 
         self.cap, self.is_playing = None, False
         self.total_frames, self.current_frame, self.after_id = 0, 0, None
@@ -89,7 +95,7 @@ class VideoLabelerApp:
         self._gallery_version = 0
         self._gallery_cache: dict = {
             "rel_path": None, "pil_images": [], "viz_images": [],
-            "no_face_count": 0, "multi_fc": 0,
+            "landmark_results": [], "no_face_count": 0, "multi_fc": 0,
         }
 
         self._build_ui()
@@ -129,6 +135,12 @@ class VideoLabelerApp:
             bar, text="Output", command=self._change_output_folder,
             font=self.font_sm, fg_color="#6366f1", hover_color="#4f46e5",
             width=80, height=30,
+        ).pack(side="left", padx=(0, 6), pady=8)
+
+        ctk.CTkButton(
+            bar, text="Rules", command=self._open_rules_panel,
+            font=self.font_sm, fg_color="#7c3aed", hover_color="#6d28d9",
+            width=70, height=30,
         ).pack(side="left", padx=(0, 10), pady=8)
 
         self.lbl_info = ctk.CTkLabel(
@@ -222,8 +234,13 @@ class VideoLabelerApp:
         self.path_json_batch_history = os.path.join(base, "batch_history.json")
         self.path_json_skipped       = os.path.join(base, "skipped_videos.json")
         self.path_json_thresholds    = os.path.join(base, "thresholds.json")
+        self.path_json_rules         = os.path.join(base, "rules.json")
         self.path_dir_cropped        = os.path.join(base, "cropped_faces")
+        self.path_dir_raw_cache      = os.path.join(base, "raw_cache")
+        self.path_dir_siglip_cache   = os.path.join(base, "siglip_cache")
         os.makedirs(self.path_dir_cropped, exist_ok=True)
+        os.makedirs(self.path_dir_raw_cache, exist_ok=True)
+        os.makedirs(self.path_dir_siglip_cache, exist_ok=True)
 
         self.video_files = sorted(
             glob.glob(os.path.join(folder, "**", "*.mp4"), recursive=True)
@@ -243,8 +260,11 @@ class VideoLabelerApp:
         self.batch_history     = load_batch_history(self.path_json_batch_history)
         self.skipped_videos    = load_skipped(self.path_json_skipped)
         self._load_saved_thresholds()
+        self._load_rules()
         self._update_flag_count()
         self.right_panel.update_statistics(self.batch_history)
+        # Refresh dropdown daftar batch file yang tersedia
+        self.right_panel.refresh_batch_files(os.path.dirname(self.path_json_batch_history))
 
     def _load_saved_thresholds(self):
         """Muat threshold tersimpan dan terapkan ke slider UI."""
@@ -265,6 +285,134 @@ class VideoLabelerApp:
         thrs = [v.get() for v in self.right_panel.threshold_vars]
         save_thresholds(self.path_json_thresholds, LABELS, thrs)
 
+    def _batch_extra_path(self) -> str | None:
+        """
+        Jika checkbox 'Buat batch baru' dicentang, kembalikan path file batch baru.
+        Jika tidak dicentang, kembalikan None (nimpa mode).
+        """
+        if not self.right_panel.batch_new_var.get():
+            return None
+        name = self.right_panel.batch_name_entry.get().strip()
+        if not name:
+            import datetime
+            name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_dir = os.path.dirname(self.path_json_batch_history)
+        return os.path.join(base_dir, f"batch_history_{name}.json")
+
+    def _siglip_cache_path(self, rel_path: str) -> str:
+        """Kembalikan path file siglip cache untuk satu video."""
+        if not self.path_dir_siglip_cache:
+            return None
+        safe = rel_path.replace(os.sep, "__").replace("/", "__").replace("\\", "__")
+        safe = os.path.splitext(safe)[0]
+        return os.path.join(self.path_dir_siglip_cache, safe + ".json")
+
+    def _load_rules(self):
+        """Muat rules dari disk ke self.rules."""
+        if self.path_json_rules:
+            self.rules = load_rules(self.path_json_rules)
+
+    def _save_rules(self, rules: dict):
+        """Simpan rules ke disk dan update self.rules."""
+        self.rules = rules
+        if self.path_json_rules:
+            save_rules(self.path_json_rules, rules)
+        print(f"[Rules] Tersimpan ke {self.path_json_rules}")
+
+    def _open_rules_panel(self):
+        """Buka jendela Rules Editor."""
+        if hasattr(self, "_rules_panel") and self._rules_panel is not None:
+            try:
+                if self._rules_panel.win.winfo_exists():
+                    self._rules_panel.win.lift()
+                    self._rules_panel.win.focus()
+                    return
+            except Exception:
+                pass
+        self._rules_panel = RulesPanel(
+            self.root,
+            rules=self.rules,
+            threshold_vars=self.right_panel.threshold_vars,
+            on_save=self._save_rules,
+            on_recalculate=self._recalculate_all,
+        )
+
+    def _recalculate_all(self, rules: dict, extra_path_sentinel: str | None = None):
+        """
+        Hitung ulang batch_history dari raw cache + siglip cache dengan rules baru.
+        Berjalan di background thread.
+
+        extra_path_sentinel: None = timpa saat ini, "__batch_name__<name>" = simpan ke file baru.
+        """
+        if not self.batch_history:
+            messagebox.showinfo("Recalculate", "Belum ada riwayat batch AI. Proses batch dulu.")
+            return
+        if not self.path_dir_raw_cache or not self.path_dir_siglip_cache:
+            messagebox.showinfo("Recalculate", "Buka folder dataset terlebih dahulu.")
+            return
+
+        # Resolve extra_path dari sentinel yang dikirim RulesPanel
+        extra: str | None = None
+        if extra_path_sentinel and extra_path_sentinel.startswith("__batch_name__"):
+            name = extra_path_sentinel[len("__batch_name__"):]
+            base_dir = os.path.dirname(self.path_json_batch_history)
+            extra = os.path.join(base_dir, f"batch_history_{name}.json")
+
+        thresholds = [v.get() for v in self.right_panel.threshold_vars]
+        self.right_panel.lbl_batch_status.configure(
+            text="Menghitung ulang…", text_color="#fbbf24"
+        )
+
+        def worker():
+            try:
+                new_history, new_fa, skipped = recalculate_batch(
+                    batch_history=self.batch_history,
+                    rules=rules,
+                    thresholds=thresholds,
+                    raw_cache_dir=self.path_dir_raw_cache,
+                    siglip_cache_dir=self.path_dir_siglip_cache,
+                    frame_annotations=self.frame_annotations,
+                )
+                with self.save_lock:
+                    self.batch_history     = new_history
+                    self.frame_annotations = new_fa
+                    save_batch_history(self.path_json_batch_history, self.batch_history)
+                    if extra:
+                        save_batch_history(extra, self.batch_history)
+                    save_frame_annotations(self.path_json_frames, self.frame_annotations)
+
+                def on_done(extra_path=extra, _rules=rules):
+                    total  = len(self.batch_history)
+                    done   = total - skipped
+                    msg    = f"Selesai: {done}/{total} video dihitung ulang"
+                    if skipped:
+                        msg += f" ({skipped} tanpa cache)"
+                    if extra_path:
+                        msg += f" → {os.path.basename(extra_path)}"
+                    self.right_panel.lbl_batch_status.configure(
+                        text=msg, text_color="#10b981"
+                    )
+                    self.right_panel.update_statistics(self.batch_history)
+                    # Regenerate viz overlay untuk video aktif dengan rules baru
+                    self._regenerate_viz_for_current(_rules)
+                    # Refresh gallery — fast path karena rel_path cache masih valid
+                    self.refresh_frame_gallery()
+                    # Auto-parse: update Label2d CSV dari hasil recalculate terbaru
+                    self._split_dataset_2d(silent=True, force_default=True)
+                    # Refresh dropdown batch history (mungkin ada file baru)
+                    self.right_panel.refresh_batch_files()
+                    print(f"[Recalc] {msg}")
+
+                self.root.after(0, on_done)
+            except Exception as e:
+                err = str(e)
+                self.root.after(0, lambda: self.right_panel.lbl_batch_status.configure(
+                    text=f"Error: {err[:60]}", text_color="#ef4444"
+                ))
+                import traceback; traceback.print_exc()
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _change_output_folder(self):
         """Buka dialog untuk memilih folder output yang berbeda."""
         if not self.root_folder:
@@ -283,8 +431,13 @@ class VideoLabelerApp:
         self.path_json_batch_history = os.path.join(folder, "batch_history.json")
         self.path_json_skipped       = os.path.join(folder, "skipped_videos.json")
         self.path_json_thresholds    = os.path.join(folder, "thresholds.json")
+        self.path_json_rules         = os.path.join(folder, "rules.json")
         self.path_dir_cropped        = os.path.join(folder, "cropped_faces")
+        self.path_dir_raw_cache      = os.path.join(folder, "raw_cache")
+        self.path_dir_siglip_cache   = os.path.join(folder, "siglip_cache")
         os.makedirs(self.path_dir_cropped, exist_ok=True)
+        os.makedirs(self.path_dir_raw_cache, exist_ok=True)
+        os.makedirs(self.path_dir_siglip_cache, exist_ok=True)
 
         self._load_data()
         self.load_video()
@@ -566,7 +719,11 @@ class VideoLabelerApp:
                     self.right_panel.update_ai_score_bar(lbl, avg)
 
         def worker():
-            result = prepare_cropped_frames(vp, self.root_folder, self.path_dir_cropped)
+            result = prepare_cropped_frames(
+                vp, self.root_folder, self.path_dir_cropped,
+                raw_cache_dir=self.path_dir_raw_cache if hasattr(self, "path_dir_raw_cache") else None,
+                cfg=self.rules if hasattr(self, "rules") else None,
+            )
             if self._gallery_version != my_version:
                 return  # hasil sudah kedaluwarsa — buang
             self.root.after(0, lambda: self._apply_gallery_result(rel_path, result, my_version))
@@ -580,11 +737,12 @@ class VideoLabelerApp:
         pil_images, no_face_count, multi_fc, landmark_results, viz_images = result
 
         self._gallery_cache = {
-            "rel_path":     rel_path,
-            "pil_images":   pil_images,
-            "viz_images":   viz_images,
-            "no_face_count": no_face_count,
-            "multi_fc":     multi_fc,
+            "rel_path":        rel_path,
+            "pil_images":      pil_images,
+            "viz_images":      viz_images,
+            "landmark_results": landmark_results,
+            "no_face_count":   no_face_count,
+            "multi_fc":        multi_fc,
         }
         self.viz_images = viz_images
 
@@ -628,6 +786,39 @@ class VideoLabelerApp:
                 avg = hist["per_label"].get(str(i), {}).get("avg_score")
                 if avg is not None:
                     self.right_panel.update_ai_score_bar(lbl, avg)
+
+    def _regenerate_viz_for_current(self, rules: dict):
+        """
+        Regenerate viz overlay untuk video yang sedang ditampilkan menggunakan rules baru.
+        Menggunakan landmark_results yang tersimpan di gallery cache — tidak re-run MediaPipe.
+        Update gallery cache, self.viz_images, dan file viz di disk.
+        """
+        import cv2, numpy as np
+        from PIL import Image
+        from core.landmark_analyzer import compute_emotion_scores, draw_landmark_viz
+
+        rel_path         = self._gallery_cache.get("rel_path")
+        pil_images       = self._gallery_cache.get("pil_images", [])
+        landmark_results = self._gallery_cache.get("landmark_results", [])
+
+        if not pil_images or not landmark_results or rel_path is None:
+            return
+
+        base_name    = os.path.splitext(rel_path)[0]
+        viz_crop_dir = os.path.join(self.path_dir_cropped, "viz", base_name)
+        os.makedirs(viz_crop_dir, exist_ok=True)
+
+        new_viz = []
+        for i, (pil_img, lr) in enumerate(zip(pil_images, landmark_results)):
+            bgr       = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+            scores    = compute_emotion_scores(lr, rules)
+            viz_bgr   = draw_landmark_viz(bgr, lr, scores)
+            viz_path  = os.path.join(viz_crop_dir, f"frame_{i:02d}_viz.jpg")
+            cv2.imwrite(viz_path, viz_bgr)
+            new_viz.append(Image.fromarray(cv2.cvtColor(viz_bgr, cv2.COLOR_BGR2RGB)))
+
+        self._gallery_cache["viz_images"] = new_viz
+        self.viz_images = new_viz
 
     def _count_rejected(self, rel_path: str, n_frames: int = 4) -> int:
         return sum(
@@ -747,6 +938,9 @@ class VideoLabelerApp:
         }
         with self.save_lock:
             save_batch_history(self.path_json_batch_history, self.batch_history)
+            extra = self._batch_extra_path()
+            if extra:
+                save_batch_history(extra, self.batch_history)
 
         self.right_panel.update_statistics(self.batch_history)
 
@@ -771,6 +965,182 @@ class VideoLabelerApp:
             text="Semua label direset ke 0", text_color="#10b981"
         )
 
+    def _split_dataset_2d(self, silent: bool = False, force_default: bool = False):
+        """
+        Split frame_annotations per UUID (siswa) → Label2d/train|val|test.csv.
+        Hanya frame yang tidak di-reject yang masuk.
+        Folder output: Label2d/ (nimpa) atau Label2d_{name}/ (buat baru).
+
+        silent=True: skip messagebox, hanya print ke console.
+        """
+        import csv as _csv
+        import random
+        from collections import defaultdict
+
+        if not self.frame_annotations:
+            if not silent:
+                messagebox.showinfo("Split", "Belum ada frame_annotations. Proses batch dulu.")
+            return
+        if not self.path_json_frames:
+            if not silent:
+                messagebox.showinfo("Split", "Buka folder dataset terlebih dahulu.")
+            return
+
+        # Pilih sumber frame_annotations:
+        # Jika dropdown memilih batch bukan default, derive label dari batch itu.
+        selected_batch = getattr(self.right_panel, "_batch_file_var", None)
+        selected_batch = selected_batch.get() if selected_batch else "batch_history.json"
+        default_batch  = os.path.basename(self.path_json_batch_history)
+
+        if not force_default and selected_batch and selected_batch != default_batch:
+            # Load batch history yang dipilih dan derive frame_annotations dari frame_preds
+            from utils import load_batch_history
+            from ui.constants import LABELS as _LABELS
+            bh_path   = os.path.join(os.path.dirname(self.path_json_batch_history), selected_batch)
+            alt_batch = load_batch_history(bh_path)
+            fa_source = {}
+            for rp, entry in alt_batch.items():
+                per_label = entry.get("per_label", {})
+                n_fr = len(per_label.get("0", {}).get("frame_preds", []))
+                existing = self.frame_annotations.get(rp, {})
+                vid_fa = {}
+                for fi in range(n_fr):
+                    fd = dict(existing.get(str(fi), {}))
+                    for li, lbl in enumerate(_LABELS):
+                        preds = per_label.get(str(li), {}).get("frame_preds", [])
+                        fd[lbl] = preds[fi] if fi < len(preds) else 0
+                    vid_fa[str(fi)] = fd
+                fa_source[rp] = vid_fa
+            if not silent:
+                print(f"[Split] Menggunakan batch: {selected_batch}")
+        else:
+            fa_source = self.frame_annotations
+
+        # Tentukan output dir — nama folder split = nama batch
+        create_new = self.right_panel.split_new_var.get()
+        split_name = self.right_panel.batch_name_entry.get().strip()
+        base_out   = os.path.dirname(self.path_json_frames)
+
+        if create_new:
+            if not split_name:
+                import datetime
+                split_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            out_dir = os.path.join(base_out, f"Label2d_{split_name}")
+        else:
+            out_dir = os.path.join(base_out, "Label2d")
+
+        # UUID depth dari entry
+        try:
+            uuid_depth = int(self.right_panel.split_uuid_depth_entry.get().strip())
+        except (ValueError, AttributeError):
+            uuid_depth = 2
+
+        MAJORITY = 2
+        N_FRAMES = 4
+
+        # Grouping by UUID
+        videos_by_uuid = defaultdict(list)
+        skipped = 0
+        for rel_path, frames in fa_source.items():
+            if rel_path in self.flagged_data:
+                skipped += 1
+                continue
+
+            parts = rel_path.replace("\\", "/").split("/")
+            uuid  = parts[uuid_depth] if len(parts) > uuid_depth else parts[-2] if len(parts) > 1 else rel_path
+
+            vote = {lbl: 0 for lbl in LABELS}
+            valid = 0
+            for idx_str, fdata in frames.items():
+                if idx_str.startswith("_") or fdata.get("_rejected", False):
+                    continue
+                valid += 1
+                for lbl in LABELS:
+                    vote[lbl] += fdata.get(lbl, 0)
+
+            if valid == 0:
+                skipped += 1
+                continue
+
+            video_labels = {lbl: 1 if vote[lbl] >= MAJORITY else 0 for lbl in LABELS}
+            videos_by_uuid[uuid].append({
+                "file_path": rel_path,
+                "frames":    frames,
+                "valid":     valid,
+                **{lbl.lower(): str(video_labels[lbl]) for lbl in LABELS},
+            })
+
+        unique_uuids = list(videos_by_uuid.keys())
+        if not unique_uuids:
+            if not silent:
+                messagebox.showwarning("Split", "Tidak ada video valid untuk di-split.")
+            return
+
+        random.seed(42)
+        random.shuffle(unique_uuids)
+        n       = len(unique_uuids)
+        n_train = int(0.8 * n)
+        n_val   = int(0.1 * n)
+
+        train_uuids = set(unique_uuids[:n_train])
+        val_uuids   = set(unique_uuids[n_train:n_train + n_val])
+
+        train_vids, val_vids, test_vids = [], [], []
+        for uuid, vids in videos_by_uuid.items():
+            if uuid in train_uuids:   train_vids.extend(vids)
+            elif uuid in val_uuids:   val_vids.extend(vids)
+            else:                     test_vids.extend(vids)
+
+        os.makedirs(out_dir, exist_ok=True)
+
+        def write_2d_csv(filename, video_list):
+            path    = os.path.join(out_dir, filename)
+            written = 0
+            with open(path, "w", newline="") as fp:
+                w = _csv.writer(fp)
+                w.writerow(["frame_path"] + LABELS)
+                for v in video_list:
+                    rel  = v["file_path"]
+                    base = os.path.splitext(rel.replace("\\", "/"))[0]
+                    for i in range(N_FRAMES):
+                        fdata = v["frames"].get(str(i), {})
+                        if fdata.get("_rejected", False):
+                            continue
+                        frame_path = os.path.join(
+                            "cropped_faces", "clean", base, f"frame_{i:02d}.jpg"
+                        )
+                        w.writerow([
+                            frame_path,
+                            fdata.get("Boredom",     v["boredom"]),
+                            fdata.get("Engagement",  v["engagement"]),
+                            fdata.get("Confusion",   v["confusion"]),
+                            fdata.get("Frustration", v["frustration"]),
+                        ])
+                        written += 1
+            return written
+
+        counts = {}
+        for split_name_s, vids in [("train", train_vids), ("val", val_vids), ("test", test_vids)]:
+            counts[split_name_s] = write_2d_csv(f"{split_name_s}.csv", vids)
+
+        total_frames = sum(counts.values())
+        total_vids   = len(train_vids) + len(val_vids) + len(test_vids)
+
+        summary = (
+            f"Batch: {selected_batch}\n"
+            f"Output: {out_dir}\n\n"
+            f"UUID/siswa: {n} → train={len(train_uuids)} / val={len(val_uuids)} / test={n - len(train_uuids) - len(val_uuids)}\n"
+            f"Video: {total_vids} ({skipped} diskip)\n"
+            f"Frame: {total_frames} total\n"
+            f"  train.csv : {counts['train']}\n"
+            f"  val.csv   : {counts['val']}\n"
+            f"  test.csv  : {counts['test']}"
+        )
+        if not silent:
+            messagebox.showinfo("Split Label 2D Selesai", summary)
+        print(f"[Split 2D] Selesai → {out_dir} | "
+              f"train={counts['train']} val={counts['val']} test={counts['test']} frame")
+
     def _proses_satu(self):
         """
         Jalankan inferensi SigLIP pada video yang sedang ditampilkan.
@@ -786,7 +1156,8 @@ class VideoLabelerApp:
 
         def worker():
             imgs, no_face_count, multi_face_count, landmark_results, viz_imgs = prepare_cropped_frames(
-                vp, self.root_folder, self.path_dir_cropped
+                vp, self.root_folder, self.path_dir_cropped,
+                raw_cache_dir=self.path_dir_raw_cache, cfg=self.rules,
             )
             if not imgs:
                 self.root.after(0, lambda: self.right_panel.lbl_batch_status.configure(
@@ -837,8 +1208,12 @@ class VideoLabelerApp:
                 ))
                 return
 
+            siglip_cache_path = self._siglip_cache_path(rel_path)
             res = run_siglip_on_frames(imgs, prompts, ths,
-                                        landmark_results=landmark_results)
+                                        landmark_results=landmark_results,
+                                        cfg=self.rules,
+                                        siglip_cache_path=siglip_cache_path,
+                                        rel_path=rel_path)
             self._apply_siglip_result(rel_path, res)
 
             def update_ui():
@@ -917,7 +1292,8 @@ class VideoLabelerApp:
 
                 try:
                     imgs, no_face_count, multi_face_count, landmark_results, _ = prepare_cropped_frames(
-                        vp, self.root_folder, self.path_dir_cropped
+                        vp, self.root_folder, self.path_dir_cropped,
+                        raw_cache_dir=self.path_dir_raw_cache, cfg=self.rules,
                     )
                     if not imgs: return
 
@@ -961,8 +1337,12 @@ class VideoLabelerApp:
                         self.root.after(0, upd_multiface)
                         return
 
+                    siglip_cache_path = self._siglip_cache_path(rel_path)
                     res = run_siglip_on_frames(imgs, prompts, ths,
-                                               landmark_results=landmark_results)
+                                               landmark_results=landmark_results,
+                                               cfg=self.rules,
+                                               siglip_cache_path=siglip_cache_path,
+                                               rel_path=rel_path)
 
                     with self.save_lock:
                         self._apply_siglip_result(rel_path, res)

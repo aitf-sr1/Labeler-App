@@ -31,9 +31,11 @@ class LeftPanel:
 
     def __init__(self, parent, app):
         self.app              = app
-        self.frame_canvases   = []
-        self.frame_image_refs = []  # Referensi ImageTk agar tidak di-GC
-        self._emotion_tab_btns = {}
+        self.frame_canvases     = []
+        self.frame_dot_canvases = []  # strip dot di sebelah kanan masing-masing frame
+        self.frame_image_refs   = []  # Referensi ImageTk agar tidak di-GC
+        self._emotion_tab_btns  = {}
+        self._current_frame_annotations: dict = {}  # referensi ke frame_annotations video aktif
 
         self._build(parent)
 
@@ -130,15 +132,24 @@ class LeftPanel:
 
         for i in range(4):
             row_g, col_g = i // 2, i % 2
+
+            # Wrapper: canvas gambar + strip dot di sebelah kanannya
+            cell = tk.Frame(grid_frame, bg="#0d0d0d")
+            cell.grid(row=row_g, column=col_g, padx=8, pady=8)
+
             cv_widget = tk.Canvas(
-                grid_frame, width=240, height=240,
+                cell, width=240, height=240,
                 bg="#111", highlightthickness=2, highlightbackground="#333",
             )
-            cv_widget.grid(row=row_g, column=col_g, padx=8, pady=8)
+            cv_widget.pack(side="left")
             cv_widget.bind("<Button-1>", lambda e, idx=i: self.app.seek_to_frame(idx))
             cv_widget.bind("<Button-3>", lambda e, idx=i: self.app.toggle_single_frame(idx))
             cv_widget.bind("<Double-Button-1>", lambda e, idx=i: self.app.toggle_frame_reject(idx))
             self.frame_canvases.append(cv_widget)
+
+            dot_cv = tk.Canvas(cell, width=20, height=240, bg="#0d0d0d", highlightthickness=0)
+            dot_cv.pack(side="left", padx=(4, 0))
+            self.frame_dot_canvases.append(dot_cv)
 
         ctk.CTkLabel(
             gallery_scroll,
@@ -155,6 +166,8 @@ class LeftPanel:
                 120, 120, text="memuat...", fill="#4b5563",
                 font=("Poppins", 10), anchor="center",
             )
+        for dot_cv in self.frame_dot_canvases:
+            dot_cv.delete("all")
         self.lbl_frame_quality.configure(text="")
 
     def update_frame_quality(
@@ -199,6 +212,28 @@ class LeftPanel:
             else:
                 btn.configure(fg_color="transparent", text_color=color)
 
+    def _draw_frame_dots(self, dot_cv, frame_data: dict):
+        """Gambar 4 buletan label secara vertikal di strip canvas samping frame.
+        Tidak menggambar apapun jika frame belum pernah dideteksi."""
+        dot_cv.delete("all")
+        if not any(lbl in frame_data for lbl in LABELS):
+            return
+        dot_r   = 6
+        gap     = 8
+        n       = len(LABELS)
+        total_h = n * (2 * dot_r) + (n - 1) * gap
+        start_y = (240 - total_h) // 2
+        cx      = 10  # tengah strip 20px
+        for j, lbl in enumerate(LABELS):
+            cy     = start_y + j * (2 * dot_r + gap) + dot_r
+            active = frame_data.get(lbl, 0) == 1
+            color  = LABEL_COLORS[lbl] if active else "#2a2a2a"
+            border = LABEL_COLORS[lbl] if not active else color
+            dot_cv.create_oval(
+                cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r,
+                fill=color, outline=border, width=1,
+            )
+
     def render_frames(self, pil_images: list, frame_annotations_for_video: dict, active_label: str):
         """
         Render ulang semua 6 canvas dengan thumbnail dan highlight label aktif.
@@ -211,6 +246,7 @@ class LeftPanel:
             frame_annotations_for_video: Dict {frame_idx: {label: 0|1}} untuk video saat ini.
             active_label:                Label yang sedang aktif di tab selector.
         """
+        self._current_frame_annotations = frame_annotations_for_video  # simpan referensi untuk update dots
         active_color = LABEL_COLORS[active_label]
         self.frame_image_refs.clear()
 
@@ -240,6 +276,8 @@ class LeftPanel:
                 status = frame_data.get(active_label, 0)
                 cv_widget.configure(highlightbackground=active_color if status == 1 else "#333")
 
+            self._draw_frame_dots(self.frame_dot_canvases[i], frame_data)
+
     def update_single_frame_highlight(self, frame_idx: int, active_label: str, status: int):
         """
         Update border satu frame canvas tanpa re-render seluruh galeri.
@@ -253,6 +291,8 @@ class LeftPanel:
         self.frame_canvases[frame_idx].configure(
             highlightbackground=color if status == 1 else "#333"
         )
+        frame_data = self._current_frame_annotations.get(str(frame_idx), {})
+        self._draw_frame_dots(self.frame_dot_canvases[frame_idx], frame_data)
 
     def show_video_frame(self, frame_bgr):
         """
