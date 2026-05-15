@@ -16,24 +16,18 @@ DEFAULT_RULES = {
         "v_dead_zone": 15.0,    # gaze_v < ini = tidak berkontribusi ke gaze_dev
     },
     "boredom": {
-        "gaze_dead_zone": 8.0,       # gaze_dev < ini = tidak bosan dari gaze
-        "gaze_range": 12.0,          # range gaze di atas dead zone
-        "pitch_nunduk_th": 12.0,     # pitch < -ini = kepala nunduk
-        "pitch_nunduk_range": 8.0,   # range bore_pitch_down setelah nunduk_th
-        "pitch_up_th": 8.0,          # pitch > ini = kepala mendongak
-        "pitch_up_range": 10.0,      # range bore_pitch_up setelah pitch_up_th
+        "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze
+        "gaze_range": 20.0,          # range gaze di atas dead zone
         "blink_dead_zone": 0.20,     # eyeBlink < ini = tidak dihitung
         "blink_range": 0.50,         # range blink di atas dead zone
         "yawn_threshold": 0.35,      # jawOpen / ini = yawn_v (max 1)
         "sig_expr_weight": 0.70,     # bobot max(blink, yawn, pitch_up)
         "blend_a": 0.85,             # koefisien campuran utama
         "blend_b": 0.15,             # koefisien campuran sekunder
-        "frus_suppress": 0.70,       # seberapa kuat frus_restless tekan bore_gaze
     },
     "engagement": {
-        "nunduk_gate_range": 5.0,    # saat nunduk: gate = 1 - gaze_h_eff / ini
-        "tegak_dead_zone": 3.0,      # saat tegak: gaze_dev dead zone (°)
-        "tegak_range": 12.0,         # saat tegak: range setelah dead zone
+        "tegak_dead_zone": 5.0,      # gaze_dev dead zone (°)
+        "tegak_range": 12.0,         # range setelah dead zone — nol di dead+range
         "blink_heavy_th": 0.50,      # eyeBlink > ini = droopy parah
         "blink_heavy_min": 0.30,     # engagement minimum jika droopy penuh
     },
@@ -50,10 +44,7 @@ DEFAULT_RULES = {
         "jaw_start": 0.05,           # jawOpen < ini = jaw_val_conf = 0
         "jaw_peak": 0.25,            # titik puncak jaw_val_conf = 1
         "jaw_end": 0.40,             # jawOpen > ini = jaw_val_conf = 0
-        "pucker_th": 0.30,           # mouthPucker / ini = pucker_raw
-        "pucker_gate_th": 0.30,      # max(jaw,brow) / ini = pucker_gate
-        "gaze_gate_dead": 8.0,       # gaze_h_eff < ini = tidak ada gate
-        "gaze_gate_range": 12.0,     # range conf_gaze_gate di atas dead zone
+        "pucker_th": 0.30,           # mouthPucker / ini = pucker_co (langsung, tanpa gate)
         "blend_a": 0.85,
         "blend_b": 0.15,
     },
@@ -65,9 +56,6 @@ DEFAULT_RULES = {
         "eye_squint_th": 0.40,       # eyeSquint avg / ini = ey_fr
         "jaw_start": 0.10,           # jawOpen < ini = kontribusi rahang = 0
         "jaw_range": 0.20,           # range jw_fr di atas jaw_start
-        "restless_dead": 5.0,        # yaw-eye dissonance < ini = tidak restless
-        "restless_range": 10.0,      # range frus_restless
-        "restless_w": 0.50,          # bobot frus_restless dalam base_frus
         "blend_a": 0.85,
         "blend_b": 0.15,
     },

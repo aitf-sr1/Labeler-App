@@ -119,7 +119,6 @@ Kemungkinan penyebab: siswa dengan bentuk alis natural yang berkerut/naik.
 2. **Naikkan `BrowDown Th`** (misal 0.23 → 0.35) — alis harus lebih turun secara signifikan
 3. **Naikkan `Smile Penalty Th`** (misal 0.15 → 0.25) — senyum sudah cukup untuk mengurangi skor confusion
 4. **Naikkan `Jaw End`** (misal 0.40 → 0.55) — mulut terbuka lebih lebar tidak dianggap confusion (lebih mungkin menguap)
-5. **Naikkan `Gaze Gate Dead`** — confusion ditekan jika gaze menyamping (siswa noleh ≠ bingung)
 
 ---
 
@@ -132,8 +131,7 @@ Frustration membutuhkan **kombinasi sinyal** (SUM logic). Jika miss, biasanya sa
 2. **Turunkan `BrowDown Th`** Frustration (misal 0.40 → 0.25)
 3. **Turunkan `MouthPress Th`** (misal 0.40 → 0.25) — bibir sedikit ditekan sudah dihitung
 4. **Turunkan `EyeSquint Th`** (misal 0.40 → 0.25)
-5. **Naikkan `Restless Weight`** (misal 0.50 → 0.70) — gerakan kepala bolak-balik lebih berkontribusi
-6. Turunkan threshold slider Frustration di panel kanan
+5. Turunkan threshold slider Frustration di panel kanan
 
 ---
 
@@ -144,7 +142,6 @@ Frustration membutuhkan **kombinasi sinyal** (SUM logic). Jika miss, biasanya sa
 2. **Naikkan `NoseSneer Th`** (misal 0.20 → 0.30) — harus benar-benar mengernyit
 3. **Naikkan `CheekSquint Th`** dan **`EyeSquint Th`**
 4. Naikkan threshold slider Frustration di panel kanan
-5. **`Frus Suppress`** di Boredom — nilai ini mengontrol seberapa kuat sinyal restlessness Frustration menekan skor Boredom (bukan sebaliknya)
 
 ---
 
@@ -175,17 +172,12 @@ Parameter gaze digunakan bersama oleh Boredom dan Engagement.
 
 | Parameter | Default | Range | Penjelasan |
 |---|---|---|---|
-| **Gaze Dead Zone** (`gaze_dead_zone`) | 8.0° | 0–20 | gaze_dev < nilai ini = skor gaze Boredom = 0. Gaze kecil tidak dianggap bosan. |
-| **Gaze Range** (`gaze_range`) | 12.0° | 4–25 | Range gaze di atas dead zone untuk mencapai skor 1.0. `gaze_dev = dead_zone + range` → score = 1. |
-| **Pitch Nunduk Th** (`pitch_nunduk_th`) | 12.0° | 5–25 | Kepala nunduk melebihi nilai ini mulai berkontribusi ke skor Boredom. |
-| **Nunduk Range** (`pitch_nunduk_range`) | 8.0° | 3–20 | Range pitch nunduk setelah threshold untuk mencapai skor 1.0. |
-| **Pitch Up Th** (`pitch_up_th`) | 8.0° | 3–20 | Kepala mendongak melebihi nilai ini mulai berkontribusi ke skor Boredom. |
-| **Pitch Up Range** (`pitch_up_range`) | 10.0° | 5–20 | Range pitch mendongak untuk mencapai skor 1.0. |
+| **Gaze Dead Zone** (`gaze_dead_zone`) | 5.0° | 0–20 | gaze_dev < nilai ini = skor gaze Boredom = 0. Gaze kecil tidak dianggap bosan. |
+| **Gaze Range** (`gaze_range`) | 20.0° | 4–40 | Range gaze di atas dead zone untuk mencapai skor 1.0. `gaze_dev = dead_zone + range` → score = 1. |
 | **Blink Dead Zone** (`blink_dead_zone`) | 0.20 | 0–0.5 | eyeBlink < nilai ini diabaikan (mengedip normal tidak dihitung). |
 | **Blink Range** (`blink_range`) | 0.50 | 0.1–1.0 | Range blink di atas dead zone untuk skor 1.0. |
 | **Yawn Threshold** (`yawn_threshold`) | 0.35 | 0.1–0.8 | `jawOpen / threshold = yawn_v`. Semakin kecil = mulut sedikit terbuka sudah dianggap menguap. |
 | **Expr Weight** (`sig_expr_weight`) | 0.70 | 0–1.0 | Bobot max(blink, yawn, pitch_up) dalam skor akhir. Turunkan agar Boredom lebih bergantung pada gaze saja. |
-| **Frus Suppress** (`frus_suppress`) | 0.70 | 0–1.0 | Seberapa kuat sinyal restless Frustration menekan bore_gaze. Nilai 1.0 = restless sepenuhnya menghapus gaze Boredom. |
 
 ---
 
@@ -193,9 +185,8 @@ Parameter gaze digunakan bersama oleh Boredom dan Engagement.
 
 | Parameter | Default | Range | Penjelasan |
 |---|---|---|---|
-| **Nunduk Gate Range** (`nunduk_gate_range`) | 5.0° | 2–15 | Saat kepala nunduk: gate Engagement = 1 − gaze_h_eff / nilai_ini. Kecilkan untuk siswa yang sering lihat ke bawah sambil tetap engaged. |
-| **Tegak Dead Zone** (`tegak_dead_zone`) | 3.0° | 0–10 | Saat kepala tegak: gaze_dev < nilai ini = gate = 1.0 (Engagement penuh). |
-| **Tegak Range** (`tegak_range`) | 12.0° | 5–25 | Saat kepala tegak: gate turun dari 1 ke 0 dalam range ini. Naikkan untuk lebih toleran terhadap gaze sedikit menyamping. |
+| **Tegak Dead Zone** (`tegak_dead_zone`) | 5.0° | 0–10 | gaze_dev < nilai ini = gate = 1.0 (Engagement penuh). |
+| **Tegak Range** (`tegak_range`) | 12.0° | 5–25 | Gate turun dari 1 ke 0 dalam range ini. Naikkan untuk lebih toleran terhadap gaze sedikit menyamping. |
 | **Heavy Blink Th** (`blink_heavy_th`) | 0.50 | 0.2–0.9 | eyeBlink > nilai ini = dianggap droopy parah, Engagement berkurang. Naikkan jika siswa mata sipit natural sering kena penalti. |
 | **Min Engagement** (`blink_heavy_min`) | 0.30 | 0–0.5 | Nilai minimum Engagement meski mata sangat ngantuk. 0.30 artinya Engagement tidak pernah nol hanya karena mata setengah tertutup. |
 
@@ -217,10 +208,7 @@ Parameter gaze digunakan bersama oleh Boredom dan Engagement.
 | **Jaw Start** (`jaw_start`) | 0.05 | 0–0.2 | jawOpen < nilai ini → jaw_val_conf = 0 (mulut tertutup tidak berkontribusi). |
 | **Jaw Peak** (`jaw_peak`) | 0.25 | 0.1–0.5 | jawOpen = nilai ini → jaw_val_conf = 1.0 (titik puncak mangap Confusion). |
 | **Jaw End** (`jaw_end`) | 0.40 | 0.3–0.8 | jawOpen > nilai ini → jaw_val_conf = 0 (sudah terlalu lebar = bukan confusion, lebih ke menguap). |
-| **Pucker Th** (`pucker_th`) | 0.30 | 0.1–0.6 | mouthPucker / threshold = pucker_raw. Bibir mengerucut saat berpikir. |
-| **Pucker Gate Th** (`pucker_gate_th`) | 0.30 | 0.1–0.6 | max(jaw_co, brow_signal) harus melebihi nilai ini agar pucker dihitung. |
-| **Gaze Gate Dead** (`gaze_gate_dead`) | 8.0° | 0–15 | gaze_h_eff < nilai ini = tidak ada gate dari gaze (siswa yang lihat lurus bisa tetap bingung). |
-| **Gaze Gate Range** (`gaze_gate_range`) | 12.0° | 5–25 | Confusion ditekan saat gaze menyamping (siswa noleh ≠ bingung). |
+| **Pucker Th** (`pucker_th`) | 0.30 | 0.1–0.6 | mouthPucker / threshold = pucker_co. Bibir mengerucut saat berpikir (langsung, tanpa gate). |
 
 ---
 
@@ -235,9 +223,6 @@ Parameter gaze digunakan bersama oleh Boredom dan Engagement.
 | **EyeSquint Th** (`eye_squint_th`) | 0.40 | 0.1–0.6 | Mata menyipit dengan otot — berbeda dari mengantuk (blink). |
 | **Jaw Start** (`jaw_start`) | 0.10 | 0–0.3 | jawOpen < nilai ini = kontribusi rahang ke Frustration = 0. |
 | **Jaw Range** (`jaw_range`) | 0.20 | 0.05–0.5 | Range jawOpen di atas jaw_start untuk kontribusi penuh. |
-| **Restless Dead** (`restless_dead`) | 5.0° | 0–15 | Disonansi yaw-eye < nilai ini = tidak dihitung sebagai restless. |
-| **Restless Range** (`restless_range`) | 10.0° | 3–20 | Range disonansi untuk skor restless penuh. |
-| **Restless Weight** (`restless_w`) | 0.50 | 0–1.0 | Bobot komponen restless (disonsansi yaw-mata) dalam skor Frustration. |
 
 ---
 
