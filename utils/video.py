@@ -16,7 +16,7 @@ from PIL import Image
 from core.face_detector import crop_face
 
 
-_N_FRAMES = 4  # jumlah frame yang diambil per video
+_N_FRAMES = 2  # jumlah frame yang diambil per video
 
 
 def extract_6_frames(video_path: str) -> list:
@@ -62,23 +62,59 @@ def prepare_cropped_frames(
     """
     from core.landmark_analyzer import (
         analyze_frame, compute_emotion_scores, draw_landmark_viz,
-        detect_hands_from_full_frame
+        detect_hands_from_full_frame, LandmarkResult
     )
 
     rel_path        = os.path.relpath(video_path, root_folder)
     base_name       = os.path.splitext(rel_path)[0]
-    
+
     clean_crop_dir  = os.path.join(crop_dir_base, "clean", base_name)
     viz_crop_dir    = os.path.join(crop_dir_base, "viz", base_name)
-    
+
     os.makedirs(clean_crop_dir, exist_ok=True)
     os.makedirs(viz_crop_dir, exist_ok=True)
 
-    # ── Load atau generate clean crops ─────────────────────────────────────
+    # ── Full-cache fast path: skip semua AI jika clean + viz + raw_cache ada ─
     saved_files = sorted(glob.glob(os.path.join(clean_crop_dir, "frame_*.jpg")))
-    # Filter hanya yang clean (tanpa _viz suffix)
     clean_files = [f for f in saved_files if "_viz" not in os.path.basename(f)]
+    viz_files   = sorted(glob.glob(os.path.join(viz_crop_dir, "frame_*_viz.jpg")))
 
+    if raw_cache_dir:
+        safe_name  = rel_path.replace(os.sep, "__").replace("/", "__").replace("\\", "__")
+        safe_name  = os.path.splitext(safe_name)[0]
+        cache_path = os.path.join(raw_cache_dir, safe_name + ".json")
+    else:
+        cache_path = None
+
+    if (len(clean_files) == _N_FRAMES
+            and len(viz_files) == _N_FRAMES
+            and cache_path and os.path.exists(cache_path)):
+        try:
+            import json
+            pil_images     = [Image.open(f).convert("RGB") for f in clean_files]
+            viz_pil_images = [Image.open(f).convert("RGB") for f in viz_files]
+            with open(cache_path) as fp:
+                raw_data = json.load(fp)
+            landmark_results = []
+            for fd in raw_data.get("frames", []):
+                landmark_results.append(LandmarkResult(
+                    yaw          = fd.get("yaw", 0.0),
+                    pitch        = fd.get("pitch", 0.0),
+                    iris_x       = fd.get("iris_x", 0.0),
+                    iris_y       = fd.get("iris_y", 0.0),
+                    iris_img_x   = fd.get("iris_img_x", 0.0),
+                    iris_img_y   = fd.get("iris_img_y", 0.0),
+                    blendshapes  = fd.get("blendshapes", {}),
+                    face_found   = fd.get("face_found", False),
+                    hand_forehead= fd.get("hand_forehead", 0.0),
+                    hand_chin    = fd.get("hand_chin", 0.0),
+                ))
+            no_face_count = sum(1 for lr in landmark_results if not lr.face_found)
+            return pil_images, no_face_count, 0, landmark_results, viz_pil_images
+        except Exception as e:
+            print(f"[FastPath] Gagal baca cache {rel_path}: {e}, fallback ke pipeline penuh")
+
+    # ── Load atau generate clean crops ─────────────────────────────────────
     frames_bgr_full = []
     face_bboxes     = []
 

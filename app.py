@@ -37,6 +37,7 @@ from utils import (
     load_flagged, save_flagged,
     load_frame_annotations, save_frame_annotations,
     load_batch_history, save_batch_history,
+    load_batch_meta, update_batch_meta,
     load_skipped, save_skipped,
     load_thresholds, save_thresholds,
 )
@@ -89,6 +90,7 @@ class VideoLabelerApp:
         self.viz_images = []   # Cache viz PIL images untuk video aktif
 
         self.batch_running, self.cancel_batch = False, False
+        self._viz_regen_requested = False
         self.save_lock = threading.RLock()
 
         # Gallery background-loading state
@@ -393,6 +395,11 @@ class VideoLabelerApp:
                         text=msg, text_color="#10b981"
                     )
                     self.right_panel.update_statistics(self.batch_history)
+                    # Simpan rules + threshold ke __meta__ di kedua file batch
+                    thrs = [v.get() for v in self.right_panel.threshold_vars]
+                    update_batch_meta(self.path_json_batch_history, _rules, thrs)
+                    if extra_path:
+                        update_batch_meta(extra_path, _rules, thrs)
                     # Regenerate viz overlay untuk video aktif dengan rules baru
                     self._regenerate_viz_for_current(_rules)
                     # Refresh gallery — fast path karena rel_path cache masih valid
@@ -787,6 +794,19 @@ class VideoLabelerApp:
                 if avg is not None:
                     self.right_panel.update_ai_score_bar(lbl, avg)
 
+        # Regenerasi viz dengan rules aktif jika diminta (misal setelah batch switch)
+        if self._viz_regen_requested and landmark_results:
+            self._viz_regen_requested = False
+            self._regenerate_viz_for_current(self.rules)
+            if self.show_viz.get():
+                new_viz = self._gallery_cache.get("viz_images", [])
+                if new_viz:
+                    self.left_panel.render_frames(
+                        new_viz,
+                        self.frame_annotations.get(rel_path, {}),
+                        self.active_frame_label.get(),
+                    )
+
     def _regenerate_viz_for_current(self, rules: dict):
         """
         Regenerate viz overlay untuk video yang sedang ditampilkan menggunakan rules baru.
@@ -914,17 +934,20 @@ class VideoLabelerApp:
                 if ri < len(frame_preds):
                     frame_preds[ri] = 0
 
-            valid_preds = [p for j, p in enumerate(frame_preds) if j not in rejected_set]
-            n_valid     = len(valid_preds)
-            vote_pos    = sum(valid_preds)
-            prediction  = 1 if (n_valid > 0 and vote_pos >= max(1, (n_valid + 1) // 2)) else 0
+            valid_preds  = [p for j, p in enumerate(frame_preds) if j not in rejected_set]
+            valid_scores = [s for j, s in enumerate(r["frame_scores"]) if j not in rejected_set]
+            n_valid      = len(valid_preds)
+            vote_pos     = sum(valid_preds)
+            valid_avg    = round(sum(valid_scores) / len(valid_scores), 4) if valid_scores else 0.0
+            thr_i        = res["thresholds"][i]
+            prediction   = 1 if (n_valid > 0 and valid_avg >= thr_i) else 0
 
             per_label_history[str(i)] = {
                 "prediction":   prediction,
                 "vote_pos":     vote_pos,
                 "vote_neg":     n_valid - vote_pos,
                 "skipped":      len(rejected_set),
-                "avg_score":    r["avg_score"],
+                "avg_score":    valid_avg,
                 "siglip_avg":   r.get("siglip_avg"),
                 "landmark_avg": r.get("landmark_avg"),
                 "threshold":    res["thresholds"][i],
@@ -1035,8 +1058,8 @@ class VideoLabelerApp:
         except (ValueError, AttributeError):
             uuid_depth = 2
 
-        MAJORITY = 2
-        N_FRAMES = 4
+        MAJORITY = 1
+        N_FRAMES = 2
 
         # Grouping by UUID
         videos_by_uuid = defaultdict(list)
@@ -1224,6 +1247,8 @@ class VideoLabelerApp:
                     print(f"{lbl}: hybrid={r['avg_score']:.3f} "
                           f"siglip={r['siglip_avg']:.3f}{land}")
                 self.save_current_state()
+                thrs = [v.get() for v in self.right_panel.threshold_vars]
+                update_batch_meta(self.path_json_batch_history, self.rules, thrs)
                 # Invalidasi cache agar viz images terbaru & frame highlights terupdate
                 self._gallery_cache["rel_path"] = None
                 self.refresh_frame_gallery()
@@ -1375,6 +1400,8 @@ class VideoLabelerApp:
                     text="Proses Semua (Batch)", fg_color="#6366f1", hover_color="#4f46e5"
                 )
                 self.right_panel.btn_proses_satu.configure(state="normal")
+                thrs = [v.get() for v in self.right_panel.threshold_vars]
+                update_batch_meta(self.path_json_batch_history, self.rules, thrs)
             
             self.root.after(0, on_finish)
 
