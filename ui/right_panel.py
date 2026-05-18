@@ -341,22 +341,29 @@ class RightPanel:
             self.acc_bodies.append(body)
 
     def _build_ai_score_bar(self, parent, lbl: str, color: str):
-        ai_row = ctk.CTkFrame(parent, fg_color="transparent")
-        ai_row.pack(fill="x", pady=(0, 2))
-        ctk.CTkLabel(ai_row, text="AI score",
-                     font=("Poppins", 9), text_color="gray").pack(side="left")
-        sv = ctk.StringVar(value="—")
-        ctk.CTkLabel(
-            ai_row, textvariable=sv, font=("Poppins", 9),
-            text_color=color, width=34, anchor="e",
-        ).pack(side="right")
-        self.ai_score_labels[lbl] = sv
+        # 2 bar per-frame (F0 dan F1) menggantikan 1 bar avg
+        frame_canvases = []
+        frame_labels   = []
+        for fi in range(2):
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=(0, 1))
+            ctk.CTkLabel(row, text=f"F{fi}",
+                         font=("Poppins", 9), text_color="gray", width=20).pack(side="left")
+            sv = ctk.StringVar(value="—")
+            ctk.CTkLabel(
+                row, textvariable=sv, font=("Poppins", 9),
+                text_color=color, width=34, anchor="e",
+            ).pack(side="right")
+            frame_labels.append(sv)
 
-        ai_bar_bg = ctk.CTkFrame(parent, fg_color=("d1d5db", "#2a2a3a"), height=4, corner_radius=2)
-        ai_bar_bg.pack(fill="x", pady=(2, 6))
-        sc = tk.Canvas(ai_bar_bg, height=4, bg="#2a2a3a", highlightthickness=0)
-        sc.pack(fill="x")
-        self.ai_score_canvases[lbl] = (sc, color)
+            bar_bg = ctk.CTkFrame(parent, fg_color=("d1d5db", "#2a2a3a"), height=5, corner_radius=2)
+            bar_bg.pack(fill="x", pady=(1, 3))
+            sc = tk.Canvas(bar_bg, height=5, bg="#2a2a3a", highlightthickness=0)
+            sc.pack(fill="x")
+            frame_canvases.append((sc, color))
+
+        self.ai_score_labels[lbl]   = frame_labels
+        self.ai_score_canvases[lbl] = frame_canvases
 
         ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
             fill="x", pady=(0, 6)
@@ -427,22 +434,29 @@ class RightPanel:
             body.pack(fill="x", pady=(2, 0))
             btn.configure(text=f"  {lbl}")
 
-    def update_ai_score_bar(self, label: str, score: float):
+    def update_ai_score_bar(self, label: str, frame_scores: list, threshold: float = None):
         """
-        Update bar AI score dan teks nilai numeriknya untuk label tertentu.
+        Update 2 bar AI score per-frame untuk label tertentu.
 
         Args:
-            label: Nama label (dari LABELS).
-            score: Nilai avg_score dari hasil inferensi AI (0.0 - 1.0).
+            label:        Nama label (dari LABELS).
+            frame_scores: List skor per-frame [score_f0, score_f1].
+            threshold:    Opsional — garis threshold ditampilkan di bar.
         """
-        sc, color = self.ai_score_canvases[label]
-        sc.update_idletasks()
-        w = sc.winfo_width() or 160
-        sc.delete("all")
-        fill_w = int(w * score)
-        if fill_w > 0:
-            sc.create_rectangle(0, 0, fill_w, 4, fill=color, outline="")
-        self.ai_score_labels[label].set(f"{score:.2f}")
+        canvases = self.ai_score_canvases[label]
+        labels   = self.ai_score_labels[label]
+        for fi, (sc, color) in enumerate(canvases):
+            score = frame_scores[fi] if fi < len(frame_scores) else 0.0
+            sc.update_idletasks()
+            w = sc.winfo_width() or 160
+            sc.delete("all")
+            fill_w = int(w * score)
+            if fill_w > 0:
+                sc.create_rectangle(0, 0, fill_w, 5, fill=color, outline="")
+            if threshold is not None:
+                tx = int(w * threshold)
+                sc.create_line(tx, 0, tx, 5, fill="#ffffff", width=1)
+            labels[fi].set(f"{score:.2f}" if score > 0 else "—")
 
     def get_prompts_and_thresholds(self) -> tuple:
         """
