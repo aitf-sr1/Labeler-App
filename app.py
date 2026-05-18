@@ -692,7 +692,7 @@ class VideoLabelerApp:
             pil_images = self._gallery_cache["pil_images"]
             viz_images = self._gallery_cache["viz_images"]
             self.viz_images = viz_images
-            n = len(pil_images) or 4
+            n = len(pil_images) or 2
             if pil_images:
                 vid_data = self.frame_annotations.get(rel_path, {})
                 display  = viz_images if (self.show_viz.get() and viz_images) else pil_images
@@ -769,7 +769,7 @@ class VideoLabelerApp:
             if changed and self.path_json_frames:
                 save_frame_annotations(self.path_json_frames, self.frame_annotations)
 
-        n = len(pil_images) or 4
+        n = len(pil_images) or 2
         self.left_panel.update_frame_quality(
             no_face_count, multi_fc,
             self._count_rejected(rel_path, n),

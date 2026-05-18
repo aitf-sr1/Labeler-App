@@ -130,7 +130,7 @@ class LeftPanel:
         for col in range(2):
             grid_frame.columnconfigure(col, weight=1)
 
-        for i in range(4):
+        for i in range(2):
             row_g, col_g = i // 2, i % 2
 
             # Wrapper: canvas gambar + strip dot di sebelah kanannya
@@ -175,7 +175,7 @@ class LeftPanel:
         no_face_count: int,
         multi_face_count: int = 0,
         rejected_count: int = 0,
-        n_frames: int = 4,
+        n_frames: int = 2,
     ):
         """Tampilkan info kualitas frame di atas galeri."""
         parts = []
