@@ -16,16 +16,16 @@ DEFAULT_RULES = {
         "v_dead_zone": 15.0,    # gaze_v < ini = tidak berkontribusi ke gaze_dev
     },
     "boredom": {
-        "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze
-        "gaze_range": 10.0,          # range gaze di atas dead zone — jenuh di dev=15°
+        "gaze_dead_zone": 8.0,       # gaze_dev < ini = tidak bosan dari gaze (dinaikkan 5→8 supaya gerak kecil tidak trigger)
+        "gaze_range": 10.0,          # range gaze di atas dead zone — jenuh di dev=18°
         "blink_dead_zone": 0.20,     # eyeBlink < ini = tidak dihitung
         "blink_range": 0.50,         # range blink di atas dead zone
         "yawn_threshold": 0.35,      # jawOpen / ini = yawn_v (max 1)
         "sig_expr_weight": 0.70,     # bobot max(blink, yawn, pitch_up)
         "blend_a": 0.85,             # koefisien campuran utama
         "blend_b": 0.15,             # koefisien campuran sekunder
-        "expr_gaze_gate_th": 0.2,   # bore_gaze min untuk ekspresi boredom aktif penuh
-        "expr_lookdn_gate_th": 0.25, # look_down_v min untuk ekspresi boredom aktif (ngetik)
+        "expr_gaze_gate_th": 0.35,  # bore_gaze min untuk ekspresi boredom aktif (dinaikkan 0.2→0.35)
+        "expr_lookdn_gate_th": 0.25, # tidak dipakai lagi di formula (look_down sudah via gaze_v_eff)
     },
     "engagement": {
         "tegak_dead_zone": 5.0,      # gaze_dev dead zone (°)
