@@ -708,9 +708,11 @@ class VideoLabelerApp:
             hist = self.batch_history.get(rel_path)
             if hist:
                 for i, lbl in enumerate(LABELS):
-                    avg = hist["per_label"].get(str(i), {}).get("avg_score")
-                    if avg is not None:
-                        self.right_panel.update_ai_score_bar(lbl, avg)
+                    pl  = hist["per_label"].get(str(i), {})
+                    fsc = pl.get("frame_scores", [])
+                    thr = pl.get("threshold")
+                    if fsc:
+                        self.right_panel.update_ai_score_bar(lbl, fsc, thr)
             return
 
         # ── Slow path: new video ─────────────────────────────────────────────
@@ -723,9 +725,11 @@ class VideoLabelerApp:
         hist = self.batch_history.get(rel_path)
         if hist:
             for i, lbl in enumerate(LABELS):
-                avg = hist["per_label"].get(str(i), {}).get("avg_score")
-                if avg is not None:
-                    self.right_panel.update_ai_score_bar(lbl, avg)
+                pl  = hist["per_label"].get(str(i), {})
+                fsc = pl.get("frame_scores", [])
+                thr = pl.get("threshold")
+                if fsc:
+                    self.right_panel.update_ai_score_bar(lbl, fsc, thr)
 
         def worker():
             result = prepare_cropped_frames(
@@ -792,9 +796,11 @@ class VideoLabelerApp:
         hist = self.batch_history.get(rel_path)
         if hist:
             for i, lbl in enumerate(LABELS):
-                avg = hist["per_label"].get(str(i), {}).get("avg_score")
-                if avg is not None:
-                    self.right_panel.update_ai_score_bar(lbl, avg)
+                pl  = hist["per_label"].get(str(i), {})
+                fsc = pl.get("frame_scores", [])
+                thr = pl.get("threshold")
+                if fsc:
+                    self.right_panel.update_ai_score_bar(lbl, fsc, thr)
 
         # Regenerasi viz dengan rules aktif jika diminta (misal setelah batch switch)
         if self._viz_regen_requested and landmark_results:
@@ -986,7 +992,7 @@ class VideoLabelerApp:
         self.refresh_frame_gallery()  # fast path: cache masih valid
         self.right_panel.update_statistics(self.batch_history)
         for lbl in LABELS:
-            self.right_panel.update_ai_score_bar(lbl, 0.0)
+            self.right_panel.update_ai_score_bar(lbl, [0.0, 0.0])
         self.right_panel.lbl_batch_status.configure(
             text="Semua label direset ke 0", text_color="#10b981"
         )
@@ -1245,7 +1251,7 @@ class VideoLabelerApp:
             def update_ui():
                 for i, lbl in enumerate(LABELS):
                     r = res["per_label"][i]
-                    self.right_panel.update_ai_score_bar(lbl, r["avg_score"])
+                    self.right_panel.update_ai_score_bar(lbl, list(r["frame_scores"]), r.get("threshold"))
                     land = f" land={r['landmark_avg']:.3f}" if r.get("landmark_avg") is not None else ""
                     print(f"{lbl}: hybrid={r['avg_score']:.3f} "
                           f"siglip={r['siglip_avg']:.3f}{land}")
@@ -1380,9 +1386,10 @@ class VideoLabelerApp:
                     )
                     if rel_path == current_rel:
                         for i, lbl in enumerate(LABELS):
-                            ai_score = res["per_label"][i]["avg_score"]
-                            self.root.after(0, lambda l=lbl, s=ai_score:
-                                self.right_panel.update_ai_score_bar(l, s))
+                            fsc = list(res["per_label"][i]["frame_scores"])
+                            thr = res["per_label"][i].get("threshold")
+                            self.root.after(0, lambda l=lbl, s=fsc, t=thr:
+                                self.right_panel.update_ai_score_bar(l, s, t))
                         self.root.after(0, self.refresh_frame_gallery)
 
                     save_frame_annotations(self.path_json_frames, self.frame_annotations)
