@@ -859,7 +859,7 @@ class VideoLabelerApp:
 
         if rel_path not in self.frame_annotations:
             self.frame_annotations[rel_path] = {
-                str(i): {l: 0 for l in LABELS} for i in range(4)
+                str(i): {l: 0 for l in LABELS} for i in range(2)
             }
         if str(frame_idx) not in self.frame_annotations[rel_path]:
             self.frame_annotations[rel_path][str(frame_idx)] = {l: 0 for l in LABELS}
@@ -886,7 +886,7 @@ class VideoLabelerApp:
 
         if rel_path not in self.frame_annotations:
             self.frame_annotations[rel_path] = {
-                str(i): {l: 0 for l in LABELS} for i in range(4)
+                str(i): {l: 0 for l in LABELS} for i in range(2)
             }
         if str(frame_idx) not in self.frame_annotations[rel_path]:
             self.frame_annotations[rel_path][str(frame_idx)] = {l: 0 for l in LABELS}
@@ -912,12 +912,13 @@ class VideoLabelerApp:
             self.frame_annotations[rel_path] = {}
 
         # Catat frame yang di-reject SEBELUM ditimpa AI predictions
+        n_res = res.get("n_frames", 2)
         rejected_set = {
-            i for i in range(4)
+            i for i in range(n_res)
             if self.frame_annotations.get(rel_path, {}).get(str(i), {}).get("_rejected", False)
         }
 
-        for f_idx in range(4):
+        for f_idx in range(n_res):
             if str(f_idx) not in self.frame_annotations[rel_path]:
                 self.frame_annotations[rel_path][str(f_idx)] = {}
             for i, lbl in enumerate(LABELS):
@@ -975,7 +976,7 @@ class VideoLabelerApp:
 
         # Timpa dengan entry bersih (tidak ada guard — selalu reset)
         self.frame_annotations[rel_path] = {
-            str(i): {l: 0 for l in LABELS} for i in range(4)
+            str(i): {l: 0 for l in LABELS} for i in range(2)
         }
         self.batch_history.pop(rel_path, None)
         self.save_current_state()
