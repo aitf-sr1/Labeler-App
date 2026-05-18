@@ -473,6 +473,10 @@ class VideoLabelerApp:
                     save_frame_annotations(self.path_json_frames, self.frame_annotations)
 
                 def on_done(extra_path=extra, _rules=rules):
+                    # Sync manual_labels dari semua frame_annotations baru hasil recalculate
+                    for rel in self.frame_annotations:
+                        self._sync_manual_from_ai(rel)
+
                     total  = len(self.batch_history)
                     done   = total - skipped
                     msg    = f"Selesai: {done}/{total} video dihitung ulang"
