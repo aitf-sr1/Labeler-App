@@ -18,7 +18,7 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student resting their chin on their hand with lazy unfocused eyes\n"
         "a face of a student with half-closed eyes appearing mentally absent and disengaged\n"
         "a face of a student with relaxed facial muscles and a vacant bored expression\n"
-        "a face of a student with head tilted down staring blankly completely zoned out and daydreaming",
+        "a face of a student gazing far away into the distance with vacant unfocused eyes not paying attention to anything specific",
         "",
     ),
     # 1 — Engagement
@@ -32,25 +32,26 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student with slightly raised eyebrows showing curiosity and focus\n"
         "a face of a student with a sharp, present, and actively involved expression\n"
         "a face of a student looking down at keyboard or notes with an alert focused and engaged expression\n"
-        "a face of a student with eyes directed downward actively typing with an attentive concentrated look",
+        "a face of a student with eyes directed downward actively typing with an attentive concentrated look\n"
+        "a face of a student with head turned slightly but eyes clearly tracking the screen with focused engagement",
         "",
     ),
     # 2 — Confusion
-    # Fokus pada kerutan alis spesifik dan mata menyipit
+    # Fokus: ekspresi tidak mengerti (brow furrow + lost/puzzled) — hindari overlap Engagement
     (
         "a face of a student with deeply furrowed eyebrows looking puzzled and uncertain\n"
         "a face of a student squinting their eyes with visible mental effort to understand\n"
-        "a face of a student with a slightly open mouth and raised brow looking lost\n"
-        "a face of a student tilting their head with a questioning and perplexed look\n"
-        "a face of a student with a thinking expression, pursed lips, and furrowed eyebrows\n"
-        "a face of a student scratching their head feeling puzzled and confused\n"
-        "a face of a student concentrating hard with a slightly open mouth and squinting eyes",
+        "a face of a student with a slightly open mouth and raised inner brow looking lost\n"
+        "a face of a student with knitted brows and slightly parted lips trying to comprehend something difficult\n"
+        "a face of a student looking confused and lost, clearly not understanding the lesson\n"
+        "a face of a student with furrowed brows and wide eyes showing confusion about the material\n"
+        "a face of a student with a puzzled expression unable to follow what is being explained",
         "",
     ),
     # 3 — Frustration
     # Fokus pada otot tegang: rahang, bibir ditekan, mata tertutup kesal
     (
-        "a face of a student looking extremely angry and stressed with a clenched jaw\n"
+        "a face of a student showing visible tension with clenched jaw and hand pressed against the forehead in frustration\n"
         "a face of a student with a fierce angry expression and gritting teeth\n"
         "a face of a student sighing heavily with eyes squeezed shut in frustration\n"
         "a face of a student pinching the bridge of their nose showing mental fatigue\n"
