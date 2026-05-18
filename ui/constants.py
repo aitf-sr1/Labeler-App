@@ -37,15 +37,15 @@ DEFAULT_PROMPT_GROUPS = [
         "",
     ),
     # 2 — Confusion
-    # Fokus: ekspresi tidak mengerti (brow furrow + lost/puzzled) — hindari overlap Engagement
+    # Fokus: tidak mengerti — mulut sedikit terbuka, tatap atas/depan, ekspresi blank/lost
     (
-        "a face of a student with deeply furrowed eyebrows looking puzzled and uncertain\n"
-        "a face of a student squinting their eyes with visible mental effort to understand\n"
+        "a face of a student with a slightly open mouth looking confused and uncertain\n"
+        "a face of a student with mouth slightly agape staring blankly not understanding\n"
         "a face of a student with a slightly open mouth and raised inner brow looking lost\n"
-        "a face of a student with knitted brows and slightly parted lips trying to comprehend something difficult\n"
+        "a face of a student with pursed or slightly open lips unable to follow the explanation\n"
         "a face of a student looking confused and lost, clearly not understanding the lesson\n"
-        "a face of a student with furrowed brows and wide eyes showing confusion about the material\n"
-        "a face of a student with a puzzled expression unable to follow what is being explained",
+        "a face of a student with a blank puzzled expression mouth slightly open\n"
+        "a face of a student staring with a slightly open mouth trying to process something unclear",
         "",
     ),
     # 3 — Frustration
