@@ -259,7 +259,9 @@ class RightPanel:
                 for i, val in enumerate(thresholds):
                     self.threshold_vars[i].set(val)
                     if i < len(self.threshold_labels):
-                        self.threshold_labels[i].configure(text=f"{float(val):.2f}")
+                        e = self.threshold_labels[i]
+                        e.delete(0, "end")
+                        e.insert(0, f"{float(val):.2f}")
 
             # ── Restore rules dari __meta__ ─────────────────────────────────
             saved_rules = meta.get("rules")

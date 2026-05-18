@@ -277,7 +277,9 @@ class VideoLabelerApp:
             for i, val in enumerate(saved):
                 self.right_panel.threshold_vars[i].set(val)
                 if i < len(self.right_panel.threshold_labels):
-                    self.right_panel.threshold_labels[i].configure(text=f"{float(val):.2f}")
+                    entry = self.right_panel.threshold_labels[i]
+                    entry.delete(0, "end")
+                    entry.insert(0, f"{float(val):.2f}")
             print(f"[Threshold] Dimuat dari disk: {[f'{v:.2f}' for v in saved]}")
 
     def _save_current_thresholds(self):
