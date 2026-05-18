@@ -313,8 +313,8 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
     if not res.face_landmarks:
         return LandmarkResult(
             face_found=False,
-            hand_forehead=hand_mid_bot,             # Frustration trigger
-            hand_chin=hand_top,                     # Confusion trigger
+            hand_forehead=hand_top,                 # Frustration trigger (zona dahi y∈[-0.20, 0.25))
+            hand_chin=hand_mid_bot,                 # Confusion trigger (zona pipi/dagu y∈[0.25, 1.20])
             hand_landmarks_px=hand_pts_px,
             hand_landmarks_raw=hand_raw,
         )
@@ -347,8 +347,8 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
         left_iris_px=(lxi, lyi), right_iris_px=(rxi, ryi),
         blendshapes=bs, face_found=True,
         face_landmarks=lms,
-        hand_forehead=round(hand_mid_bot, 4),
-        hand_chin=round(hand_top, 4),
+        hand_forehead=round(hand_top, 4),
+        hand_chin=round(hand_mid_bot, 4),
         hand_landmarks_px=hand_pts_px,
         hand_landmarks_raw=hand_raw,
     )
@@ -403,12 +403,27 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     bore_gaze = _clamp((gaze_dev - bcfg["gaze_dead_zone"]) / bcfg["gaze_range"], 0, 1)
 
     blink_v    = _clamp((max(g("eyeBlinkLeft"), g("eyeBlinkRight")) - bcfg["blink_dead_zone"]) / bcfg["blink_range"], 0, 1)
-    yawn_v     = _clamp(g("jawOpen") / bcfg["yawn_threshold"], 0, 1) if r.pitch < 15 else 0.0
+    yawn_raw   = _clamp(g("jawOpen") / bcfg["yawn_threshold"], 0, 1) if r.pitch < 15 else 0.0
     pitch_up_v = _clamp((r.pitch - 20) / 25, 0, 1)
-    sig_expr   = max(blink_v, yawn_v, pitch_up_v) * bcfg["sig_expr_weight"]
 
-    base_bore  = max(bore_gaze, sig_expr)
-    bore       = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr) * bcfg["blend_b"], 0, 1)
+    # Yawn hanya valid jika gaze deviated — natap depan sambil mangap bukan sinyal bosan.
+    # look_down (ngetik) TIDAK mengaktifkan yawn supaya siswa yang nunduk ke laptop
+    # tapi mulut terbuka sedikit tidak kedeteksi bosan.
+    yawn_gate = _clamp(bore_gaze / bcfg.get("expr_gaze_gate_th", 0.2), 0, 1)
+    yawn_v    = yawn_raw * yawn_gate
+
+    sig_expr  = max(blink_v, yawn_v, pitch_up_v) * bcfg["sig_expr_weight"]
+
+    # Ekspresi boredom (blink/pitch_up) masih bisa diaktifkan oleh look_down (ngetik).
+    # Yawn sudah di-gate sendiri di atas, jadi expr_gate di sini tidak menambah yawn.
+    expr_gate = max(
+        _clamp(bore_gaze / bcfg.get("expr_gaze_gate_th", 0.2), 0, 1),
+        _clamp(look_down_v / bcfg.get("expr_lookdn_gate_th", 0.25), 0, 1),
+    )
+    sig_expr_gated = sig_expr * expr_gate
+
+    base_bore  = max(bore_gaze, sig_expr_gated)
+    bore       = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr_gated) * bcfg["blend_b"], 0, 1)
 
     # == 1: ENGAGEMENT =========================================================
     gate = _clamp(1 - max(0, gaze_dev - ecfg["tegak_dead_zone"]) / ecfg["tegak_range"], 0, 1)
@@ -444,11 +459,22 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     sig_brow_conf = max(brow_dn_v, brow_in_v)
     sig_mata_conf = max(iris_up_v, look_up_v)
 
-    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, r.hand_chin)
+    # Confusion = pure facial expression (brow furrow, jaw open thinking, iris up, etc).
+    # Definisi user: TIDAK ada keterlibatan tangan; siswa fokus konten dengan ekspresi bingung.
+    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
     conf = _clamp(base_conf * ccfg["blend_a"] + (pitch_cu + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 
-    suppression = r.hand_forehead if r.hand_chin < 0.5 else 0.0
-    conf = _clamp(conf - suppression, 0, 1)
+    # Gaze gate: confusion masih membutuhkan attention ke konten (definisi semantik).
+    # Floor di 0.3 supaya brief look-away saat thinking tidak menghilangkan confusion sepenuhnya.
+    attentive_dead  = ccfg.get("attentive_dead",  8.0)
+    attentive_range = ccfg.get("attentive_range", 20.0)
+    attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev - attentive_dead) / attentive_range, 0.3, 1.0)
+    conf = _clamp(conf * attentive_gate, 0, 1)
+
+    # Hand suppression: kehadiran tangan dekat kepala (zona manapun) = cue Frustrasi, BUKAN Confusion.
+    # Tangan terdeteksi → confusion ditekan additive supaya tidak fire bersama Frustration.
+    hand_near_head = max(r.hand_forehead, r.hand_chin)
+    conf = _clamp(conf - hand_near_head, 0, 1)
 
     # == 3: FRUSTRATION ========================================================
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / fcfg["brow_dn_th"], 0, 1)
@@ -460,11 +486,27 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     jaw_val_frus = max(0.0, jo - fcfg["jaw_start"])
     jw_fr = _clamp((jaw_val_frus - smile_pen * 1.5) / fcfg["jaw_range"], 0, 1)
 
-    sig_wajah_frus = _clamp(ns_fr + (br_fr + lp_fr + ey_fr + ck_fr) / 2.0, 0, 1)
-    sig_wajah_frus = _clamp(sig_wajah_frus - smile_pen * 1.5, 0, 1)
+    # Tangan adalah sinyal primer frustasi; ekspresi wajah hanya suplemen.
+    # Gunakan max() antar sinyal wajah (bukan sum) agar tidak saling inflate,
+    # lalu skala dengan face_weight sehingga kontribusi wajah maksimal terbatas.
+    face_peak = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr)
+    face_w    = fcfg.get("face_weight", 0.35)
+    sig_wajah_frus = _clamp(face_peak * face_w - smile_pen * 1.5, 0, 1)
 
-    hand_trigger_frus = r.hand_forehead
-    base_frus = _clamp(sig_wajah_frus + hand_trigger_frus, 0, 1)
+    # Weighted-max fusion: tangan adalah cue penting tapi bukan single-cue dominant.
+    # max(weighted_avg, hand_alone, face_alone): single cue kuat tetap valid, kombinasi
+    # tidak saturasi aditif, signal lemah tunggal tidak meledakkan score.
+    # Tangan di zona MANAPUN dekat kepala = cue Frustrasi (dahi, mata, pipi, dagu, menutup wajah).
+    hand_trigger_frus = max(r.hand_forehead, r.hand_chin)
+    hand_w = fcfg.get("hand_weight", 0.65)
+    base_frus = _clamp(
+        max(
+            hand_trigger_frus * hand_w + sig_wajah_frus * (1.0 - hand_w),
+            hand_trigger_frus,
+            sig_wajah_frus,
+        ),
+        0, 1,
+    )
     frus = _clamp(base_frus * fcfg["blend_a"] + (ck_fr + jw_fr) * fcfg["blend_b"], 0, 1)
 
     # Debug log
