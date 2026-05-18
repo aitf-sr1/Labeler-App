@@ -84,7 +84,9 @@ class VideoLabelerApp:
         self.skipped_videos    = set()
         self.batch_history     = {}
 
-        self.flag_var   = ctk.BooleanVar(value=False)
+        self.flag_var        = ctk.BooleanVar(value=False)
+        self.semi_manual_var = ctk.BooleanVar(value=False)
+        self.manual_labels   = {}   # {rel_path: {"0": {lbl: 0|1}, "1": {...}}}
         self.active_frame_label = ctk.StringVar(value="Boredom")
         self.show_viz   = ctk.BooleanVar(value=False)   # Toggle landmark viz di galeri
         self.viz_images = []   # Cache viz PIL images untuk video aktif
@@ -192,6 +194,13 @@ class VideoLabelerApp:
         )
         self.chk_flag.pack(side="left", padx=16)
 
+        self.chk_semi_manual = ctk.CTkSwitch(
+            bar, text="Label Semi Manual", variable=self.semi_manual_var,
+            font=self.font_sm, progress_color="#10b981",
+            command=self._on_semi_manual_toggle,
+        )
+        self.chk_semi_manual.pack(side="left", padx=16)
+
         ctk.CTkButton(
             bar, text="Save & Next", command=self.save_and_next,
             font=self.font_bold, fg_color="#3b82f6", hover_color="#2563eb",
@@ -237,6 +246,7 @@ class VideoLabelerApp:
         self.path_json_skipped       = os.path.join(base, "skipped_videos.json")
         self.path_json_thresholds    = os.path.join(base, "thresholds.json")
         self.path_json_rules         = os.path.join(base, "rules.json")
+        self.path_json_manual        = os.path.join(base, "manual_labels.json")
         self.path_dir_cropped        = os.path.join(base, "cropped_faces")
         self.path_dir_raw_cache      = os.path.join(base, "raw_cache")
         self.path_dir_siglip_cache   = os.path.join(base, "siglip_cache")
@@ -261,6 +271,7 @@ class VideoLabelerApp:
         self.frame_annotations = load_frame_annotations(self.path_json_frames)
         self.batch_history     = load_batch_history(self.path_json_batch_history)
         self.skipped_videos    = load_skipped(self.path_json_skipped)
+        self.manual_labels     = self._load_manual_labels()
         self._load_saved_thresholds()
         self._load_rules()
         self._update_flag_count()
@@ -310,6 +321,71 @@ class VideoLabelerApp:
         safe = rel_path.replace(os.sep, "__").replace("/", "__").replace("\\", "__")
         safe = os.path.splitext(safe)[0]
         return os.path.join(self.path_dir_siglip_cache, safe + ".json")
+
+    # ── Semi-manual labeling ──────────────────────────────────────────────────
+
+    def _load_manual_labels(self) -> dict:
+        """Muat manual_labels.json dari disk, atau return dict kosong."""
+        if not hasattr(self, "path_json_manual") or not self.path_json_manual:
+            return {}
+        if os.path.exists(self.path_json_manual):
+            try:
+                import json as _json
+                with open(self.path_json_manual) as f:
+                    return _json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_manual_labels(self):
+        """Simpan manual_labels ke disk."""
+        if not self.path_json_manual:
+            return
+        import json as _json
+        with open(self.path_json_manual, "w") as f:
+            _json.dump(self.manual_labels, f, indent=2)
+
+    def _on_semi_manual_toggle(self):
+        """Dipanggil saat toggle Label Semi Manual diubah."""
+        active = self.semi_manual_var.get()
+        self.left_panel.show_manual_checkboxes(active)
+        if active:
+            self._init_manual_for_current()
+
+    def _init_manual_for_current(self):
+        """Duplikat label AI ke manual_labels untuk video aktif jika belum ada."""
+        if not self.video_files:
+            return
+        vp      = self.video_files[self.current_index]
+        rel     = os.path.relpath(vp, self.root_folder)
+        n_fr    = 2
+        if rel not in self.manual_labels:
+            # Duplikat dari frame_annotations (label AI)
+            fa = self.frame_annotations.get(rel, {})
+            entry = {}
+            for fi in range(n_fr):
+                fd = fa.get(str(fi), {})
+                entry[str(fi)] = {lbl: int(fd.get(lbl, 0)) for lbl in LABELS}
+            self.manual_labels[rel] = entry
+            self._save_manual_labels()
+        # Update checkbox state
+        for fi in range(n_fr):
+            self.left_panel.update_manual_checkboxes(
+                fi, self.manual_labels[rel].get(str(fi), {})
+            )
+
+    def _on_manual_check(self, frame_idx: int, label: str, value: bool):
+        """Dipanggil saat user centang/uncentang checkbox manual label."""
+        if not self.video_files:
+            return
+        vp  = self.video_files[self.current_index]
+        rel = os.path.relpath(vp, self.root_folder)
+        if rel not in self.manual_labels:
+            self._init_manual_for_current()
+        self.manual_labels[rel][str(frame_idx)][label] = int(value)
+        self._save_manual_labels()
+
+    # ── Rules ─────────────────────────────────────────────────────────────────
 
     def _load_rules(self):
         """Muat rules dari disk ke self.rules."""
@@ -538,7 +614,11 @@ class VideoLabelerApp:
         self.lbl_progress.configure(text=f"{self.current_index + 1} / {len(self.video_files)}")
 
         self.flag_var.set(rel in self.flagged_data)
-        
+
+        # Refresh checkbox semi-manual jika mode aktif
+        if self.semi_manual_var.get():
+            self._init_manual_for_current()
+
         self.refresh_frame_gallery()
         self.toggle_play()
 
