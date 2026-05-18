@@ -130,15 +130,21 @@ class LeftPanel:
         for col in range(2):
             grid_frame.columnconfigure(col, weight=1)
 
+        self._manual_check_frames = []   # list of {lbl: BooleanVar} per frame
+
         for i in range(2):
             row_g, col_g = i // 2, i % 2
 
-            # Wrapper: canvas gambar + strip dot di sebelah kanannya
-            cell = tk.Frame(grid_frame, bg="#0d0d0d")
-            cell.grid(row=row_g, column=col_g, padx=8, pady=8)
+            # Outer cell: gambar + dot + manual checkboxes (vertikal)
+            outer = tk.Frame(grid_frame, bg="#0d0d0d")
+            outer.grid(row=row_g, column=col_g, padx=8, pady=8)
+
+            # Baris atas: canvas + dot strip
+            cell = tk.Frame(outer, bg="#0d0d0d")
+            cell.pack()
 
             cv_widget = tk.Canvas(
-                cell, width=240, height=240,
+                cell, width=360, height=360,
                 bg="#111", highlightthickness=2, highlightbackground="#333",
             )
             cv_widget.pack(side="left")
@@ -147,9 +153,27 @@ class LeftPanel:
             cv_widget.bind("<Double-Button-1>", lambda e, idx=i: self.app.toggle_frame_reject(idx))
             self.frame_canvases.append(cv_widget)
 
-            dot_cv = tk.Canvas(cell, width=20, height=240, bg="#0d0d0d", highlightthickness=0)
+            dot_cv = tk.Canvas(cell, width=20, height=360, bg="#0d0d0d", highlightthickness=0)
             dot_cv.pack(side="left", padx=(4, 0))
             self.frame_dot_canvases.append(dot_cv)
+
+            # Baris bawah: checkboxes manual label (tersembunyi default)
+            chk_row = tk.Frame(outer, bg="#0d0d0d")
+            # TIDAK di-pack sekarang — muncul saat semi_manual aktif
+            frame_vars = {}
+            for lbl in LABELS:
+                color = LABEL_COLORS[lbl]
+                var = tk.BooleanVar(value=False)
+                cb = tk.Checkbutton(
+                    chk_row, text=lbl, variable=var,
+                    bg="#0d0d0d", fg=color, selectcolor="#1a1a2e",
+                    activebackground="#0d0d0d", activeforeground=color,
+                    font=("Poppins", 9, "bold"), bd=0,
+                    command=lambda fi=i, l=lbl, v=var: self.app._on_manual_check(fi, l, v.get()),
+                )
+                cb.pack(side="left", padx=6)
+                frame_vars[lbl] = var
+            self._manual_check_frames.append({"vars": frame_vars, "row": chk_row})
 
         ctk.CTkLabel(
             gallery_scroll,
@@ -157,13 +181,28 @@ class LeftPanel:
             font=("Poppins", 9), text_color="#6b7280",
         ).pack(pady=(0, 6))
 
+    def show_manual_checkboxes(self, visible: bool):
+        """Tampilkan atau sembunyikan baris checkbox manual label di bawah tiap frame."""
+        for entry in self._manual_check_frames:
+            if visible:
+                entry["row"].pack(pady=(4, 0))
+            else:
+                entry["row"].pack_forget()
+
+    def update_manual_checkboxes(self, frame_idx: int, label_dict: dict):
+        """Update state checkbox untuk satu frame dari dict {lbl: 0|1}."""
+        if frame_idx >= len(self._manual_check_frames):
+            return
+        for lbl, var in self._manual_check_frames[frame_idx]["vars"].items():
+            var.set(bool(label_dict.get(lbl, 0)))
+
     def show_loading(self):
         """Tampilkan state loading di semua canvas frame (saat prepare_cropped_frames berjalan)."""
         for cv_widget in self.frame_canvases:
             cv_widget.delete("all")
             cv_widget.configure(highlightbackground="#333")
             cv_widget.create_text(
-                120, 120, text="memuat...", fill="#4b5563",
+                180, 180, text="memuat...", fill="#4b5563",
                 font=("Poppins", 10), anchor="center",
             )
         for dot_cv in self.frame_dot_canvases:
@@ -222,7 +261,7 @@ class LeftPanel:
         gap     = 8
         n       = len(LABELS)
         total_h = n * (2 * dot_r) + (n - 1) * gap
-        start_y = (240 - total_h) // 2
+        start_y = (360 - total_h) // 2
         cx      = 10  # tengah strip 20px
         for j, lbl in enumerate(LABELS):
             cy     = start_y + j * (2 * dot_r + gap) + dot_r
@@ -256,7 +295,7 @@ class LeftPanel:
                 cv_widget.configure(highlightbackground="#333")
                 continue
 
-            img    = pil_images[i].resize((240, 240))
+            img    = pil_images[i].resize((360, 360))
             tk_img = ImageTk.PhotoImage(img)
             self.frame_image_refs.append(tk_img)
             cv_widget.delete("all")
@@ -267,9 +306,9 @@ class LeftPanel:
 
             if is_rejected:
                 cv_widget.configure(highlightbackground="#ef4444")
-                cv_widget.create_rectangle(0, 0, 240, 240, fill="#2a0000", stipple="gray50")
+                cv_widget.create_rectangle(0, 0, 360, 360, fill="#2a0000", stipple="gray50")
                 cv_widget.create_text(
-                    120, 120, text="FRAME DITOLAK", fill="#ef4444",
+                    180, 180, text="FRAME DITOLAK", fill="#ef4444",
                     font=("Poppins", 11, "bold"), anchor="center",
                 )
             else:
