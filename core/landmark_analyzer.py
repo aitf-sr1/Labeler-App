@@ -407,20 +407,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     yawn_raw   = _clamp(g("jawOpen") / bcfg["yawn_threshold"], 0, 1) if r.pitch < 15 else 0.0
     pitch_up_v = _clamp((r.pitch - 20) / 25, 0, 1)
 
-    # Yawn hanya valid jika gaze deviated — natap depan sambil mangap bukan sinyal bosan.
-    # look_down (ngetik) TIDAK mengaktifkan yawn supaya siswa yang nunduk ke laptop
-    # tapi mulut terbuka sedikit tidak kedeteksi bosan.
-    yawn_gate = _clamp(bore_gaze / bcfg.get("expr_gaze_gate_th", 0.2), 0, 1)
-    yawn_v    = yawn_raw * yawn_gate
-
+    # Semua sinyal ekspresi (blink, yawn, pitch_up) hanya valid saat gaze deviated.
+    # look_down sudah masuk ke gaze_v_eff (via look_down_v * 40) sehingga
+    # siswa yang benar-benar nunduk sudah punya boreGaze tinggi — tidak perlu
+    # expr_gate tambahan dari look_down. Tanpa ini, blink saat ngetik = false boredom.
+    expr_gate = _clamp(bore_gaze / bcfg.get("expr_gaze_gate_th", 0.35), 0, 1)
+    yawn_v    = yawn_raw * expr_gate
     sig_expr  = max(blink_v, yawn_v, pitch_up_v) * bcfg["sig_expr_weight"]
-
-    # Ekspresi boredom (blink/pitch_up) masih bisa diaktifkan oleh look_down (ngetik).
-    # Yawn sudah di-gate sendiri di atas, jadi expr_gate di sini tidak menambah yawn.
-    expr_gate = max(
-        _clamp(bore_gaze / bcfg.get("expr_gaze_gate_th", 0.2), 0, 1),
-        _clamp(look_down_v / bcfg.get("expr_lookdn_gate_th", 0.25), 0, 1),
-    )
     sig_expr_gated = sig_expr * expr_gate
 
     base_bore  = max(bore_gaze, sig_expr_gated)
