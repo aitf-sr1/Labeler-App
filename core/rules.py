@@ -67,8 +67,8 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        "siglip_w": [0.30, 0.20, 0.75, 0.50],   # per label [Bore, Eng, Conf, Frus]
-        "land_w":   [0.70, 0.80, 0.25, 0.50],   # Bore/Eng: landmark dominant; Conf: SigLIP 75%+land 25% untuk stabilitas antar frame mirip; Frus: balanced
+        "siglip_w": [0.30, 0.20, 0.60, 0.50],   # per label [Bore, Eng, Conf, Frus]
+        "land_w":   [0.70, 0.80, 0.40, 0.50],   # Conf: land 40% — jaw/pucker lebih reliable dari teks prompt untuk mulut terbuka
         "restless_bonus_max": 0.0,   # disabled — heuristik tanpa basis definisi semantik
         "restless_std_min": 3.0,
         "restless_std_range": 7.0,
