@@ -30,6 +30,7 @@ def _reconstruct_lr(frame_data: dict) -> LandmarkResult:
     return LandmarkResult(
         yaw=frame_data.get("yaw", 0.0),
         pitch=frame_data.get("pitch", 0.0),
+        roll=frame_data.get("roll", 0.0),
         iris_x=frame_data.get("iris_x", 0.0),
         iris_y=frame_data.get("iris_y", 0.0),
         iris_img_x=frame_data.get("iris_img_x", 0.0),

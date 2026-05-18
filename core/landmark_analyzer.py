@@ -52,6 +52,7 @@ _R_IRIS             = 473
 class LandmarkResult:
     yaw:            float = 0.0    # + = kepala ke kanan
     pitch:          float = 0.0    # + = kepala tengadah ke atas
+    roll:           float = 0.0    # + = kepala miring ke kanan (ear→shoulder), confusion signal
     iris_x:         float = 0.0    # -1=pupil kiri, 0=center, +1=kanan  (relatif ke sudut mata)
     iris_y:         float = 0.0    # -1=pupil atas, 0=center, +1=bawah  (relatif ke sudut mata)
     # Posisi iris relatif ke PUSAT CROP (image-center-relative gaze)
@@ -321,7 +322,7 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
 
     lms = res.face_landmarks[0]
     bs  = {b.category_name: round(b.score, 4) for b in res.face_blendshapes[0]}
-    yaw, pitch, _ = _rotation_matrix_to_euler(res.facial_transformation_matrixes[0])
+    yaw, pitch, roll = _rotation_matrix_to_euler(res.facial_transformation_matrixes[0])
 
     lx, ly, lxi, lyi = _iris_offset(lms, _L_IRIS, _L_INNER, _L_OUTER, _L_TOP, _L_BOT, w, h)
     rx, ry, rxi, ryi = _iris_offset(lms, _R_IRIS, _R_INNER, _R_OUTER, _R_TOP, _R_BOT, w, h)
@@ -341,7 +342,7 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
     iris_img_y = float(np.clip(((l_cy + r_cy) / 2) - 0.5, -0.5, 0.5))
 
     return LandmarkResult(
-        yaw=round(yaw, 2), pitch=round(pitch, 2),
+        yaw=round(yaw, 2), pitch=round(pitch, 2), roll=round(roll, 2),
         iris_x=round(iris_x, 4), iris_y=round(iris_y, 4),
         iris_img_x=round(iris_img_x, 4), iris_img_y=round(iris_img_y, 4),
         left_iris_px=(lxi, lyi), right_iris_px=(rxi, ryi),
@@ -439,6 +440,10 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     co_signal   = max(iris_up_v, look_up_v, pitch_cu)
     brow_in_v   = _clamp(brow_in_raw / ccfg["brow_in_th"], 0, 1) * _clamp(co_signal / ccfg["brow_in_co_gate"], 0, 1)
 
+    # Kepala miring ke samping (roll) — bukan muterin kepala (yaw) seperti boredom.
+    # Siswa bingung sering miringin kepala sedikit. Dead zone supaya noise tidak trigger.
+    roll_v = _clamp((abs(r.roll) - ccfg.get("roll_dead_zone", 8.0)) / ccfg.get("roll_range", 15.0), 0, 1)
+
     smile_raw  = max(g("mouthSmileLeft"), g("mouthSmileRight"))
     smile_pen  = max(0.0, smile_raw - ccfg["smile_penalty_th"])
 
@@ -457,12 +462,11 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     pucker_co  = _clamp(g("mouthPucker") / ccfg["pucker_th"], 0, 1)
 
     sig_brow_conf = max(brow_dn_v, brow_in_v)
-    sig_mata_conf = max(iris_up_v, look_up_v)
+    sig_mata_conf = max(iris_up_v, look_up_v)  # tatap ke atas = ciri khas confusion
 
-    # Confusion = pure facial expression (brow furrow, jaw open thinking, iris up, etc).
-    # Definisi user: TIDAK ada keterlibatan tangan; siswa fokus konten dengan ekspresi bingung.
-    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co)
-    conf = _clamp(base_conf * ccfg["blend_a"] + (pitch_cu + sig_brow_conf) * ccfg["blend_b"], 0, 1)
+    # Confusion = facial only. Sinyal: tatap atas, kepala miring, mulut sedikit terbuka, brow.
+    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v)
+    conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 
     # Gaze gate: confusion masih membutuhkan attention ke konten (definisi semantik).
     # Floor di 0.3 supaya brief look-away saat thinking tidak menghilangkan confusion sepenuhnya.
@@ -511,14 +515,14 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
 
     # Debug log
     if _DBG_LAND:
-        print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
+        print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} roll={r.roll:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
               f"lookDn={look_down_v:.2f} | gH={gaze_h:+.1f}° gV={gaze_v:.1f}° dev={gaze_dev:.1f}° | "
               f"boreGaze={bore_gaze:.2f} gate={gate:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
         if conf > 0.5:
             print(f"  [CONF] brow_dn={brow_dn_v:.2f} brow_in={brow_in_v:.2f} co={co_signal:.2f} "
-                  f"iris_up={iris_up_v:.2f} look_up={look_up_v:.2f} "
-                  f"jaw={jaw_co:.2f} pucker={pucker_co:.2f} pitch_cu={pitch_cu:.2f} "
+                  f"iris_up={iris_up_v:.2f} look_up={look_up_v:.2f} roll={roll_v:.2f} "
+                  f"jaw={jaw_co:.2f} pucker={pucker_co:.2f} "
                   f"base={base_conf:.2f}")
 
     return {
