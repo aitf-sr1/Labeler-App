@@ -235,16 +235,52 @@ class RightPanel:
             self._batch_file_var.set(files[0])
 
     def _on_batch_file_select(self, filename: str):
-        """Load batch history yang dipilih dari dropdown dan update statistik."""
+        """Load batch history yang dipilih, restore rules + threshold + gallery dari __meta__."""
         import os
         bh_path = getattr(self.app, "path_json_batch_history", "")
         if not bh_path:
             return
         full_path = os.path.join(os.path.dirname(bh_path), filename)
         try:
-            from utils import load_batch_history
-            bh = load_batch_history(full_path)
+            from utils import load_batch_history, load_batch_meta
+            bh   = load_batch_history(full_path)
+            meta = load_batch_meta(full_path)
+
+            # Ganti batch aktif di app
+            self.app.batch_history = bh
             self.update_statistics(bh)
+
+            # ── Restore thresholds ──────────────────────────────────────────
+            # Prioritas: __meta__ → entry pertama batch (lama, tanpa meta)
+            thresholds = meta.get("thresholds") or (
+                next(iter(bh.values()), {}).get("thresholds") if bh else None
+            )
+            if thresholds and len(thresholds) == len(self.threshold_vars):
+                for i, val in enumerate(thresholds):
+                    self.threshold_vars[i].set(val)
+                    if i < len(self.threshold_labels):
+                        self.threshold_labels[i].configure(text=f"{float(val):.2f}")
+
+            # ── Restore rules dari __meta__ ─────────────────────────────────
+            saved_rules = meta.get("rules")
+            if saved_rules:
+                self.app._save_rules(saved_rules)  # update self.app.rules + tulis rules.json
+                # Tutup Rules panel jika terbuka (sudah stale — user buka lagi untuk lihat)
+                rp = getattr(self.app, "_rules_panel", None)
+                if rp:
+                    try:
+                        if rp.win.winfo_exists():
+                            rp.win.destroy()
+                    except Exception:
+                        pass
+                    self.app._rules_panel = None
+                print(f"[BatchSwitch] Rules di-restore dari {filename}")
+
+            # ── Invalidasi gallery + minta regenerasi viz dengan rules baru ─
+            self.app._viz_regen_requested = True
+            self.app._gallery_cache["rel_path"] = None
+            self.app.refresh_frame_gallery()
+
         except Exception as exc:
             print(f"[Stats] Gagal load {filename}: {exc}")
 
@@ -339,21 +375,37 @@ class RightPanel:
         thr_row.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(thr_row, text="Threshold",
                      font=("Poppins", 9), text_color="gray").pack(side="left")
-        thr_lbl_w = ctk.CTkLabel(thr_row, text="0.50",
-                                  font=("Poppins", 9), text_color="gray", width=32)
-        thr_lbl_w.pack(side="right")
-        self.threshold_labels.append(thr_lbl_w)
 
-        def _make_cb(ref=thr_lbl_w):
-            def cb(v):
-                ref.configure(text=f"{float(v):.2f}")
+        thr_entry = ctk.CTkEntry(thr_row, width=48, height=22,
+                                  font=("Poppins", 9), justify="center")
+        thr_entry.insert(0, f"{self.threshold_vars[idx].get():.2f}")
+        thr_entry.pack(side="right", padx=(4, 0))
+        self.threshold_labels.append(thr_entry)
+
+        def _on_slider(v, entry=thr_entry):
+            entry.delete(0, "end")
+            entry.insert(0, f"{float(v):.2f}")
+            self.app._save_current_thresholds()
+
+        def _on_entry(event, var=self.threshold_vars[idx], entry=thr_entry):
+            try:
+                val = float(entry.get())
+                val = max(0.05, min(0.95, val))
+                var.set(val)
+                entry.delete(0, "end")
+                entry.insert(0, f"{val:.2f}")
                 self.app._save_current_thresholds()
-            return cb
+            except ValueError:
+                entry.delete(0, "end")
+                entry.insert(0, f"{var.get():.2f}")
+
+        thr_entry.bind("<Return>",    _on_entry)
+        thr_entry.bind("<FocusOut>",  _on_entry)
 
         ctk.CTkSlider(
-            thr_row, from_=0.1, to=0.9,
+            thr_row, from_=0.05, to=0.95,
             variable=self.threshold_vars[idx],
-            command=_make_cb(),
+            command=_on_slider,
         ).pack(side="left", fill="x", expand=True, padx=6)
 
     def _toggle_acc(self, idx: int):
