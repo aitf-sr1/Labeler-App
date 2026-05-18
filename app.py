@@ -1188,14 +1188,14 @@ class VideoLabelerApp:
                 ))
                 return
 
-            # Auto-flag jika frame kurang dari 6 (video terlalu pendek)
-            if len(imgs) < 4:
+            # Auto-flag jika frame kurang dari yang diharapkan (video terlalu pendek)
+            if len(imgs) < 2:
                 self.flagged_data.add(rel_path)
                 save_flagged(self.path_csv_flagged, self.flagged_data)
                 self.root.after(0, lambda nf=len(imgs): (
                     self.flag_var.set(True),
                     self.right_panel.lbl_batch_status.configure(
-                        text=f"Auto-flag: hanya {nf}/4 frame (video terlalu pendek)",
+                        text=f"Auto-flag: hanya {nf}/2 frame (video terlalu pendek)",
                         text_color="#ef4444"
                     ),
                     self._update_flag_count()
@@ -1322,14 +1322,14 @@ class VideoLabelerApp:
                     )
                     if not imgs: return
 
-                    if len(imgs) < 4:
+                    if len(imgs) < 2:
                         with self.save_lock:
                             self.flagged_data.add(rel_path)
                             save_flagged(self.path_csv_flagged, self.flagged_data)
                         self.root.after(0, self._update_flag_count)
                         def upd_shortflag(r=rel_path, nf=len(imgs)):
                             self.right_panel.lbl_batch_status.configure(
-                                text=f"Auto-flag: {os.path.basename(r)} (hanya {nf}/4 frame)",
+                                text=f"Auto-flag: {os.path.basename(r)} (hanya {nf}/2 frame)",
                                 text_color="#ef4444",
                             )
                         self.root.after(0, upd_shortflag)
