@@ -100,6 +100,7 @@ def prepare_cropped_frames(
                 landmark_results.append(LandmarkResult(
                     yaw          = fd.get("yaw", 0.0),
                     pitch        = fd.get("pitch", 0.0),
+                    roll         = fd.get("roll", 0.0),
                     iris_x       = fd.get("iris_x", 0.0),
                     iris_y       = fd.get("iris_y", 0.0),
                     iris_img_x   = fd.get("iris_img_x", 0.0),
@@ -189,6 +190,7 @@ def prepare_cropped_frames(
                     "face_found":   lr.face_found,
                     "yaw":          lr.yaw,
                     "pitch":        lr.pitch,
+                    "roll":         lr.roll,
                     "iris_x":       lr.iris_x,
                     "iris_y":       lr.iris_y,
                     "iris_img_x":   lr.iris_img_x,
