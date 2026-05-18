@@ -27,7 +27,7 @@ def extract_6_frames(video_path: str) -> list:
         cap.release()
         return []
 
-    indices = [int(total * i / _N_FRAMES) for i in range(_N_FRAMES)]
+    indices = [int(total * (2 * i + 1) / (2 * _N_FRAMES)) for i in range(_N_FRAMES)]
     frames  = []
     for idx in indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
