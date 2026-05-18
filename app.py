@@ -345,6 +345,24 @@ class VideoLabelerApp:
         with open(self.path_json_manual, "w") as f:
             _json.dump(self.manual_labels, f, indent=2)
 
+    def _sync_manual_from_ai(self, rel_path: str):
+        """Reset manual_labels untuk satu video dari frame_annotations (label AI terbaru).
+        Dipanggil setiap kali AI selesai proses atau label direset."""
+        fa = self.frame_annotations.get(rel_path, {})
+        self.manual_labels[rel_path] = {
+            str(fi): {lbl: int(fa.get(str(fi), {}).get(lbl, 0)) for lbl in LABELS}
+            for fi in range(2)
+        }
+        self._save_manual_labels()
+        # Refresh checkbox jika mode aktif dan ini video yang sedang tampil
+        if self.semi_manual_var.get() and self.video_files:
+            cur_rel = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+            if cur_rel == rel_path:
+                for fi in range(2):
+                    self.left_panel.update_manual_checkboxes(
+                        fi, self.manual_labels[rel_path].get(str(fi), {})
+                    )
+
     def _on_semi_manual_toggle(self):
         """Dipanggil saat toggle Label Semi Manual diubah."""
         active = self.semi_manual_var.get()
@@ -353,26 +371,19 @@ class VideoLabelerApp:
             self._init_manual_for_current()
 
     def _init_manual_for_current(self):
-        """Duplikat label AI ke manual_labels untuk video aktif jika belum ada."""
+        """Tampilkan manual_labels untuk video aktif di checkbox.
+        Jika belum ada entri, duplikat dulu dari label AI."""
         if not self.video_files:
             return
-        vp      = self.video_files[self.current_index]
-        rel     = os.path.relpath(vp, self.root_folder)
-        n_fr    = 2
+        vp  = self.video_files[self.current_index]
+        rel = os.path.relpath(vp, self.root_folder)
         if rel not in self.manual_labels:
-            # Duplikat dari frame_annotations (label AI)
-            fa = self.frame_annotations.get(rel, {})
-            entry = {}
-            for fi in range(n_fr):
-                fd = fa.get(str(fi), {})
-                entry[str(fi)] = {lbl: int(fd.get(lbl, 0)) for lbl in LABELS}
-            self.manual_labels[rel] = entry
-            self._save_manual_labels()
-        # Update checkbox state
-        for fi in range(n_fr):
-            self.left_panel.update_manual_checkboxes(
-                fi, self.manual_labels[rel].get(str(fi), {})
-            )
+            self._sync_manual_from_ai(rel)
+        else:
+            for fi in range(2):
+                self.left_panel.update_manual_checkboxes(
+                    fi, self.manual_labels[rel].get(str(fi), {})
+                )
 
     def _on_manual_check(self, frame_idx: int, label: str, value: bool):
         """Dipanggil saat user centang/uncentang checkbox manual label."""
@@ -1054,6 +1065,7 @@ class VideoLabelerApp:
             if extra:
                 save_batch_history(extra, self.batch_history)
 
+        self._sync_manual_from_ai(rel_path)
         self.right_panel.update_statistics(self.batch_history)
 
     def reset_current_labels(self):
@@ -1068,6 +1080,7 @@ class VideoLabelerApp:
         }
         self.batch_history.pop(rel_path, None)
         self.save_current_state()
+        self._sync_manual_from_ai(rel_path)
 
         self.refresh_frame_gallery()  # fast path: cache masih valid
         self.right_panel.update_statistics(self.batch_history)
