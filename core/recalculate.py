@@ -181,13 +181,34 @@ def recalculate_batch(
 
 
 
-        # Update frame_annotations dari frame_preds baru
+        # Enforce mutual exclusion pada prediksi FINAL
         from ui.constants import LABELS
+        for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+            idx_a = str(LABELS.index(lbl_a))
+            idx_b = str(LABELS.index(lbl_b))
+            if per_label_history[idx_a]["prediction"] == 1 and per_label_history[idx_b]["prediction"] == 1:
+                if per_label_history[idx_a]["avg_score"] >= per_label_history[idx_b]["avg_score"]:
+                    per_label_history[idx_b]["prediction"] = 0
+                else:
+                    per_label_history[idx_a]["prediction"] = 0
+
+        # Update frame_annotations dari frame_preds baru
         for f_idx in range(n_frames):
             if str(f_idx) not in new_fa_vid:
                 new_fa_vid[str(f_idx)] = {}
             for li, lbl in enumerate(LABELS):
                 new_fa_vid[str(f_idx)][lbl] = per_label_history[str(li)]["frame_preds"][f_idx]
+            # Enforce mutual exclusion per frame
+            for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+                idx_a = LABELS.index(lbl_a)
+                idx_b = LABELS.index(lbl_b)
+                if new_fa_vid[str(f_idx)].get(lbl_a, 0) == 1 and new_fa_vid[str(f_idx)].get(lbl_b, 0) == 1:
+                    score_a = per_label_history[str(idx_a)]["frame_scores"][f_idx]
+                    score_b = per_label_history[str(idx_b)]["frame_scores"][f_idx]
+                    if score_a >= score_b:
+                        new_fa_vid[str(f_idx)][lbl_b] = 0
+                    else:
+                        new_fa_vid[str(f_idx)][lbl_a] = 0
 
         # Auto-reject per FRAME: hanya frame tanpa label yang ditolak
         rejected_count = 0
