@@ -188,9 +188,11 @@ def recalculate_batch(
             idx_b = str(LABELS.index(lbl_b))
             if per_label_history[idx_a]["prediction"] == 1 and per_label_history[idx_b]["prediction"] == 1:
                 if per_label_history[idx_a]["avg_score"] >= per_label_history[idx_b]["avg_score"]:
-                    per_label_history[idx_b]["prediction"] = 0
+                    loser = idx_b
                 else:
-                    per_label_history[idx_a]["prediction"] = 0
+                    loser = idx_a
+                per_label_history[loser]["prediction"] = 0
+                per_label_history[loser]["frame_preds"] = [0] * len(per_label_history[loser]["frame_preds"])
 
         # Update frame_annotations dari frame_preds baru
         for f_idx in range(n_frames):

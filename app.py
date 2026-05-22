@@ -279,6 +279,7 @@ class VideoLabelerApp:
         self.flagged_data      = load_flagged(self.path_csv_flagged)
         self.frame_annotations = load_frame_annotations(self.path_json_frames)
         self.batch_history     = load_batch_history(self.path_json_batch_history)
+        self._enforce_mutual_exclusion_on_history(self.batch_history)
         self.skipped_videos    = load_skipped(self.path_json_skipped)
         self.manual_labels     = self._load_manual_labels()
         self._load_saved_thresholds()
@@ -287,6 +288,23 @@ class VideoLabelerApp:
         self.right_panel.update_statistics(self.batch_history)
         # Refresh dropdown daftar batch file yang tersedia
         self.right_panel.refresh_batch_files(os.path.dirname(self.path_json_batch_history))
+
+    def _enforce_mutual_exclusion_on_history(self, history: dict):
+        """Perbaiki data batch_history lama: nol-kan prediction dan frame_preds
+        untuk label yang kalah dalam pasangan eksklusif (Boredom↔Engagement, Confusion↔Frustration).
+        Dipanggil saat load dari disk supaya data lama juga konsisten."""
+        for rel_path, vid_data in history.items():
+            pl = vid_data.get("per_label", {})
+            for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+                idx_a = str(LABELS.index(lbl_a))
+                idx_b = str(LABELS.index(lbl_b))
+                if pl.get(idx_a, {}).get("prediction", 0) == 1 and pl.get(idx_b, {}).get("prediction", 0) == 1:
+                    score_a = pl[idx_a].get("avg_score", 0)
+                    score_b = pl[idx_b].get("avg_score", 0)
+                    loser = idx_b if score_a >= score_b else idx_a
+                    pl[loser]["prediction"] = 0
+                    n = len(pl[loser].get("frame_preds", []))
+                    pl[loser]["frame_preds"] = [0] * n
 
     def _load_saved_thresholds(self):
         """Muat threshold tersimpan dan terapkan ke slider UI."""
@@ -1269,15 +1287,17 @@ class VideoLabelerApp:
             }
 
         # Enforce mutual exclusion pada prediksi FINAL: jika kedua label dalam pasangan
-        # eksklusif sama-sama 1, nol-kan yang avg_score-nya lebih rendah.
+        # eksklusif sama-sama 1, nol-kan prediction DAN frame_preds yang avg_score-nya lebih rendah.
         for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
             idx_a = str(LABELS.index(lbl_a))
             idx_b = str(LABELS.index(lbl_b))
             if per_label_history[idx_a]["prediction"] == 1 and per_label_history[idx_b]["prediction"] == 1:
                 if per_label_history[idx_a]["avg_score"] >= per_label_history[idx_b]["avg_score"]:
-                    per_label_history[idx_b]["prediction"] = 0
+                    loser = idx_b
                 else:
-                    per_label_history[idx_a]["prediction"] = 0
+                    loser = idx_a
+                per_label_history[loser]["prediction"] = 0
+                per_label_history[loser]["frame_preds"] = [0] * len(per_label_history[loser]["frame_preds"])
 
         # Auto-reject per FRAME: frame yang tidak punya label sama sekali (semua emosi < threshold)
         # ditolak otomatis. Frame yang punya minimal 1 label tetap dipertahankan.
