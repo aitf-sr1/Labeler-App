@@ -2,15 +2,16 @@
 ui/right_panel.py
 
 Panel kanan: tombol inferensi AI, toggle label 0/1, vote bar, AI score bar,
-prompt editor per label, dan threshold slider.
+prompt editor per label, threshold slider, dan rules inline accordion.
 
 Struktur layout (atas ke bawah):
     [Proses Video Ini] [Batch Semua]
     Status label batch
-    ─────────────────────────────
+    -----------------------------------------
     Scrollable accordion per label:
-        [Header accordion — klik untuk expand]
+        [Header accordion -- klik untuk expand]
         [Body: tombol 0/1 | vote bar | AI score bar | prompt | threshold]
+    Rules accordion (collapsible, inline)
 """
 
 import tkinter as tk
@@ -31,6 +32,7 @@ class RightPanel:
         lbl_batch_status       -- CTkLabel status proses batch
         btn_proses_satu        -- CTkButton untuk proses satu video
         btn_proses_semua       -- CTkButton untuk batch semua video
+        rules_content          -- RulesContent instance (inline rules panel)
     """
 
     def __init__(self, parent, app):
@@ -39,30 +41,39 @@ class RightPanel:
         self.threshold_vars    = [ctk.DoubleVar(value=0.50) for _ in LABELS]
         self.ai_score_canvases = {}
         self.ai_score_labels   = {}
-        self.acc_bodies        = []
-        self.acc_open_flags    = []
-        self.threshold_labels  = []
+        self.acc_bodies           = []
+        self.acc_open_flags       = []
+        self.threshold_labels     = []
+        self.threshold_entry_vars = []  # StringVar per label — selalu sinkron tanpa perlu widget visible
 
         self._build(parent)
 
     def _build(self, parent):
         right = ctk.CTkFrame(
-            parent, fg_color=("f3f4f6", "#1a1a2a"), corner_radius=0, width=330
+            parent, fg_color=("#f0f2f5", "#15151f"), corner_radius=0, width=330
         )
         right.grid(row=1, column=1, sticky="nsew", pady=(8, 0))
         right.pack_propagate(False)
         right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
 
-        self._build_action_buttons(right)
-        self._build_statistics_panel(right)
-        self._build_label_accordions(right)
+        # Single scrollable container for ALL right panel content
+        scroll = ctk.CTkScrollableFrame(right, fg_color="transparent", label_text="")
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.columnconfigure(0, weight=1)
+        self._bind_mousewheel(scroll)
+        self._main_scroll = scroll
+
+        self._build_action_buttons(scroll)
+        self._build_statistics_panel(scroll)
+        self._build_label_accordions(scroll)
 
     # ── Section header helper ─────────────────────────────────────────────────
     @staticmethod
     def _section_label(parent, text: str):
         ctk.CTkLabel(
             parent, text=text,
-            font=("Poppins", 8, "bold"), text_color=("#9ca3af", "#6b7280"),
+            font=("Poppins", 8, "bold"), text_color=("#5a5a7a", "#5a5a7a"),
             anchor="w",
         ).pack(anchor="w", padx=14, pady=(8, 2))
 
@@ -90,7 +101,7 @@ class RightPanel:
     def _build_action_buttons(self, parent):
         # ── Inferensi ─────────────────────────────────────────────────────────
         self._section_label(parent, "INFERENSI")
-        infer_card = ctk.CTkFrame(parent, fg_color=("#eceef2", "#161620"), corner_radius=10)
+        infer_card = ctk.CTkFrame(parent, fg_color=("#e8eaef", "#1c1c2a"), corner_radius=10)
         infer_card.pack(fill="x", padx=12, pady=(0, 4))
 
         top_btns = ctk.CTkFrame(infer_card, fg_color="transparent")
@@ -128,7 +139,7 @@ class RightPanel:
         self.btn_restart_batch.pack(side="right")
 
         # Batch versioning
-        bv_frame = ctk.CTkFrame(infer_card, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        bv_frame = ctk.CTkFrame(infer_card, fg_color=("#d8dce6", "#222232"), corner_radius=8)
         bv_frame.pack(fill="x", padx=10, pady=(0, 10))
         self.batch_new_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
@@ -137,14 +148,14 @@ class RightPanel:
             checkbox_width=14, checkbox_height=14,
         ).pack(side="left", padx=(8, 4), pady=6)
         self.batch_name_entry = ctk.CTkEntry(
-            bv_frame, placeholder_text="nama file…", font=("Poppins", 9),
+            bv_frame, placeholder_text="nama file...", font=("Poppins", 9),
             height=24, corner_radius=6, fg_color=("white", "#111122"),
         )
         self.batch_name_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), pady=6)
 
         # ── Label & Dataset ───────────────────────────────────────────────────
         self._section_label(parent, "LABEL & DATASET")
-        dataset_card = ctk.CTkFrame(parent, fg_color=("#eceef2", "#161620"), corner_radius=10)
+        dataset_card = ctk.CTkFrame(parent, fg_color=("#e8eaef", "#1c1c2a"), corner_radius=10)
         dataset_card.pack(fill="x", padx=12, pady=(0, 4))
 
         self.btn_reset_label = ctk.CTkButton(
@@ -176,7 +187,7 @@ class RightPanel:
         self.split_uuid_depth_entry.insert(0, "2")
         self.split_uuid_depth_entry.pack(side="left", padx=(2, 0))
 
-        sv_frame = ctk.CTkFrame(dataset_card, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        sv_frame = ctk.CTkFrame(dataset_card, fg_color=("#d8dce6", "#222232"), corner_radius=8)
         sv_frame.pack(fill="x", padx=10, pady=(0, 4))
         self.split_new_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
@@ -185,7 +196,7 @@ class RightPanel:
             checkbox_width=14, checkbox_height=14,
         ).pack(side="left", padx=(8, 4), pady=5)
         ctk.CTkLabel(
-            sv_frame, text="← nama batch di atas",
+            sv_frame, text="nama batch di atas",
             font=("Poppins", 8), text_color="#6b7280",
         ).pack(side="left", padx=(0, 6), pady=5)
 
@@ -196,16 +207,24 @@ class RightPanel:
             text_color="#7c3aed", hover_color=("#ede9fe", "#2e1a4a"),
             font=("Poppins", 9), height=26, corner_radius=7,
         )
-        self.btn_compare.pack(fill="x", padx=10, pady=(0, 10))
+        self.btn_compare.pack(fill="x", padx=10, pady=(0, 6))
 
-        ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
+        ctk.CTkButton(
+            dataset_card, text="Parameter & Rules",
+            command=self.app._open_rules_panel,
+            fg_color="transparent", border_width=1, border_color=("#a78bfa", "#6d28d9"),
+            text_color=("#7c3aed", "#a78bfa"), hover_color=("#ede9fe", "#2e1a4a"),
+            font=("Poppins", 9), height=26, corner_radius=7,
+        ).pack(fill="x", padx=10, pady=(0, 10))
+
+        ctk.CTkFrame(parent, fg_color=("#c8ccd6", "#2e2e3e"), height=1).pack(
             fill="x", padx=12, pady=(4, 6)
         )
 
     def _build_statistics_panel(self, parent):
         import os
         self._section_label(parent, "STATISTIK")
-        stats_frame = ctk.CTkFrame(parent, fg_color=("#eceef2", "#161620"), corner_radius=10)
+        stats_frame = ctk.CTkFrame(parent, fg_color=("#e8eaef", "#1c1c2a"), corner_radius=10)
         stats_frame.pack(fill="x", padx=12, pady=(0, 6))
 
         hdr = ctk.CTkFrame(stats_frame, fg_color="transparent")
@@ -213,14 +232,13 @@ class RightPanel:
         ctk.CTkLabel(hdr, text="Hasil AI", font=("Poppins", 10, "bold"), text_color=("#4b5563", "#9ca3af")).pack(side="left")
 
         # ── Total diterima + ditolak dalam satu baris ─────────────────────────
-        summary_row = ctk.CTkFrame(stats_frame, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        summary_row = ctk.CTkFrame(stats_frame, fg_color=("#d8dce6", "#222232"), corner_radius=8)
         summary_row.pack(fill="x", padx=10, pady=(4, 6))
         summary_row.columnconfigure(0, weight=1)
         summary_row.columnconfigure(1, weight=1)
 
         acc_cell = ctk.CTkFrame(summary_row, fg_color="transparent")
         acc_cell.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=6)
-        ctk.CTkLabel(acc_cell, text="✓", font=("Poppins", 11, "bold"), text_color="#10b981").pack(side="left")
         self.lbl_stat_total = ctk.CTkLabel(
             acc_cell, text="Diterima: 0",
             font=("Poppins", 9, "bold"), text_color="#10b981",
@@ -229,7 +247,6 @@ class RightPanel:
 
         rej_cell = ctk.CTkFrame(summary_row, fg_color="transparent")
         rej_cell.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=6)
-        ctk.CTkLabel(rej_cell, text="✕", font=("Poppins", 11, "bold"), text_color="#ef4444").pack(side="left")
         self.lbl_stat_rejected = ctk.CTkLabel(
             rej_cell, text="Ditolak: 0",
             font=("Poppins", 9, "bold"), text_color="#ef4444",
@@ -237,7 +254,7 @@ class RightPanel:
         self.lbl_stat_rejected.pack(side="left", padx=(2, 0))
 
         # ── Batch file dropdown ───────────────────────────────────────────────
-        brow = ctk.CTkFrame(stats_frame, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        brow = ctk.CTkFrame(stats_frame, fg_color=("#d8dce6", "#222232"), corner_radius=8)
         brow.pack(fill="x", padx=10, pady=(0, 6))
 
         ctk.CTkLabel(brow, text="File:", font=("Poppins", 8), text_color="gray").pack(side="left", padx=(8, 3), pady=5)
@@ -253,8 +270,8 @@ class RightPanel:
         self._batch_file_menu.pack(side="left", fill="x", expand=True, padx=(0, 2), pady=5)
 
         ctk.CTkButton(
-            brow, text="↺", width=28, height=24,
-            font=("Poppins", 11), fg_color="transparent", corner_radius=6,
+            brow, text="Refresh", width=52, height=24,
+            font=("Poppins", 9), fg_color="transparent", corner_radius=6,
             text_color=("gray", "#6b7280"), hover_color=("#e5e7eb", "#374151"),
             command=self.refresh_batch_files,
         ).pack(side="left", padx=(0, 6), pady=5)
@@ -271,6 +288,51 @@ class RightPanel:
             var_label = ctk.CTkLabel(grid, text=f"{lbl}: 0", font=("Poppins", 9), text_color=color)
             var_label.grid(row=row, column=col, sticky="w", padx=(0, 15), pady=2)
             self.stat_labels[lbl] = var_label
+
+        # ── Separator ─────────────────────────────────────────────────────────
+        ctk.CTkFrame(stats_frame, fg_color=("#c0c4d0", "#2e2e3e"), height=1).pack(
+            fill="x", padx=10, pady=(0, 4)
+        )
+
+        # ── Manual section header ─────────────────────────────────────────────
+        mhdr = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        mhdr.pack(fill="x", padx=10, pady=(0, 2))
+        ctk.CTkLabel(mhdr, text="Hasil Manual", font=("Poppins", 10, "bold"), text_color=("#4b5563", "#9ca3af")).pack(side="left")
+
+        # ── Manual diterima + ditolak ─────────────────────────────────────────
+        msummary_row = ctk.CTkFrame(stats_frame, fg_color=("#d8dce6", "#222232"), corner_radius=8)
+        msummary_row.pack(fill="x", padx=10, pady=(0, 6))
+        msummary_row.columnconfigure(0, weight=1)
+        msummary_row.columnconfigure(1, weight=1)
+
+        macc_cell = ctk.CTkFrame(msummary_row, fg_color="transparent")
+        macc_cell.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=6)
+        self.lbl_manual_stat_total = ctk.CTkLabel(
+            macc_cell, text="Diterima: 0",
+            font=("Poppins", 9, "bold"), text_color="#10b981",
+        )
+        self.lbl_manual_stat_total.pack(side="left", padx=(2, 0))
+
+        mrej_cell = ctk.CTkFrame(msummary_row, fg_color="transparent")
+        mrej_cell.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=6)
+        self.lbl_manual_stat_rejected = ctk.CTkLabel(
+            mrej_cell, text="Ditolak: 0",
+            font=("Poppins", 9, "bold"), text_color="#ef4444",
+        )
+        self.lbl_manual_stat_rejected.pack(side="left", padx=(2, 0))
+
+        # ── Manual label count grid ───────────────────────────────────────────
+        mgrid = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        mgrid.pack(fill="x", padx=10, pady=(0, 8))
+
+        self.manual_stat_labels = {}
+        for i, lbl in enumerate(LABELS):
+            color = LABEL_COLORS[lbl]
+            row = i // 2
+            col = i % 2
+            var_label = ctk.CTkLabel(mgrid, text=f"{lbl}: 0", font=("Poppins", 9), text_color=color)
+            var_label.grid(row=row, column=col, sticky="w", padx=(0, 15), pady=2)
+            self.manual_stat_labels[lbl] = var_label
 
     def refresh_batch_files(self, base_dir=None):
         """Rescan folder output untuk daftar batch_history_*.json terbaru."""
@@ -310,31 +372,24 @@ class RightPanel:
             self.update_statistics(bh)
 
             # ── Restore thresholds ──────────────────────────────────────────
-            # Prioritas: __meta__ → entry pertama batch (lama, tanpa meta)
             thresholds = meta.get("thresholds") or (
                 next(iter(bh.values()), {}).get("thresholds") if bh else None
             )
             if thresholds and len(thresholds) == len(self.threshold_vars):
                 for i, val in enumerate(thresholds):
                     self.threshold_vars[i].set(val)
-                    if i < len(self.threshold_labels):
-                        e = self.threshold_labels[i]
-                        e.delete(0, "end")
-                        e.insert(0, f"{float(val):.2f}")
+                    if i < len(self.threshold_entry_vars):
+                        self.threshold_entry_vars[i].set(f"{float(val):.2f}")
 
             # ── Restore rules dari __meta__ ─────────────────────────────────
             saved_rules = meta.get("rules")
             if saved_rules:
                 self.app._save_rules(saved_rules)  # update self.app.rules + tulis rules.json
-                # Tutup Rules panel jika terbuka (sudah stale — user buka lagi untuk lihat)
-                rp = getattr(self.app, "_rules_panel", None)
-                if rp:
-                    try:
-                        if rp.win.winfo_exists():
-                            rp.win.destroy()
-                    except Exception:
-                        pass
-                    self.app._rules_panel = None
+                # Sync inline rules content di left panel
+                lp_rc = getattr(self.app.left_panel, 'rules_content', None)
+                if lp_rc is not None:
+                    lp_rc._load_from_rules(saved_rules)
+                self.app._rules_panel = None
                 print(f"[BatchSwitch] Rules di-restore dari {filename}")
 
             # ── Invalidasi gallery + minta regenerasi viz dengan rules baru ─
@@ -375,16 +430,46 @@ class RightPanel:
         for lbl in LABELS:
             self.stat_labels[lbl].configure(text=f"{lbl}: {counts[lbl]}")
 
+    def update_manual_statistics(self, manual_labels: dict):
+        """Update panel statistik Manual dari manual_labels dict.
+
+        _rejected dibaca dari frame_annotations (sumber otoritatif), bukan dari manual_labels.
+        Entry manual_labels yang tidak ada di frame_annotations (stale) dilewati.
+        """
+        total_frames    = 0
+        rejected_frames = 0
+        counts = {lbl: 0 for lbl in LABELS}
+
+        fa = getattr(self.app, "frame_annotations", {})
+
+        for rel_path, frames in manual_labels.items():
+            # Lewati entri stale yang tidak ada di frame_annotations aktif
+            if rel_path not in fa:
+                continue
+            for f_key, fdata in frames.items():
+                if not f_key.isdigit():
+                    continue
+                # _rejected disimpan di manual_labels (terpisah dari AI frame_annotations)
+                if fdata.get("_rejected", False):
+                    rejected_frames += 1
+                    continue
+                total_frames += 1
+                for lbl in LABELS:
+                    if fdata.get(lbl, 0) == 1:
+                        counts[lbl] += 1
+
+        self.lbl_manual_stat_total.configure(text=f"Diterima: {total_frames}")
+        self.lbl_manual_stat_rejected.configure(text=f"Ditolak: {rejected_frames}")
+        for lbl in LABELS:
+            self.manual_stat_labels[lbl].configure(text=f"{lbl}: {counts[lbl]}")
+
     def _build_label_accordions(self, parent):
         self._section_label(parent, "LABEL EMOSI")
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent", label_text="")
-        scroll.pack(fill="both", expand=True, padx=6, pady=(0, 8))
-        self._bind_mousewheel(scroll)
 
         for i, lbl in enumerate(LABELS):
             color = LABEL_COLORS[lbl]
-            wrapper = ctk.CTkFrame(scroll, fg_color=("#eceef2", "#1a1a28"), corner_radius=10)
-            wrapper.pack(fill="x", pady=(0, 6), padx=2)
+            wrapper = ctk.CTkFrame(parent, fg_color=("#e8eaef", "#1a1a28"), corner_radius=10)
+            wrapper.pack(fill="x", pady=(0, 6), padx=12)
 
             hdr_btn = ctk.CTkButton(
                 wrapper, text=f"  {lbl}",
@@ -399,7 +484,7 @@ class RightPanel:
             hdr_btn.pack(fill="x")
             self.acc_open_flags.append(hdr_btn)
 
-            body  = ctk.CTkFrame(wrapper, fg_color=("#e4e6ed", "#1e1e2e"), corner_radius=8)
+            body  = ctk.CTkFrame(wrapper, fg_color=("#e0e3ea", "#1e1e2e"), corner_radius=8)
             inner = ctk.CTkFrame(body, fg_color="transparent")
             inner.pack(fill="x", padx=10, pady=8)
 
@@ -408,6 +493,7 @@ class RightPanel:
             self._build_threshold_slider(inner, i)
 
             self.acc_bodies.append(body)
+
 
     def _build_ai_score_bar(self, parent, lbl: str, color: str):
         # 2 bar per-frame (F0 dan F1) menggantikan 1 bar avg
@@ -418,7 +504,7 @@ class RightPanel:
             row.pack(fill="x", pady=(0, 1))
             ctk.CTkLabel(row, text=f"F{fi}",
                          font=("Poppins", 9), text_color=("#9ca3af", "#6b7280"), width=20).pack(side="left")
-            sv = ctk.StringVar(value="—")
+            sv = ctk.StringVar(value="--")
             ctk.CTkLabel(
                 row, textvariable=sv, font=("Poppins", 9, "bold"),
                 text_color=color, width=36, anchor="e",
@@ -440,7 +526,7 @@ class RightPanel:
 
     def _build_prompt_editor(self, parent, idx: int):
         ctk.CTkLabel(
-            parent, text="Positive prompt — zero-shot",
+            parent, text="Positive prompt -- zero-shot",
             font=("Poppins", 8, "bold"), text_color=("#6b7280", "#6b7280"),
             anchor="w",
         ).pack(anchor="w", pady=(0, 2))
@@ -452,33 +538,35 @@ class RightPanel:
         self.pos_textboxes.append(p_box)
 
     def _build_threshold_slider(self, parent, idx: int):
+        import tkinter as _tk
         thr_row = ctk.CTkFrame(parent, fg_color="transparent")
         thr_row.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(thr_row, text="Threshold",
                      font=("Poppins", 9), text_color=("#6b7280", "#6b7280")).pack(side="left")
 
+        # StringVar sebagai sumber kebenaran teks entry — selalu bisa di-set
+        # tanpa peduli apakah widget sedang visible atau tidak (fix accordion lazy-show).
+        entry_var = _tk.StringVar(value=f"{self.threshold_vars[idx].get():.2f}")
         thr_entry = ctk.CTkEntry(thr_row, width=48, height=22,
-                                  font=("Poppins", 9), justify="center")
-        thr_entry.insert(0, f"{self.threshold_vars[idx].get():.2f}")
+                                  font=("Poppins", 9), justify="center",
+                                  textvariable=entry_var)
         thr_entry.pack(side="right", padx=(4, 0))
         self.threshold_labels.append(thr_entry)
+        self.threshold_entry_vars.append(entry_var)
 
-        def _on_slider(v, entry=thr_entry):
-            entry.delete(0, "end")
-            entry.insert(0, f"{float(v):.2f}")
+        def _on_slider(v, sv=entry_var):
+            sv.set(f"{float(v):.2f}")
             self.app._save_current_thresholds()
 
-        def _on_entry(event, var=self.threshold_vars[idx], entry=thr_entry):
+        def _on_entry(event, var=self.threshold_vars[idx], sv=entry_var):
             try:
-                val = float(entry.get())
+                val = float(sv.get())
                 val = max(0.05, min(0.95, val))
                 var.set(val)
-                entry.delete(0, "end")
-                entry.insert(0, f"{val:.2f}")
+                sv.set(f"{val:.2f}")
                 self.app._save_current_thresholds()
             except ValueError:
-                entry.delete(0, "end")
-                entry.insert(0, f"{var.get():.2f}")
+                sv.set(f"{var.get():.2f}")
 
         thr_entry.bind("<Return>",    _on_entry)
         thr_entry.bind("<FocusOut>",  _on_entry)
@@ -513,7 +601,7 @@ class RightPanel:
         Args:
             label:        Nama label (dari LABELS).
             frame_scores: List skor per-frame [score_f0, score_f1].
-            threshold:    Opsional — garis threshold ditampilkan di bar.
+            threshold:    Opsional -- garis threshold ditampilkan di bar.
         """
         canvases = self.ai_score_canvases[label]
         labels   = self.ai_score_labels[label]
@@ -528,7 +616,7 @@ class RightPanel:
             if threshold is not None:
                 tx = int(w * threshold)
                 sc.create_line(tx, 0, tx, 7, fill="#ffffff", width=1)
-            labels[fi].set(f"{score:.2f}" if score > 0 else "—")
+            labels[fi].set(f"{score:.2f}" if score > 0 else "--")
 
     def get_prompts_and_thresholds(self) -> tuple:
         """

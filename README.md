@@ -217,7 +217,17 @@ Klik **Buka Folder** di topbar → pilih folder root yang berisi file `.mp4`. Ap
 
 Video diputar otomatis saat dimuat. Klik area video untuk pause/play. Di bawah video terdapat **galeri frame** yang mewakili titik-titik terdistribusi merata sepanjang video.
 
+### Mode Label Semi Manual
+
+Aktifkan switch **Label Semi Manual** di panel kanan untuk mengaktifkan mode edit manual. Tanpa mode ini, hasil AI tidak bisa diubah — semua aksi edit (klik kanan, double-klik, toggle Flag/Reject) di-block.
+
+Panel statistik menampilkan dua kolom terpisah:
+- **Hasil AI** — dihitung dari `frame_annotations.json` (tidak terpengaruh perubahan manual)
+- **Hasil Manual** — dihitung dari `manual_labels.json` (berisi override manual)
+
 ### Labeling Per-Frame (Manual)
+
+> Memerlukan mode **Label Semi Manual** aktif.
 
 1. Pilih tab label aktif di atas galeri (misal `Confusion`)
 2. **Klik kiri pada thumbnail** → seek video ke posisi frame tersebut
@@ -226,7 +236,8 @@ Video diputar otomatis saat dimuat. Klik area video untuk pause/play. Di bawah v
    - Border abu-abu = negatif (label = 0)
 4. **Double-klik pada thumbnail** → tandai frame sebagai "ditolak" (overlay merah)
    - Frame ditolak tidak dihitung dalam prediksi label video
-5. Prediksi akhir video berdasarkan **avg_score vs threshold** (bukan majority vote)
+   - Status ditolak disimpan di `manual_labels.json` — tidak mengubah hasil AI
+5. Prediksi akhir video berdasarkan **vote mayoritas frame** dengan threshold per-frame
 
 ### AI Inferensi — Proses Satu Video
 
@@ -271,13 +282,13 @@ Berguna untuk debugging mengapa AI memberi skor tertentu pada frame tertentu.
 
 ### Rules Editor
 
-Klik tombol **Rules** di topbar untuk membuka jendela Rules Editor. Jendela ini memungkinkan pengaturan ulang semua parameter scoring tanpa edit kode.
+Klik tab **Rules** di atas galeri frame untuk membuka Rules Editor — editor mengambil alih area galeri secara penuh. Klik **Kembali** (atau **Simpan**) untuk kembali ke galeri.
 
 **Cara pakai:**
 - Setiap baris memiliki **slider** (drag kasar) dan **input field** (ketik angka pasti)
 - Ketik angka di field → tekan **Enter** atau klik area lain → nilai di-clamp ke range valid
 - Klik **Reset Default** untuk mengembalikan semua parameter ke nilai awal
-- Klik **Simpan** untuk menyimpan ke `rules.json`
+- Klik **Simpan** untuk menyimpan ke `rules.json` tanpa recalculate
 - Klik **Recalculate Batch** untuk menghitung ulang seluruh batch dari cache dengan parameter baru
 
 ### Recalculate Batch
@@ -466,9 +477,9 @@ Labeler-App-Siglip-2/
 │
 ├── ui/
 │   ├── constants.py          # LABELS, LABEL_COLORS, DEFAULT_PROMPT_GROUPS
-│   ├── left_panel.py         # Panel kiri: video player + galeri frame
-│   ├── right_panel.py        # Panel kanan: AI score bars, prompt, threshold, split
-│   └── rules_panel.py        # Toplevel: editor semua parameter rules
+│   ├── left_panel.py         # Panel kiri: video player, galeri frame, mode Rules/Gallery
+│   ├── right_panel.py        # Panel kanan: statistik AI+Manual, AI score bars, prompt, threshold
+│   └── rules_panel.py        # RulesContent (embedded di gallery) + RulesPanel (compat wrapper)
 │
 ├── utils/
 │   ├── io.py                 # Baca/tulis CSV/JSON annotations
@@ -491,6 +502,7 @@ Semua output tersimpan di `{folder_dataset}/{OUTPUT_DIR}/` (default: `hasil_labe
 | `frame_annotations.json` | JSON | Label per frame per video (N frame × 4 label + rejected flag) |
 | `batch_history.json` | JSON | Riwayat skor AI: avg_score, siglip_avg, landmark_avg, frame_scores, threshold |
 | `{nama}.json` | JSON | Salinan batch history dengan nama kustom (jika "Buat batch baru" dicentang) |
+| `manual_labels.json` | JSON | Override label manual per frame (mode Label Semi Manual) — terpisah dari hasil AI |
 | `flagged_videos.csv` | CSV | Daftar video yang di-flag/reject |
 | `skipped_videos.json` | JSON | Daftar video yang di-skip |
 | `thresholds.json` | JSON | Nilai threshold per label yang terakhir disimpan |

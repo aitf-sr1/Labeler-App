@@ -112,10 +112,8 @@ Cache ini memungkinkan Recalculate tanpa re-run SigLIP (model terbesar dalam pip
 | `iris_x` | Offset iris horizontal relatif ke sudut mata (−1..+1) | Boredom, Engagement |
 | `iris_y` | Offset iris vertikal relatif ke sudut mata (−1..+1) | Confusion |
 | Blendshapes | 52 koefisien otot wajah (0..1) dari MediaPipe | Semua label |
-| `hand_chin` | Skor zona ATAS crop (y < 0.25) = area di atas mata | + Confusion |
-| `hand_forehead` | Skor zona TENGAH/BAWAH crop (y 0.25–1.20) = area wajah | + Frustration, − Confusion |
-
-> **Catatan penamaan `hand_chin` vs `hand_forehead`:** Nama field ini berlawanan intuisi karena historis. `hand_chin` menyimpan skor zona ATAS (di atas mata = menggaruk kepala = Confusion). `hand_forehead` menyimpan zona TENGAH/BAWAH (menutup wajah = Frustration). Konsisten di seluruh kode.
+| `hand_forehead` | Proporsi tangan di zona DAHI (y ∈ [-0.20, 0.25) dari crop) | + Frustration, − Confusion |
+| `hand_chin` | Proporsi tangan di zona PIPI/DAGU (y ∈ [0.25, 1.20] dari crop) | + Confusion |
 
 ### Koordinat Iris
 

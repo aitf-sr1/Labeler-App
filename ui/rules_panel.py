@@ -3,6 +3,8 @@ ui/rules_panel.py
 
 Toplevel window untuk mengedit semua parameter rules (landmark scoring + hybrid weights).
 Dibuka via tombol "Rules" di aplikasi utama.
+
+Also exports RulesContent — a frameless embedded version for use inside right_panel.
 """
 
 import json
@@ -15,26 +17,26 @@ from core.rules import DEFAULT_RULES, _deep_copy
 # (section, key, label, min_val, max_val, description)
 _SLIDER_DEFS = [
     # GAZE (shared)
-    ("gaze", "scale_h",        "H Scale (iris→°)",    10.0, 60.0,
-     "Pengali iris_x → derajat horizontal. Makin besar, gerakan iris kecil = gaze deviation besar."),
-    ("gaze", "scale_v",        "V Scale (iris→°)",    10.0, 50.0,
-     "Pengali iris_y → derajat vertikal. Mempengaruhi seberapa sensitif deteksi pandangan atas/bawah."),
+    ("gaze", "scale_h",        "H Scale (iris->deg)",    10.0, 60.0,
+     "Pengali iris_x ke derajat horizontal. Makin besar, gerakan iris kecil = gaze deviation besar."),
+    ("gaze", "scale_v",        "V Scale (iris->deg)",    10.0, 50.0,
+     "Pengali iris_y ke derajat vertikal. Mempengaruhi seberapa sensitif deteksi pandangan atas/bawah."),
     ("gaze", "iris_side_mult", "Iris Side Mult",       0.5,  4.0,
      "Pengali tambahan saat iris ke samping. Makin besar = iris ke samping lebih kuat trigger gaze deviation."),
-    ("gaze", "v_dead_zone",    "V Dead Zone ↓ (°)",    0.0, 30.0,
-     "Dead zone gaze ke BAWAH (°). Nilai besar = nunduk/ngetik dilindungi, tidak dianggap bored. Default 15°."),
-    ("gaze", "v_dead_zone_up", "V Dead Zone ↑ (°)",    0.0, 15.0,
-     "Dead zone gaze ke ATAS (°). Nilai kecil = pandangan ke atas lebih mudah trigger boredom. Default 5°."),
-    ("gaze", "roll_dz",        "Roll Dead Zone (°)",    0.0, 15.0,
-     "Dead zone roll (kepala miring) sebelum masuk perhitungan gaze_dev_bore. Natural tilt ~5°."),
+    ("gaze", "v_dead_zone",    "V Dead Zone Down (deg)",    0.0, 30.0,
+     "Dead zone gaze ke BAWAH (deg). Nilai besar = nunduk/ngetik dilindungi, tidak dianggap bored. Default 15 deg."),
+    ("gaze", "v_dead_zone_up", "V Dead Zone Up (deg)",    0.0, 15.0,
+     "Dead zone gaze ke ATAS (deg). Nilai kecil = pandangan ke atas lebih mudah trigger boredom. Default 5 deg."),
+    ("gaze", "roll_dz",        "Roll Dead Zone (deg)",    0.0, 15.0,
+     "Dead zone roll (kepala miring) sebelum masuk perhitungan gaze_dev_bore. Natural tilt ~5 deg."),
     # BOREDOM
-    ("boredom", "gaze_dead_zone",  "Gaze Dead Zone (°)",  0.0, 20.0,
+    ("boredom", "gaze_dead_zone",  "Gaze Dead Zone (deg)",  0.0, 20.0,
      "Gaze deviation di bawah ini = tidak bosan. Makin besar = siswa perlu lihat lebih jauh dari layar baru dianggap bored."),
-    ("boredom", "gaze_range",      "Gaze Range (°)",      4.0, 25.0,
+    ("boredom", "gaze_range",      "Gaze Range (deg)",      4.0, 25.0,
      "Rentang gaze di atas dead zone sampai jenuh. Makin besar = transisi boredom lebih landai/gradual."),
-    ("boredom", "pitch_up_th",     "Pitch Up Th (°)",     5.0, 35.0,
+    ("boredom", "pitch_up_th",     "Pitch Up Th (deg)",     5.0, 35.0,
      "Kepala mendongak > ini = mulai sinyal boredom. Mendongak berarti lihat ke atas, bukan ke layar."),
-    ("boredom", "pitch_up_range",  "Pitch Up Range (°)",  5.0, 40.0,
+    ("boredom", "pitch_up_range",  "Pitch Up Range (deg)",  5.0, 40.0,
      "Rentang pitch di atas threshold sampai jenuh. Makin besar = transisi lebih pelan."),
     ("boredom", "blink_dead_zone", "Blink Dead Zone",     0.0,  0.5,
      "Blink di bawah ini diabaikan. Mencegah kedipan normal trigger boredom."),
@@ -43,21 +45,21 @@ _SLIDER_DEFS = [
     ("boredom", "yawn_dead_zone",  "Yawn Dead Zone",      0.0,  0.4,
      "jawOpen di bawah ini = yawn_raw 0 (tidak dihitung). Mencegah mulut sedikit terbuka/napas santai ikut trigger boredom ketika gaze sedikit menyimpang."),
     ("boredom", "yawn_threshold",  "Yawn Threshold",      0.1,  0.8,
-     "jawOpen di atas dead zone / ini = skor menguap → 1.0. Makin besar = butuh bukaan mulut nyata untuk skor penuh."),
+     "jawOpen di atas dead zone / ini = skor menguap -> 1.0. Makin besar = butuh bukaan mulut nyata untuk skor penuh."),
     ("boredom", "sig_expr_weight", "Expr Weight",         0.0,  1.0,
      "Bobot sinyal ekspresi (blink/yawn/pitch_up) dalam boredom. 0 = hanya gaze, 1 = ekspresi penuh."),
     ("boredom", "eye_wide_suppress", "EyeWide Suppress",  0.0,  0.6,
      "Mata terbuka lebar mengurangi skor boredom. Mata lebar = perhatian, bukan bosan."),
     ("boredom", "squint_suppress",   "Squint Suppress",   0.0,  0.6,
      "Sipit (eyeSquint) mengurangi skor boredom. Sipit = konsentrasi/frustrasi, BUKAN ngantuk. Mencegah false positive boredom pada siswa fokus bermata sipit."),
-    ("boredom", "squint_blink_correction", "Squint→Blink Correction", 0.0, 1.0,
+    ("boredom", "squint_blink_correction", "Squint->Blink Correction", 0.0, 1.0,
      "Koreksi blink_avg dari inflasi akibat squinting sebelum dihitung. 0.5 = separuh squint dikoreksi dari blink reading."),
     ("boredom", "teeth_gate_th",     "Teeth Gate Th",     0.05, 0.5,
-     "Gigi terlihat > ini → mulut terbuka BUKAN menguap. Menguap = bibir menutupi gigi (bentuk O). Makin kecil = lebih sensitif."),
+     "Gigi terlihat > ini -> mulut terbuka BUKAN menguap. Menguap = bibir menutupi gigi (bentuk O). Makin kecil = lebih sensitif."),
     ("boredom", "smile_suppress",    "Smile Suppress",    0.0,  0.8,
      "Senyum/gigi kelihatan mengurangi skor boredom. Orang yang senyum/ketawa jelas tidak bosan. 0.4 = suppress sedang."),
-    ("boredom", "smile_gaze_max",    "Smile Gaze Max (°)", 5.0,  30.0,
-     "Gaze deviation > ini → senyum TIDAK mengurangi boredom. Ketawa sambil noleh ke temen = tetap bosan."),
+    ("boredom", "smile_gaze_max",    "Smile Gaze Max (deg)", 5.0,  30.0,
+     "Gaze deviation > ini -> senyum TIDAK mengurangi boredom. Ketawa sambil noleh ke temen = tetap bosan."),
     ("boredom", "chin_bore_th",     "Chin Bore Th",      0.0,  0.6,
      "Proporsi titik tangan di zona dagu/pipi minimum sebelum 'menopang dagu' dihitung sebagai boredom. 0.3 = butuh 1-2 tangan terlihat."),
     ("boredom", "chin_bore_range",  "Chin Bore Range",   0.1,  0.6,
@@ -65,28 +67,28 @@ _SLIDER_DEFS = [
     ("boredom", "chin_bore_max",    "Chin Bore Max",     0.0,  1.0,
      "Kontribusi maksimal menopang dagu ke skor boredom. 0.65 = tangan di dagu saja sudah cukup memicu boredom."),
     ("boredom", "yawn_bore_w",      "Yawn Bore Weight",  0.0,  1.0,
-     "Bobot kontribusi langsung menguap ke boredom. Menguap = bosan walau tatap layar — tapi hanya jika yawn kuat."),
+     "Bobot kontribusi langsung menguap ke boredom. Menguap = bosan walau tatap layar -- tapi hanya jika yawn kuat."),
     ("boredom", "yawn_strong_th",   "Yawn Strong Th",    0.2,  0.8,
      "jawOpen minimum (raw, 0-1) untuk bypass gaze gate. 0.5 = mulut harus terbuka lebar (yawn beneran). Lebih besar = lebih ketat."),
     ("boredom", "yawn_strong_range","Yawn Strong Range",  0.05, 0.4,
      "Rentang di atas threshold sampai bypass penuh. Kecil = transisi cepat ke bypass penuh saat jawOpen besar."),
-    ("boredom", "fwd_yaw_th",        "Fwd Yaw Th (°)",    3.0,  20.0,
-     "MUTLAK: |yaw| < ini = hadap depan = TIDAK BOSAN. Boredom hanya muncul kalau kepala menoleh. Default 8°."),
-    ("boredom", "fwd_yaw_range",     "Fwd Yaw Range (°)", 3.0,  15.0,
-     "Range transisi dari threshold. Boredom 0 di yaw=th, naik linear, penuh di yaw=th+range. Default 7° → penuh di 15°."),
+    ("boredom", "fwd_yaw_th",        "Fwd Yaw Th (deg)",    3.0,  20.0,
+     "MUTLAK: |yaw| < ini = hadap depan = TIDAK BOSAN. Boredom hanya muncul kalau kepala menoleh. Default 8 deg."),
+    ("boredom", "fwd_yaw_range",     "Fwd Yaw Range (deg)", 3.0,  15.0,
+     "Range transisi dari threshold. Boredom 0 di yaw=th, naik linear, penuh di yaw=th+range. Default 7 deg -> penuh di 15 deg."),
     # ENGAGEMENT
-    ("engagement", "tegak_dead_zone", "Tegak Dead Zone (°)", 0.0, 10.0,
+    ("engagement", "tegak_dead_zone", "Tegak Dead Zone (deg)", 0.0, 10.0,
      "Gaze deviation di bawah ini = engaged penuh. Makin besar = lebih toleran pandangan agak menyimpang."),
-    ("engagement", "tegak_range",     "Tegak Range (°)",     5.0, 25.0,
+    ("engagement", "tegak_range",     "Tegak Range (deg)",     5.0, 25.0,
      "Rentang gaze di atas dead zone. Di dead+range, engagement = 0. Makin besar = transisi lebih pelan."),
-    ("engagement", "yaw_gate_th",     "Yaw Gate Th (°)",    10.0, 30.0,
-     "Yaw (kepala menoleh) > ini = engagement mulai turun. Default 20° = toleran sampai menoleh cukup jauh."),
-    ("engagement", "yaw_gate_range",  "Yaw Gate Range (°)",  5.0, 20.0,
-     "Rentang yaw di atas threshold. Di th+range, engagement = 0. Default 10°."),
-    ("engagement", "roll_gate_th",    "Roll Gate Th (°)",    5.0, 20.0,
-     "Roll (kepala miring) > ini = engagement mulai turun. Default 10° = natural tilt aman."),
-    ("engagement", "roll_gate_range", "Roll Gate Range (°)", 3.0, 15.0,
-     "Rentang roll sampai engagement = 0. Default 5° → nol di roll 15°."),
+    ("engagement", "yaw_gate_th",     "Yaw Gate Th (deg)",    10.0, 30.0,
+     "Yaw (kepala menoleh) > ini = engagement mulai turun. Default 20 deg = toleran sampai menoleh cukup jauh."),
+    ("engagement", "yaw_gate_range",  "Yaw Gate Range (deg)",  5.0, 20.0,
+     "Rentang yaw di atas threshold. Di th+range, engagement = 0. Default 10 deg."),
+    ("engagement", "roll_gate_th",    "Roll Gate Th (deg)",    5.0, 20.0,
+     "Roll (kepala miring) > ini = engagement mulai turun. Default 10 deg = natural tilt aman."),
+    ("engagement", "roll_gate_range", "Roll Gate Range (deg)", 3.0, 15.0,
+     "Rentang roll sampai engagement = 0. Default 5 deg -> nol di roll 15 deg."),
     ("engagement", "blink_heavy_th",  "Heavy Blink Th",      0.2,  0.9,
      "Blink > ini = mata terlalu merem (ngantuk). Menurunkan engagement."),
     ("engagement", "blink_heavy_min", "Min Engagement",      0.0,  0.5,
@@ -97,28 +99,28 @@ _SLIDER_DEFS = [
      "Sipit meningkatkan engagement sedikit. Sipit = konsentrasi aktif, seperti eye_wide tapi lebih subtle."),
     ("engagement", "smile_boost",     "Smile Boost",         0.0,  0.6,
      "Senyum/gigi kelihatan meningkatkan engagement. Orang yang senyum/ketawa = aktif terlibat."),
-    ("engagement", "smile_gaze_max",  "Smile Gaze Max (°)",  5.0,  30.0,
-     "Gaze deviation > ini → senyum TIDAK boost engagement. Ketawa sambil noleh ke temen ≠ engaged."),
+    ("engagement", "smile_gaze_max",  "Smile Gaze Max (deg)",  5.0,  30.0,
+     "Gaze deviation > ini -> senyum TIDAK boost engagement. Ketawa sambil noleh ke temen bukan engaged."),
     ("engagement", "yawn_eng_th",     "Yawn Eng Th",         0.1,  0.8,
      "jawOpen >= ini = mulai penalti engagement. Independent dari boredom yawn_threshold. Makin kecil = lebih sensitif."),
     ("engagement", "yawn_eng_pen_w",  "Yawn Eng Penalty",    0.0,  0.8,
      "Besar penalti engagement dari menguap. 0.5 = menguap penuh mengurangi engagement setengah."),
-    ("engagement", "pitch_gate_th",   "Pitch Gate Th (°)",   0.0, 30.0,
-     "Kepala mendongak > ini = engagement mulai turun. 15° = wajar duduk, nol di th+range."),
-    ("engagement", "pitch_gate_range","Pitch Gate Range (°)", 5.0, 40.0,
-     "Rentang pitch di atas threshold sampai engagement = 0. Default 15° → nol di pitch 30°."),
+    ("engagement", "pitch_gate_th",   "Pitch Gate Th (deg)",   0.0, 30.0,
+     "Kepala mendongak > ini = engagement mulai turun. 15 deg = wajar duduk, nol di th+range."),
+    ("engagement", "pitch_gate_range","Pitch Gate Range (deg)", 5.0, 40.0,
+     "Rentang pitch di atas threshold sampai engagement = 0. Default 15 deg -> nol di pitch 30 deg."),
     ("engagement", "gaze_fwd_bonus",   "Gaze Forward Bonus",  0.0,  0.4,
      "Bonus engagement saat gaze tepat ke depan (dalam dead zone). Natap layar langsung = sinyal aktif engaged, bukan cuma tidak dihukum."),
     ("engagement", "bore_suppress_th", "Bore Suppress Th",    0.0,  0.5,
      "Boredom di bawah ini tidak menekan engagement (dead zone noise). Hanya bore yang jelas tinggi yang suppress."),
-    ("engagement", "bore_eng_suppress","Bore→Eng Suppress",   0.0,  1.0,
+    ("engagement", "bore_eng_suppress","Bore->Eng Suppress",   0.0,  1.0,
      "Boredom di atas threshold menekan engagement. Bosan dan fokus adalah kondisi berlawanan secara semantik."),
     ("engagement", "look_dn_eng_th",  "LookDn Eng Th",       0.1,  0.6,
      "lookDown > ini = mulai boost engagement. Lihat bawah = baca/ngetik = engaged."),
     ("engagement", "look_dn_eng_boost","LookDn Eng Boost",   0.0,  0.5,
      "Besar boost engagement dari lihat bawah + hadap depan. 0.2 = boost sedang."),
-    ("engagement", "look_dn_eng_yaw_max","LookDn Eng YawMax (°)", 5.0, 30.0,
-     "Yaw > ini → look_dn boost nonaktif. Noleh sambil nunduk = bukan baca konten = bukan engaged."),
+    ("engagement", "look_dn_eng_yaw_max","LookDn Eng YawMax (deg)", 5.0, 30.0,
+     "Yaw > ini -> look_dn boost nonaktif. Noleh sambil nunduk = bukan baca konten = bukan engaged."),
     ("engagement", "hand_chin_eng_pen", "Chin Eng Penalty",     0.0,  1.0,
      "Tangan di dagu/pipi (menopang kepala) mengurangi engagement. Postur pasif/mengantuk bukan aktif fokus. 0.5 = penalti sedang."),
     # CONFUSION
@@ -132,13 +134,13 @@ _SLIDER_DEFS = [
      "Lihat bawah > ini = sinyal confusion. Siswa baca soal sambil bingung. Default 0.4."),
     ("confusion", "look_dn_range",       "LookDn Range",        0.1,  0.5,
      "Rentang lihat bawah di atas threshold. Makin besar = transisi lebih pelan."),
-    ("confusion", "look_dn_yaw_max",     "LookDn Yaw Max (°)",  5.0, 25.0,
+    ("confusion", "look_dn_yaw_max",     "LookDn Yaw Max (deg)",  5.0, 25.0,
      "Lihat bawah + yaw > ini = BUKAN confusion. Noleh sambil nunduk = bukan bingung."),
     ("confusion", "look_dn_boost",        "LookDn Boost",        0.0,  0.7,
      "Boost langsung confusion saat lihat bawah + hadap depan. Siswa baca soal = mungkin bingung."),
-    ("confusion", "pitch_start",        "Pitch Start (°)",     0.0, 15.0,
+    ("confusion", "pitch_start",        "Pitch Start (deg)",     0.0, 15.0,
      "Kepala mendongak > ini = sinyal confusion dari pitch. Bingung kadang sambil mendongak."),
-    ("confusion", "pitch_range",        "Pitch Range (°)",     5.0, 30.0,
+    ("confusion", "pitch_range",        "Pitch Range (deg)",     5.0, 30.0,
      "Rentang pitch di atas start. Makin besar = transisi lebih pelan."),
     ("confusion", "brow_dn_th",         "BrowDown Th",         0.1,  0.5,
      "Pembagi browDown. Makin kecil = alis turun sedikit sudah trigger confusion. Alis turun = mengernyit."),
@@ -149,7 +151,7 @@ _SLIDER_DEFS = [
     ("confusion", "smile_penalty_th",   "Smile Penalty",       0.0,  0.3,
      "Senyum > ini = penalti pada skor jaw confusion. Senyum + mulut terbuka bukan bingung."),
     ("confusion", "smile_conf_gate_th", "Smile Gate Th",       0.1,  0.5,
-     "Senyum >= ini → confusion langsung turun ke 0. Orang tersenyum tidak bingung."),
+     "Senyum >= ini -> confusion langsung turun ke 0. Orang tersenyum tidak bingung."),
     ("confusion", "jaw_start",          "Jaw Start",           0.0,  0.2,
      "jawOpen < ini = jaw tidak berkontribusi ke confusion. Mulut harus terbuka sedikit."),
     ("confusion", "jaw_peak",           "Jaw Peak",            0.1,  0.5,
@@ -158,18 +160,18 @@ _SLIDER_DEFS = [
      "jawOpen > ini = jaw tidak berkontribusi. Mulut terlalu terbuka = menguap, bukan bingung."),
     ("confusion", "pucker_th",          "Pucker Th",           0.1,  0.6,
      "Pembagi mouthPucker. Mulut mengerucut = ekspresi thinking/bingung."),
-    ("confusion", "roll_dead_zone",     "Roll Dead Zone (°)",  0.0, 15.0,
+    ("confusion", "roll_dead_zone",     "Roll Dead Zone (deg)",  0.0, 15.0,
      "Kepala miring < ini diabaikan. Sedikit miring = normal. Miring banyak = ciri bingung."),
-    ("confusion", "roll_range",         "Roll Range (°)",      5.0, 30.0,
+    ("confusion", "roll_range",         "Roll Range (deg)",      5.0, 30.0,
      "Rentang roll di atas dead zone. Makin besar = transisi lebih pelan."),
-    ("confusion", "attentive_dead",     "Attentive Dead (°)",  0.0, 15.0,
+    ("confusion", "attentive_dead",     "Attentive Dead (deg)",  0.0, 15.0,
      "Gaze deviation < ini = confusion penuh (masih attentive). Confusion butuh pandangan ke konten."),
-    ("confusion", "attentive_range",    "Attentive Range (°)", 5.0, 30.0,
+    ("confusion", "attentive_range",    "Attentive Range (deg)", 5.0, 30.0,
      "Rentang gaze di atas dead. Makin jauh lihat dari layar = makin kecil confusion (floor = Attentive Floor)."),
     ("confusion", "attentive_floor",    "Attentive Floor",     0.0,  0.6,
      "Lantai gate attentive. 0.3 = confusion minimal 30% saat pandangan jauh dari layar."),
-    ("confusion", "frus_conf_suppress", "Frus→Conf Suppress",  0.0,  1.0,
-     "Frustrasi tinggi menekan confusion. Alis tegang saat frustrasi ≠ alis bingung. 0.5 = suppress sedang."),
+    ("confusion", "frus_conf_suppress", "Frus->Conf Suppress",  0.0,  1.0,
+     "Frustrasi tinggi menekan confusion. Alis tegang saat frustrasi tidak sama dengan alis bingung. 0.5 = suppress sedang."),
     # FRUSTRATION
     ("frustration", "brow_dn_th",      "BrowDown Th",     0.1,  0.6,
      "Pembagi browDown. Makin kecil = alis turun sedikit sudah trigger frustrasi."),
@@ -196,9 +198,9 @@ _SLIDER_DEFS = [
      "Bias ditambahkan ke logits sebelum sigmoid. Makin besar = skor SigLIP makin tinggi secara global."),
     ("hybrid", "restless_bonus_max",   "Restless Bonus Max",    0.0, 0.3,
      "Bonus maks boredom dari variasi yaw antar frame. 0 = disabled (direkomendasikan)."),
-    ("hybrid", "restless_std_min",     "Restless Std Min (°)",  1.0, 8.0,
+    ("hybrid", "restless_std_min",     "Restless Std Min (deg)",  1.0, 8.0,
      "Std-dev yaw minimum sebelum restless bonus aktif."),
-    ("hybrid", "restless_std_range",   "Restless Std Range (°)", 3.0, 15.0,
+    ("hybrid", "restless_std_range",   "Restless Std Range (deg)", 3.0, 15.0,
      "Rentang std-dev yaw dari min sampai bonus maks."),
 ]
 
@@ -223,13 +225,479 @@ _SECTION_LABELS = {
 _LABEL_NAMES = ["Boredom", "Engagement", "Confusion", "Frustration"]
 
 
+# ── Shared builder helpers ────────────────────────────────────────────────────
+
+def _build_slider_sections(parent, vars_dict, lbl_vars_dict):
+    """Bangun slider per parameter, dikelompokkan per seksi."""
+    sections_seen = []
+    sliders_by_section: dict = {}
+    for sec, key, lbl, lo, hi, desc in _SLIDER_DEFS:
+        if sec == "hybrid" and key in ("siglip_w", "land_w"):
+            continue  # handled separately
+        sliders_by_section.setdefault(sec, []).append((key, lbl, lo, hi, desc))
+        if sec not in sections_seen:
+            sections_seen.append(sec)
+
+    for sec in sections_seen:
+        color = _SECTION_COLORS.get(sec, "#6b7280")
+        hdr = ctk.CTkLabel(
+            parent, text=f"  {_SECTION_LABELS[sec]}",
+            font=("Poppins", 10, "bold"), text_color=color,
+            anchor="w",
+        )
+        hdr.pack(fill="x", padx=4, pady=(10, 2))
+
+        divider = ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0)
+        divider.pack(fill="x", padx=4, pady=(0, 4))
+
+        for key, lbl, lo, hi, desc in sliders_by_section[sec]:
+            _build_one_slider(parent, sec, key, lbl, lo, hi, desc, vars_dict, lbl_vars_dict)
+
+
+def _build_one_slider(parent, sec, key, lbl, lo, hi, desc, vars_dict, lbl_vars_dict):
+    row = ctk.CTkFrame(parent, fg_color="transparent")
+    row.pack(fill="x", padx=8, pady=1)
+
+    ctk.CTkLabel(row, text=lbl, font=("Poppins", 9), width=155, anchor="w").pack(side="left")
+
+    var = ctk.DoubleVar(value=0.0)
+    is_fine = (hi - lo) < 2
+    fmt = "{:.3f}" if is_fine else "{:.2f}"
+    ev = ctk.StringVar(value="0.00")
+    vars_dict[(sec, key)]     = var
+    lbl_vars_dict[(sec, key)] = ev
+
+    entry = ctk.CTkEntry(
+        row, textvariable=ev, width=58, height=22,
+        font=("Poppins", 9, "bold"), justify="right",
+        fg_color=("white", "#111122"),
+    )
+    entry.pack(side="right", padx=(2, 0))
+
+    def _on_slide(v, _ev=ev, _fmt=fmt):
+        _ev.set(_fmt.format(float(v)))
+
+    def _commit(_ev=ev, _var=var, _lo=lo, _hi=hi, _fmt=fmt):
+        try:
+            v = float(_ev.get().replace(",", "."))
+            v = max(_lo, min(_hi, v))
+            _var.set(v)
+            _ev.set(_fmt.format(v))
+        except ValueError:
+            _ev.set(_fmt.format(_var.get()))
+
+    slider = ctk.CTkSlider(row, from_=lo, to=hi, variable=var, command=_on_slide)
+    slider.pack(side="left", fill="x", expand=True, padx=(4, 4))
+    entry.bind("<Return>", lambda e: _commit())
+    entry.bind("<FocusOut>", lambda e: _commit())
+
+    # Deskripsi kecil di bawah slider
+    if desc:
+        ctk.CTkLabel(
+            parent, text=f"    {desc}",
+            font=("Poppins", 8), text_color=("#6b7280", "#6b7280"),
+            anchor="w", wraplength=500,
+        ).pack(fill="x", padx=8, pady=(0, 2))
+
+
+def _build_hybrid_weight_section(parent, vars_dict, lbl_vars_dict, weight_vars_list):
+    """Bangun slider siglip_w dan land_w per label."""
+    color = _SECTION_COLORS["hybrid"]
+    hdr = ctk.CTkLabel(
+        parent, text="  Hybrid Weights (per label)",
+        font=("Poppins", 10, "bold"), text_color=color, anchor="w",
+    )
+    hdr.pack(fill="x", padx=4, pady=(10, 2))
+    ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0).pack(fill="x", padx=4, pady=(0, 4))
+
+    # Also include scalar hybrid params from _SLIDER_DEFS
+    for sec, key, lbl, lo, hi, desc in _SLIDER_DEFS:
+        if sec == "hybrid" and key not in ("siglip_w", "land_w"):
+            _build_one_slider(parent, sec, key, lbl, lo, hi, desc, vars_dict, lbl_vars_dict)
+
+    # Per-label weight rows — SigLIP dan Landmark saling terhubung (total = 1.0)
+    from ui.constants import LABEL_COLORS as LC
+
+    for i, lbl_name in enumerate(_LABEL_NAMES):
+        lcolor = LC.get(lbl_name, "#6b7280")
+        sec_frame = ctk.CTkFrame(parent, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
+        sec_frame.pack(fill="x", padx=6, pady=3)
+
+        ctk.CTkLabel(sec_frame, text=lbl_name, font=("Poppins", 9, "bold"),
+                     text_color=lcolor).pack(anchor="w", padx=8, pady=(4, 0))
+
+        sv_var = ctk.DoubleVar(value=0.5)
+        lv_var = ctk.DoubleVar(value=0.5)
+        sv_sv  = ctk.StringVar(value="0.50")
+        lv_sv  = ctk.StringVar(value="0.50")
+
+        _updating = [False]
+
+        def _mk_siglip_cb(_sv_var=sv_var, _lv_var=lv_var, _sv_sv=sv_sv, _lv_sv=lv_sv, _upd=_updating):
+            def cb(v):
+                if _upd[0]:
+                    return
+                _upd[0] = True
+                val = float(v)
+                comp = round(1.0 - val, 2)
+                _lv_var.set(comp)
+                _sv_sv.set(f"{val:.2f}")
+                _lv_sv.set(f"{comp:.2f}")
+                _upd[0] = False
+            return cb
+
+        def _mk_land_cb(_sv_var=sv_var, _lv_var=lv_var, _sv_sv=sv_sv, _lv_sv=lv_sv, _upd=_updating):
+            def cb(v):
+                if _upd[0]:
+                    return
+                _upd[0] = True
+                val = float(v)
+                comp = round(1.0 - val, 2)
+                _sv_var.set(comp)
+                _lv_sv.set(f"{val:.2f}")
+                _sv_sv.set(f"{comp:.2f}")
+                _upd[0] = False
+            return cb
+
+        def _mk_commit_linked(dv, _sv, other_dv, other_sv, _upd, lo=0.0, hi=1.0):
+            def commit():
+                if _upd[0]:
+                    return
+                _upd[0] = True
+                try:
+                    v = float(_sv.get().replace(",", "."))
+                    v = max(lo, min(hi, v))
+                    comp = round(1.0 - v, 2)
+                    dv.set(v)
+                    other_dv.set(comp)
+                    _sv.set(f"{v:.2f}")
+                    other_sv.set(f"{comp:.2f}")
+                except ValueError:
+                    _sv.set(f"{dv.get():.2f}")
+                _upd[0] = False
+            return commit
+
+        # SigLIP row
+        rw_s = ctk.CTkFrame(sec_frame, fg_color="transparent")
+        rw_s.pack(fill="x", padx=8, pady=1)
+        ctk.CTkLabel(rw_s, text="SigLIP", font=("Poppins", 9), width=60, anchor="w").pack(side="left")
+        ent_s = ctk.CTkEntry(rw_s, textvariable=sv_sv, width=52, height=20,
+                             font=("Poppins", 9, "bold"), justify="right",
+                             fg_color=("white", "#111122"))
+        ent_s.pack(side="right", padx=(2, 0))
+        commit_s = _mk_commit_linked(sv_var, sv_sv, lv_var, lv_sv, _updating)
+        ent_s.bind("<Return>", lambda e, fn=commit_s: fn())
+        ent_s.bind("<FocusOut>", lambda e, fn=commit_s: fn())
+        ctk.CTkSlider(rw_s, from_=0.0, to=1.0, variable=sv_var,
+                      command=_mk_siglip_cb()).pack(side="left", fill="x", expand=True, padx=(4, 4))
+
+        # Landmark row
+        rw_l = ctk.CTkFrame(sec_frame, fg_color="transparent")
+        rw_l.pack(fill="x", padx=8, pady=1)
+        ctk.CTkLabel(rw_l, text="Landmark", font=("Poppins", 9), width=60, anchor="w").pack(side="left")
+        ent_l = ctk.CTkEntry(rw_l, textvariable=lv_sv, width=52, height=20,
+                             font=("Poppins", 9, "bold"), justify="right",
+                             fg_color=("white", "#111122"))
+        ent_l.pack(side="right", padx=(2, 0))
+        commit_l = _mk_commit_linked(lv_var, lv_sv, sv_var, sv_sv, _updating)
+        ent_l.bind("<Return>", lambda e, fn=commit_l: fn())
+        ent_l.bind("<FocusOut>", lambda e, fn=commit_l: fn())
+        ctk.CTkSlider(rw_l, from_=0.0, to=1.0, variable=lv_var,
+                      command=_mk_land_cb()).pack(side="left", fill="x", expand=True, padx=(4, 4))
+
+        ctk.CTkFrame(sec_frame, fg_color="transparent", height=2).pack()
+        weight_vars_list.append((sv_var, lv_var, sv_sv, lv_sv))
+
+
+def _build_threshold_section(parent, threshold_vars):
+    """Slider threshold per label -- share DoubleVar dengan right panel."""
+    if not threshold_vars:
+        return
+
+    from ui.constants import LABEL_COLORS as LC
+    color = "#f59e0b"
+
+    hdr = ctk.CTkLabel(
+        parent, text="  Threshold per Label",
+        font=("Poppins", 10, "bold"), text_color=color, anchor="w",
+    )
+    hdr.pack(fill="x", padx=4, pady=(10, 2))
+    ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0).pack(fill="x", padx=4, pady=(0, 4))
+
+    note = ctk.CTkLabel(
+        parent,
+        text="Mengubah threshold di sini langsung mengubah slider di panel utama.",
+        font=("Poppins", 8), text_color="gray", anchor="w",
+    )
+    note.pack(fill="x", padx=8, pady=(0, 4))
+
+    for i, (lbl_name, dv) in enumerate(zip(_LABEL_NAMES, threshold_vars)):
+        lcolor = LC.get(lbl_name, "#6b7280")
+        rw = ctk.CTkFrame(parent, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
+        rw.pack(fill="x", padx=6, pady=2)
+
+        ctk.CTkLabel(rw, text=lbl_name, font=("Poppins", 9, "bold"),
+                     text_color=lcolor, width=90, anchor="w").pack(side="left", padx=(8, 4), pady=4)
+
+        sv = ctk.StringVar(value=f"{dv.get():.2f}")
+
+        def _mk_slide_cb(_sv=sv):
+            def cb(v): _sv.set(f"{float(v):.2f}")
+            return cb
+
+        def _mk_commit_fn(_dv=dv, _sv=sv):
+            def commit():
+                try:
+                    v = max(0.1, min(0.9, float(_sv.get().replace(",", "."))))
+                    _dv.set(v); _sv.set(f"{v:.2f}")
+                except ValueError:
+                    _sv.set(f"{_dv.get():.2f}")
+            return commit
+
+        ent = ctk.CTkEntry(rw, textvariable=sv, width=52, height=22,
+                           font=("Poppins", 9, "bold"), justify="right",
+                           fg_color=("white", "#111122"))
+        ent.pack(side="right", padx=(2, 8))
+        commit_fn = _mk_commit_fn()
+        ent.bind("<Return>", lambda e, fn=commit_fn: fn())
+        ent.bind("<FocusOut>", lambda e, fn=commit_fn: fn())
+
+        ctk.CTkSlider(
+            rw, from_=0.1, to=0.9, variable=dv,
+            command=_mk_slide_cb(),
+        ).pack(side="left", fill="x", expand=True, padx=(4, 4), pady=4)
+
+
+def _load_from_rules_impl(rules, vars_dict, lbl_vars_dict, weight_vars_list):
+    """Isi semua slider dari dict rules."""
+    for (sec, key), var in vars_dict.items():
+        try:
+            val = rules[sec][key]
+            if isinstance(val, list):
+                continue
+            var.set(float(val))
+            sv = lbl_vars_dict.get((sec, key))
+            if sv:
+                hi = next((h for s, k, _, _, h, *_ in _SLIDER_DEFS if s == sec and k == key), 2)
+                lo = next((l for s, k, _, l, *_ in _SLIDER_DEFS if s == sec and k == key), 0)
+                sv.set(f"{float(val):.3f}" if (hi - lo) < 2 else f"{float(val):.2f}")
+        except (KeyError, TypeError):
+            pass
+
+    # Hybrid per-label weights
+    sw_list = rules.get("hybrid", {}).get("siglip_w", [0.5] * 4)
+    lw_list = rules.get("hybrid", {}).get("land_w",   [0.5] * 4)
+    for i, (sv_var, lv_var, sv_sv, lv_sv) in enumerate(weight_vars_list):
+        sw = float(sw_list[i]) if i < len(sw_list) else 0.5
+        lw = float(lw_list[i]) if i < len(lw_list) else 0.5
+        sv_var.set(sw)
+        lv_var.set(lw)
+        sv_sv.set(f"{sw:.2f}")
+        lv_sv.set(f"{lw:.2f}")
+
+
+def _collect_rules_impl(rules_ref, vars_dict, weight_vars_list):
+    """Kumpulkan semua nilai slider ke dict rules."""
+    rules = _deep_copy(rules_ref)
+    for (sec, key), var in vars_dict.items():
+        if sec not in rules:
+            rules[sec] = {}
+        rules[sec][key] = round(var.get(), 4)
+
+    # Hybrid per-label weights
+    sw_list, lw_list = [], []
+    for sv_var, lv_var, _, _ in weight_vars_list:
+        sw_list.append(round(sv_var.get(), 4))
+        lw_list.append(round(lv_var.get(), 4))
+    rules["hybrid"]["siglip_w"] = sw_list
+    rules["hybrid"]["land_w"]   = lw_list
+    return rules
+
+
+# ── RulesContent — embedded inline version ───────────────────────────────────
+
+class RulesContent:
+    """
+    Inline (non-window) version of RulesPanel.
+    Builds rules content into a given parent frame.
+    Used by right_panel._build_rules_section().
+
+    Public API:
+        self.frame          -- the outer CTkScrollableFrame
+        self.lbl_status     -- CTkLabel for feedback messages
+        _load_from_rules(rules)  -- populate sliders from rules dict
+        _collect_rules()         -- read sliders back to dict
+    """
+
+    def __init__(self, parent, rules: dict, threshold_vars=None, on_save=None,
+                 on_recalculate=None, on_rebatch=None, on_close=None):
+        self._rules_ref      = _deep_copy(rules)
+        self._threshold_vars = threshold_vars or []
+        self._on_save        = on_save
+        self._on_recalculate = on_recalculate
+        self._on_rebatch     = on_rebatch
+        self._on_close       = on_close
+
+        self._vars: dict      = {}
+        self._lbl_vars: dict  = {}
+        self._weight_vars: list = []
+
+        self._built = False
+        self._parent = parent
+
+    def build(self):
+        """Lazily build the UI. Called on first accordion expand."""
+        if self._built:
+            return
+        self._built = True
+        self._build(self._parent)
+        self._load_from_rules(self._rules_ref)
+
+    def _build(self, parent):
+        # Scrollable content area — no fixed height, fills available space
+        self.frame = ctk.CTkScrollableFrame(
+            parent, fg_color="transparent",
+        )
+        self.frame.pack(fill="both", expand=True, padx=4, pady=4)
+
+        _build_slider_sections(self.frame, self._vars, self._lbl_vars)
+        _build_hybrid_weight_section(self.frame, self._vars, self._lbl_vars, self._weight_vars)
+        _build_threshold_section(self.frame, self._threshold_vars)
+
+        # ── Batch mode strip ─────────────────────────────────────────────────
+        bstrip = ctk.CTkFrame(parent, fg_color=("#d1d5db", "#1e1e2c"), corner_radius=8)
+        bstrip.pack(fill="x", padx=4, pady=(4, 2))
+
+        ctk.CTkLabel(
+            bstrip, text="Simpan ke:", font=("Poppins", 9),
+            text_color=("#374151", "#9ca3af"),
+        ).pack(side="left", padx=(10, 4), pady=6)
+
+        self._batch_new_var  = ctk.BooleanVar(value=False)
+        self._batch_name_var = ctk.StringVar(value="")
+
+        self._batch_name_entry = ctk.CTkEntry(
+            bstrip, textvariable=self._batch_name_var,
+            placeholder_text="nama batch baru...",
+            width=140, height=22, font=("Poppins", 9),
+            state="disabled",
+        )
+
+        def _toggle_batch_new():
+            if self._batch_new_var.get():
+                self._batch_name_entry.configure(state="normal")
+                self._batch_name_entry.pack(side="left", padx=(0, 6))
+            else:
+                self._batch_name_entry.pack_forget()
+
+        ctk.CTkCheckBox(
+            bstrip, text="Buat batch baru", variable=self._batch_new_var,
+            font=("Poppins", 9), width=120, height=22,
+            command=_toggle_batch_new,
+        ).pack(side="left", padx=(0, 6), pady=6)
+
+        self._batch_name_entry.pack_forget()
+
+        # ── Button bar ───────────────────────────────────────────────────────
+        bar = ctk.CTkFrame(parent, fg_color=("#e5e7eb", "#1a1a28"), corner_radius=8)
+        bar.pack(fill="x", padx=4, pady=(0, 4))
+
+        ctk.CTkButton(
+            bar, text="Reset Default", width=110, height=30,
+            fg_color=("#9ca3af", "#374151"), hover_color=("#6b7280", "#1f2937"),
+            font=("Poppins", 10), corner_radius=7, command=self._reset_default,
+        ).pack(side="left", padx=(10, 6), pady=8)
+
+        ctk.CTkButton(
+            bar, text="Simpan", width=90, height=30,
+            fg_color="#6366f1", hover_color="#4f46e5",
+            font=("Poppins", 10, "bold"), corner_radius=7, command=self._save_only,
+        ).pack(side="right", padx=(4, 10), pady=8)
+
+        ctk.CTkButton(
+            bar, text="Recalculate", width=100, height=30,
+            fg_color="#3b82f6", hover_color="#2563eb",
+            font=("Poppins", 10, "bold"), corner_radius=7, command=self._save,
+        ).pack(side="right", padx=4, pady=8)
+
+        ctk.CTkButton(
+            bar, text="Rebatch", width=80, height=30,
+            fg_color="#dc2626", hover_color="#b91c1c",
+            font=("Poppins", 10, "bold"), corner_radius=7, command=self._rebatch,
+        ).pack(side="right", padx=4, pady=8)
+
+        self.lbl_status = ctk.CTkLabel(
+            bar, text="", font=("Poppins", 9), text_color="#10b981"
+        )
+        self.lbl_status.pack(side="right", padx=6)
+
+    # ── Load / collect ────────────────────────────────────────────────────────
+
+    def _load_from_rules(self, rules: dict):
+        self._rules_ref = _deep_copy(rules)
+        if not self._built:
+            return  # will load when built
+        _load_from_rules_impl(rules, self._vars, self._lbl_vars, self._weight_vars)
+
+    def _collect_rules(self) -> dict:
+        return _collect_rules_impl(self._rules_ref, self._vars, self._weight_vars)
+
+    # ── Button handlers ───────────────────────────────────────────────────────
+
+    def _reset_default(self):
+        _load_from_rules_impl(DEFAULT_RULES, self._vars, self._lbl_vars, self._weight_vars)
+        self.lbl_status.configure(text="Reset ke default", text_color="#fbbf24")
+
+    def _save_only(self):
+        rules = self._collect_rules()
+        self._rules_ref = rules
+        if self._on_save:
+            self._on_save(rules)
+        self.lbl_status.configure(text="Tersimpan", text_color="#10b981")
+        if self._on_close:
+            self._on_close()
+
+    def _save(self):
+        rules = self._collect_rules()
+        self._rules_ref = rules
+        if self._on_save:
+            self._on_save(rules)
+        if self._on_recalculate:
+            extra_path = None
+            if self._batch_new_var.get():
+                import datetime, os
+                name = self._batch_name_var.get().strip()
+                if not name:
+                    name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                extra_path = f"__batch_name__{name}"
+            self.lbl_status.configure(text="Menyimpan + Menghitung ulang...", text_color="#fbbf24")
+            self._on_recalculate(rules, extra_path)
+            if self._on_close:
+                self._on_close()
+        else:
+            self.lbl_status.configure(text="Tersimpan", text_color="#10b981")
+            if self._on_close:
+                self._on_close()
+
+    def _rebatch(self):
+        rules = self._collect_rules()
+        self._rules_ref = rules
+        if self._on_save:
+            self._on_save(rules)
+        if self._on_rebatch:
+            self.lbl_status.configure(text="Memulai rebatch...", text_color="#f59e0b")
+            self._on_rebatch()
+
+
+# ── RulesPanel — original Toplevel version (kept for backwards compat) ────────
+
 class RulesPanel:
     """
     Toplevel window untuk edit rules landmark + hybrid weights.
 
     Callback:
-        on_save(rules: dict)       — dipanggil saat Save ditekan.
-        on_recalculate(rules: dict) — dipanggil saat Recalculate ditekan.
+        on_save(rules: dict)       -- dipanggil saat Save ditekan.
+        on_recalculate(rules: dict) -- dipanggil saat Recalculate ditekan.
     """
 
     def __init__(self, parent, rules: dict, threshold_vars=None, on_save=None, on_recalculate=None, on_rebatch=None):
@@ -240,7 +708,7 @@ class RulesPanel:
         self._on_rebatch = on_rebatch
 
         self.win = ctk.CTkToplevel(parent)
-        self.win.title("Rules Editor — Parameter Landmark & Hybrid")
+        self.win.title("Rules Editor -- Parameter Landmark & Hybrid")
         self.win.geometry("560x720")
         self.win.minsize(480, 500)
         self.win.lift()
@@ -248,8 +716,9 @@ class RulesPanel:
         # grab_set() didelay agar window sudah fully rendered sebelum grab
         self.win.after(150, self.win.grab_set)
 
-        self._vars: dict = {}       # (section, key) → DoubleVar or list of DoubleVar
-        self._lbl_vars: dict = {}   # (section, key) → StringVar for display
+        self._vars: dict = {}
+        self._lbl_vars: dict = {}
+        self._weight_vars: list = []
         self._build()
         self._load_from_rules(self._rules_ref)
 
@@ -283,9 +752,9 @@ class RulesPanel:
         scroll.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 0))
         self._bind_scroll(scroll)
 
-        self._build_slider_sections(scroll)
-        self._build_hybrid_weight_section(scroll)
-        self._build_threshold_section(scroll)
+        _build_slider_sections(scroll, self._vars, self._lbl_vars)
+        _build_hybrid_weight_section(scroll, self._vars, self._lbl_vars, self._weight_vars)
+        _build_threshold_section(scroll, self._threshold_vars)
 
         # ── Batch mode strip ─────────────────────────────────────────────────
         bstrip = ctk.CTkFrame(self.win, fg_color=("#d1d5db", "#2a2a3a"), corner_radius=0, height=34)
@@ -302,7 +771,7 @@ class RulesPanel:
 
         self._batch_name_entry = ctk.CTkEntry(
             bstrip, textvariable=self._batch_name_var,
-            placeholder_text="nama batch baru…",
+            placeholder_text="nama batch baru...",
             width=140, height=22, font=("Poppins", 9),
             state="disabled",
         )
@@ -333,14 +802,12 @@ class RulesPanel:
             font=("Poppins", 10), command=self._reset_default,
         ).pack(side="left", padx=(12, 6), pady=9)
 
-        # Simpan = tulis file saja, TIDAK recalculate (cepat)
         ctk.CTkButton(
             bar, text="Simpan", width=90, height=32,
             fg_color="#6366f1", hover_color="#4f46e5",
             font=("Poppins", 10, "bold"), command=self._save_only,
         ).pack(side="right", padx=(4, 12), pady=9)
 
-        # Recalculate = simpan + hitung ulang semua batch dari cache
         ctk.CTkButton(
             bar, text="Recalculate", width=100, height=32,
             fg_color="#3b82f6", hover_color="#2563eb",
@@ -358,305 +825,29 @@ class RulesPanel:
         )
         self.lbl_status.pack(side="right", padx=6)
 
-    def _build_slider_sections(self, parent):
-        """Bangun slider per parameter, dikelompokkan per seksi."""
-        sections_seen = []
-        sliders_by_section: dict = {}
-        for sec, key, lbl, lo, hi, desc in _SLIDER_DEFS:
-            if sec == "hybrid" and key in ("siglip_w", "land_w"):
-                continue  # handled separately
-            sliders_by_section.setdefault(sec, []).append((key, lbl, lo, hi, desc))
-            if sec not in sections_seen:
-                sections_seen.append(sec)
-
-        for sec in sections_seen:
-            color = _SECTION_COLORS.get(sec, "#6b7280")
-            hdr = ctk.CTkLabel(
-                parent, text=f"  {_SECTION_LABELS[sec]}",
-                font=("Poppins", 10, "bold"), text_color=color,
-                anchor="w",
-            )
-            hdr.pack(fill="x", padx=4, pady=(10, 2))
-
-            divider = ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0)
-            divider.pack(fill="x", padx=4, pady=(0, 4))
-
-            for key, lbl, lo, hi, desc in sliders_by_section[sec]:
-                self._build_one_slider(parent, sec, key, lbl, lo, hi, desc)
-
-    def _build_one_slider(self, parent, sec, key, lbl, lo, hi, desc=""):
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", padx=8, pady=1)
-
-        ctk.CTkLabel(row, text=lbl, font=("Poppins", 9), width=155, anchor="w").pack(side="left")
-
-        var = ctk.DoubleVar(value=0.0)
-        is_fine = (hi - lo) < 2
-        fmt = "{:.3f}" if is_fine else "{:.2f}"
-        ev = ctk.StringVar(value="0.00")
-        self._vars[(sec, key)]     = var
-        self._lbl_vars[(sec, key)] = ev
-
-        entry = ctk.CTkEntry(
-            row, textvariable=ev, width=58, height=22,
-            font=("Poppins", 9, "bold"), justify="right",
-            fg_color=("white", "#111122"),
-        )
-        entry.pack(side="right", padx=(2, 0))
-
-        def _on_slide(v, _ev=ev, _fmt=fmt):
-            _ev.set(_fmt.format(float(v)))
-
-        def _commit(_ev=ev, _var=var, _lo=lo, _hi=hi, _fmt=fmt):
-            try:
-                v = float(_ev.get().replace(",", "."))
-                v = max(_lo, min(_hi, v))
-                _var.set(v)
-                _ev.set(_fmt.format(v))
-            except ValueError:
-                _ev.set(_fmt.format(_var.get()))
-
-        slider = ctk.CTkSlider(row, from_=lo, to=hi, variable=var, command=_on_slide)
-        slider.pack(side="left", fill="x", expand=True, padx=(4, 4))
-        entry.bind("<Return>", lambda e: _commit())
-        entry.bind("<FocusOut>", lambda e: _commit())
-
-        # Deskripsi kecil di bawah slider
-        if desc:
-            ctk.CTkLabel(
-                parent, text=f"    ↳ {desc}",
-                font=("Poppins", 8), text_color=("#6b7280", "#6b7280"),
-                anchor="w", wraplength=500,
-            ).pack(fill="x", padx=8, pady=(0, 2))
-
-    def _build_hybrid_weight_section(self, parent):
-        """Bangun slider siglip_w dan land_w per label."""
-        color = _SECTION_COLORS["hybrid"]
-        hdr = ctk.CTkLabel(
-            parent, text="  Hybrid Weights (per label)",
-            font=("Poppins", 10, "bold"), text_color=color, anchor="w",
-        )
-        hdr.pack(fill="x", padx=4, pady=(10, 2))
-        ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0).pack(fill="x", padx=4, pady=(0, 4))
-
-        # Also include scalar hybrid params from _SLIDER_DEFS
-        for sec, key, lbl, lo, hi, desc in _SLIDER_DEFS:
-            if sec == "hybrid" and key not in ("siglip_w", "land_w"):
-                self._build_one_slider(parent, sec, key, lbl, lo, hi, desc)
-
-        # Per-label weight rows — SigLIP dan Landmark saling terhubung (total = 1.0)
-        from ui.constants import LABEL_COLORS as LC
-        self._weight_vars: list = []  # list of (siglip_var, land_var, siglip_sv, land_sv)
-
-        for i, lbl_name in enumerate(_LABEL_NAMES):
-            lcolor = LC.get(lbl_name, "#6b7280")
-            sec_frame = ctk.CTkFrame(parent, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
-            sec_frame.pack(fill="x", padx=6, pady=3)
-
-            ctk.CTkLabel(sec_frame, text=lbl_name, font=("Poppins", 9, "bold"),
-                         text_color=lcolor).pack(anchor="w", padx=8, pady=(4, 0))
-
-            sv_var = ctk.DoubleVar(value=0.5)
-            lv_var = ctk.DoubleVar(value=0.5)
-            sv_sv  = ctk.StringVar(value="0.50")
-            lv_sv  = ctk.StringVar(value="0.50")
-
-            # Flag untuk mencegah infinite loop saat update saling
-            _updating = [False]
-
-            def _mk_siglip_cb(_sv_var=sv_var, _lv_var=lv_var, _sv_sv=sv_sv, _lv_sv=lv_sv, _upd=_updating):
-                def cb(v):
-                    if _upd[0]:
-                        return
-                    _upd[0] = True
-                    val = float(v)
-                    comp = round(1.0 - val, 2)
-                    _lv_var.set(comp)
-                    _sv_sv.set(f"{val:.2f}")
-                    _lv_sv.set(f"{comp:.2f}")
-                    _upd[0] = False
-                return cb
-
-            def _mk_land_cb(_sv_var=sv_var, _lv_var=lv_var, _sv_sv=sv_sv, _lv_sv=lv_sv, _upd=_updating):
-                def cb(v):
-                    if _upd[0]:
-                        return
-                    _upd[0] = True
-                    val = float(v)
-                    comp = round(1.0 - val, 2)
-                    _sv_var.set(comp)
-                    _lv_sv.set(f"{val:.2f}")
-                    _sv_sv.set(f"{comp:.2f}")
-                    _upd[0] = False
-                return cb
-
-            def _mk_commit_linked(dv, _sv, other_dv, other_sv, _upd, lo=0.0, hi=1.0):
-                def commit():
-                    if _upd[0]:
-                        return
-                    _upd[0] = True
-                    try:
-                        v = float(_sv.get().replace(",", "."))
-                        v = max(lo, min(hi, v))
-                        comp = round(1.0 - v, 2)
-                        dv.set(v)
-                        other_dv.set(comp)
-                        _sv.set(f"{v:.2f}")
-                        other_sv.set(f"{comp:.2f}")
-                    except ValueError:
-                        _sv.set(f"{dv.get():.2f}")
-                    _upd[0] = False
-                return commit
-
-            # SigLIP row
-            rw_s = ctk.CTkFrame(sec_frame, fg_color="transparent")
-            rw_s.pack(fill="x", padx=8, pady=1)
-            ctk.CTkLabel(rw_s, text="SigLIP", font=("Poppins", 9), width=60, anchor="w").pack(side="left")
-            ent_s = ctk.CTkEntry(rw_s, textvariable=sv_sv, width=52, height=20,
-                                 font=("Poppins", 9, "bold"), justify="right",
-                                 fg_color=("white", "#111122"))
-            ent_s.pack(side="right", padx=(2, 0))
-            commit_s = _mk_commit_linked(sv_var, sv_sv, lv_var, lv_sv, _updating)
-            ent_s.bind("<Return>", lambda e, fn=commit_s: fn())
-            ent_s.bind("<FocusOut>", lambda e, fn=commit_s: fn())
-            ctk.CTkSlider(rw_s, from_=0.0, to=1.0, variable=sv_var,
-                          command=_mk_siglip_cb()).pack(side="left", fill="x", expand=True, padx=(4, 4))
-
-            # Landmark row
-            rw_l = ctk.CTkFrame(sec_frame, fg_color="transparent")
-            rw_l.pack(fill="x", padx=8, pady=1)
-            ctk.CTkLabel(rw_l, text="Landmark", font=("Poppins", 9), width=60, anchor="w").pack(side="left")
-            ent_l = ctk.CTkEntry(rw_l, textvariable=lv_sv, width=52, height=20,
-                                 font=("Poppins", 9, "bold"), justify="right",
-                                 fg_color=("white", "#111122"))
-            ent_l.pack(side="right", padx=(2, 0))
-            commit_l = _mk_commit_linked(lv_var, lv_sv, sv_var, sv_sv, _updating)
-            ent_l.bind("<Return>", lambda e, fn=commit_l: fn())
-            ent_l.bind("<FocusOut>", lambda e, fn=commit_l: fn())
-            ctk.CTkSlider(rw_l, from_=0.0, to=1.0, variable=lv_var,
-                          command=_mk_land_cb()).pack(side="left", fill="x", expand=True, padx=(4, 4))
-
-            ctk.CTkFrame(sec_frame, fg_color="transparent", height=2).pack()
-            self._weight_vars.append((sv_var, lv_var, sv_sv, lv_sv))
-
-    def _build_threshold_section(self, parent):
-        """Slider threshold per label — share DoubleVar dengan right panel."""
-        if not self._threshold_vars:
-            return
-
-        from ui.constants import LABEL_COLORS as LC
-        color = "#f59e0b"
-
-        hdr = ctk.CTkLabel(
-            parent, text="  Threshold per Label",
-            font=("Poppins", 10, "bold"), text_color=color, anchor="w",
-        )
-        hdr.pack(fill="x", padx=4, pady=(10, 2))
-        ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0).pack(fill="x", padx=4, pady=(0, 4))
-
-        note = ctk.CTkLabel(
-            parent,
-            text="Mengubah threshold di sini langsung mengubah slider di panel utama.",
-            font=("Poppins", 8), text_color="gray", anchor="w",
-        )
-        note.pack(fill="x", padx=8, pady=(0, 4))
-
-        for i, (lbl_name, dv) in enumerate(zip(_LABEL_NAMES, self._threshold_vars)):
-            lcolor = LC.get(lbl_name, "#6b7280")
-            rw = ctk.CTkFrame(parent, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
-            rw.pack(fill="x", padx=6, pady=2)
-
-            ctk.CTkLabel(rw, text=lbl_name, font=("Poppins", 9, "bold"),
-                         text_color=lcolor, width=90, anchor="w").pack(side="left", padx=(8, 4), pady=4)
-
-            sv = ctk.StringVar(value=f"{dv.get():.2f}")
-
-            def _mk_slide_cb(_sv=sv):
-                def cb(v): _sv.set(f"{float(v):.2f}")
-                return cb
-
-            def _mk_commit_fn(_dv=dv, _sv=sv):
-                def commit():
-                    try:
-                        v = max(0.1, min(0.9, float(_sv.get().replace(",", "."))))
-                        _dv.set(v); _sv.set(f"{v:.2f}")
-                    except ValueError:
-                        _sv.set(f"{_dv.get():.2f}")
-                return commit
-
-            ent = ctk.CTkEntry(rw, textvariable=sv, width=52, height=22,
-                               font=("Poppins", 9, "bold"), justify="right",
-                               fg_color=("white", "#111122"))
-            ent.pack(side="right", padx=(2, 8))
-            commit_fn = _mk_commit_fn()
-            ent.bind("<Return>", lambda e, fn=commit_fn: fn())
-            ent.bind("<FocusOut>", lambda e, fn=commit_fn: fn())
-
-            ctk.CTkSlider(
-                rw, from_=0.1, to=0.9, variable=dv,
-                command=_mk_slide_cb(),
-            ).pack(side="left", fill="x", expand=True, padx=(4, 4), pady=4)
-
     # ── Load / collect ────────────────────────────────────────────────────────
 
     def _load_from_rules(self, rules: dict):
         """Isi semua slider dari dict rules."""
-        for (sec, key), var in self._vars.items():
-            try:
-                val = rules[sec][key]
-                if isinstance(val, list):
-                    continue
-                var.set(float(val))
-                sv = self._lbl_vars.get((sec, key))
-                if sv:
-                    hi = next((h for s, k, _, _, h, *_ in _SLIDER_DEFS if s == sec and k == key), 2)
-                    lo = next((l for s, k, _, l, *_ in _SLIDER_DEFS if s == sec and k == key), 0)
-                    sv.set(f"{float(val):.3f}" if (hi - lo) < 2 else f"{float(val):.2f}")
-            except (KeyError, TypeError):
-                pass
-
-        # Hybrid per-label weights
-        sw_list = rules.get("hybrid", {}).get("siglip_w", [0.5] * 4)
-        lw_list = rules.get("hybrid", {}).get("land_w",   [0.5] * 4)
-        for i, (sv_var, lv_var, sv_sv, lv_sv) in enumerate(self._weight_vars):
-            sw = float(sw_list[i]) if i < len(sw_list) else 0.5
-            lw = float(lw_list[i]) if i < len(lw_list) else 0.5
-            sv_var.set(sw)
-            lv_var.set(lw)
-            sv_sv.set(f"{sw:.2f}")
-            lv_sv.set(f"{lw:.2f}")
+        _load_from_rules_impl(rules, self._vars, self._lbl_vars, self._weight_vars)
 
     def _collect_rules(self) -> dict:
         """Kumpulkan semua nilai slider ke dict rules."""
-        rules = _deep_copy(self._rules_ref)
-        for (sec, key), var in self._vars.items():
-            if sec not in rules:
-                rules[sec] = {}
-            rules[sec][key] = round(var.get(), 4)
-
-        # Hybrid per-label weights
-        sw_list, lw_list = [], []
-        for sv_var, lv_var, _, _ in self._weight_vars:
-            sw_list.append(round(sv_var.get(), 4))
-            lw_list.append(round(lv_var.get(), 4))
-        rules["hybrid"]["siglip_w"] = sw_list
-        rules["hybrid"]["land_w"]   = lw_list
-        return rules
+        return _collect_rules_impl(self._rules_ref, self._vars, self._weight_vars)
 
     # ── Button handlers ───────────────────────────────────────────────────────
 
     def _reset_default(self):
-        from core.rules import DEFAULT_RULES
-        self._load_from_rules(DEFAULT_RULES)
+        _load_from_rules_impl(DEFAULT_RULES, self._vars, self._lbl_vars, self._weight_vars)
         self.lbl_status.configure(text="Reset ke default", text_color="#fbbf24")
 
     def _save_only(self):
-        """Simpan rules ke file saja — tidak recalculate. Cepat."""
+        """Simpan rules ke file saja -- tidak recalculate. Cepat."""
         rules = self._collect_rules()
         self._rules_ref = rules
         if self._on_save:
             self._on_save(rules)
-        self.lbl_status.configure(text="Tersimpan ✓", text_color="#10b981")
+        self.lbl_status.configure(text="Tersimpan", text_color="#10b981")
 
     def _save(self):
         rules = self._collect_rules()
@@ -671,11 +862,11 @@ class RulesPanel:
                 if not name:
                     name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 extra_path = f"__batch_name__{name}"
-            self.lbl_status.configure(text="Menyimpan + Menghitung ulang…", text_color="#fbbf24")
+            self.lbl_status.configure(text="Menyimpan + Menghitung ulang...", text_color="#fbbf24")
             self.win.update_idletasks()
             self._on_recalculate(rules, extra_path)
         else:
-            self.lbl_status.configure(text="Tersimpan ✓", text_color="#10b981")
+            self.lbl_status.configure(text="Tersimpan", text_color="#10b981")
 
     def _rebatch(self):
         rules = self._collect_rules()
@@ -683,6 +874,6 @@ class RulesPanel:
         if self._on_save:
             self._on_save(rules)
         if self._on_rebatch:
-            self.lbl_status.configure(text="Memulai rebatch…", text_color="#f59e0b")
+            self.lbl_status.configure(text="Memulai rebatch...", text_color="#f59e0b")
             self.win.update_idletasks()
             self._on_rebatch()

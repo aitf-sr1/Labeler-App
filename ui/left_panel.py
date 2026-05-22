@@ -36,6 +36,7 @@ class LeftPanel:
         self.frame_image_refs   = []  # Referensi ImageTk agar tidak di-GC
         self._emotion_tab_btns  = {}
         self._current_frame_annotations: dict = {}  # referensi ke frame_annotations video aktif
+        self.rules_content      = None  # set by init_rules_content()
 
         self._build(parent)
 
@@ -45,9 +46,11 @@ class LeftPanel:
         left.rowconfigure(0, weight=0)
         left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
+        self._left_frame = left
 
         self._build_video_player(left)
         self._build_frame_gallery(left)
+        self._build_rules_container(left)  # hidden by default
 
     @staticmethod
     def _bind_mousewheel(scrollable_frame):
@@ -95,17 +98,33 @@ class LeftPanel:
             parent, fg_color=("f3f4f6", "#161622"), corner_radius=12
         )
         gallery_scroll.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self._gallery_container = gallery_scroll
         self._bind_mousewheel(gallery_scroll)
 
         hdr = ctk.CTkFrame(gallery_scroll, fg_color="transparent")
         hdr.pack(fill="x", padx=12, pady=(10, 6))
         ctk.CTkLabel(
-            hdr, text="Frame-level labels — klik kanan untuk toggle",
-            font=("Poppins", 9), text_color=("#9ca3af", "#6b7280"),
+            hdr, text="Frame-level labels  (klik kanan untuk toggle)",
+            font=("Poppins", 9), text_color=("#9ca3af", "#4b5563"),
         ).pack(side="left")
 
         tab_row = ctk.CTkFrame(hdr, fg_color="transparent")
         tab_row.pack(side="right")
+
+        # Rules tab button — opens rules editor mode
+        rules_tab_btn = ctk.CTkButton(
+            tab_row, text="Rules", width=62, height=26,
+            font=("Poppins", 10, "bold"),
+            fg_color="transparent",
+            border_width=1, border_color=("#8b5cf6", "#6d28d9"),
+            corner_radius=20,
+            text_color=("#8b5cf6", "#8b5cf6"),
+            hover_color=("#ede9fe", "#2e1a4a"),
+            command=self.app._open_rules_panel,
+        )
+        rules_tab_btn.pack(side="left", padx=3)
+        self._rules_tab_btn = rules_tab_btn
+
         for lbl in LABELS:
             color = LABEL_COLORS[lbl]
             b = ctk.CTkButton(
@@ -113,8 +132,8 @@ class LeftPanel:
                 font=("Poppins", 10, "bold"),
                 fg_color="transparent",
                 border_width=1, border_color=color,
-                corner_radius=8,
-                text_color=color, hover_color=("e5e7eb", "#2a2a3a"),
+                corner_radius=20,
+                text_color=color, hover_color=("#e5e7eb", "#2a2a3a"),
                 command=lambda l=lbl: self.app._set_active_tab(l),
             )
             b.pack(side="left", padx=3)
@@ -182,6 +201,77 @@ class LeftPanel:
             font=("Poppins", 9), text_color=("#9ca3af", "#4b5563"),
         ).pack(pady=(0, 8))
 
+    def _build_rules_container(self, parent):
+        """Hidden container untuk rules editor mode — muncul saat show_rules_mode()."""
+        self._rules_container = ctk.CTkFrame(
+            parent, fg_color=("#f3f4f6", "#161622"), corner_radius=12
+        )
+        # NOT gridded — starts hidden
+
+    def show_rules_mode(self):
+        """Ganti galeri frame dengan rules editor di area yang sama."""
+        # Lazy-build rules content on first open
+        if self.rules_content is not None and not self.rules_content._built:
+            self.rules_content.build()
+        self._gallery_container.grid_remove()
+        self._rules_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        # Highlight Rules tab button
+        self._rules_tab_btn.configure(
+            fg_color=("#8b5cf6", "#6d28d9"), text_color=("white", "white")
+        )
+
+    def show_gallery_mode(self):
+        """Kembali ke galeri frame dari rules editor."""
+        self._rules_container.grid_remove()
+        self._gallery_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        # Restore Rules tab button style
+        self._rules_tab_btn.configure(
+            fg_color="transparent", text_color=("#8b5cf6", "#8b5cf6")
+        )
+        # Restore active label highlight
+        active = self.app.active_frame_label.get()
+        self.set_active_tab_highlight(active)
+
+    def init_rules_content(self, rules: dict, threshold_vars: list, on_save, on_recalculate, on_rebatch):
+        """
+        Buat RulesContent di dalam _rules_container.
+        Dipanggil dari app.py setelah semua panel selesai dibangun.
+        """
+        from ui.rules_panel import RulesContent
+
+        # Header bar dengan tombol Kembali
+        hdr = ctk.CTkFrame(
+            self._rules_container,
+            fg_color=("#e8eaef", "#1e1e2c"), corner_radius=0, height=46,
+        )
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+
+        ctk.CTkLabel(
+            hdr, text="Parameter & Rules",
+            font=("Poppins", 13, "bold"), text_color=("#374151", "#c4c4d4"),
+        ).pack(side="left", padx=16)
+
+        ctk.CTkButton(
+            hdr, text="Kembali", width=88, height=30,
+            font=("Poppins", 10),
+            fg_color=("#e5e7eb", "#2a2a3a"),
+            hover_color=("#d1d5db", "#3a3a4a"),
+            text_color=("#374151", "#9ca3af"),
+            corner_radius=8,
+            command=self.show_gallery_mode,
+        ).pack(side="right", padx=12, pady=8)
+
+        self.rules_content = RulesContent(
+            parent=self._rules_container,
+            rules=rules,
+            threshold_vars=threshold_vars,
+            on_save=on_save,
+            on_recalculate=on_recalculate,
+            on_rebatch=on_rebatch,
+            on_close=self.show_gallery_mode,
+        )
+
     def show_manual_checkboxes(self, visible: bool):
         """Tampilkan atau sembunyikan baris checkbox manual label di bawah tiap frame."""
         for entry in self._manual_check_frames:
@@ -203,7 +293,7 @@ class LeftPanel:
             cv_widget.delete("all")
             cv_widget.configure(highlightbackground="#2d2d40")
             cv_widget.create_text(
-                180, 180, text="memuat...", fill="#4b5563",
+                180, 180, text="Memuat...", fill="#4b5563",
                 font=("Poppins", 10), anchor="center",
             )
         for dot_cv in self.frame_dot_canvases:
@@ -231,7 +321,7 @@ class LeftPanel:
         else:
             color = "#ef4444" if (rejected_count > 0 or no_face_count == n_frames) else "#f59e0b"
             self.lbl_frame_quality.configure(
-                text="⚠  " + "   |   ".join(parts),
+                text="   |   ".join(parts),
                 text_color=color,
             )
 
