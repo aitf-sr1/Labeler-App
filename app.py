@@ -401,6 +401,7 @@ class VideoLabelerApp:
         """Isi celah antara manual_labels dan frame_annotations:
         - Video belum ada di manual_labels → copy penuh dari frame_annotations
         - Frame sudah ada tapi field _rejected hilang → copy dari frame_annotations
+        - AI me-flag frame (_rejected=True) → propagate ke manual (override)
         - Entri stale (ada di manual_labels tapi tidak di frame_annotations) → hapus
         Label (0/1) yang sudah ada di manual_labels TIDAK ditimpa.
         """
@@ -408,7 +409,7 @@ class VideoLabelerApp:
         # Hapus entri stale
         for k in [k for k in list(self.manual_labels) if k not in fa]:
             del self.manual_labels[k]
-        # Isi yang belum ada / _rejected yang hilang
+        # Isi yang belum ada / propagate _rejected dari AI
         for rel_path, fa_vid in fa.items():
             if rel_path not in self.manual_labels:
                 self.manual_labels[rel_path] = {
@@ -426,11 +427,14 @@ class VideoLabelerApp:
                             **{lbl: int(fa_vid.get(fi_str, {}).get(lbl, 0)) for lbl in LABELS},
                             "_rejected": fa_vid.get(fi_str, {}).get("_rejected", False),
                         }
-                    elif "_rejected" not in self.manual_labels[rel_path][fi_str]:
-                        # Field _rejected hilang (file lama) → ambil dari frame_annotations
-                        self.manual_labels[rel_path][fi_str]["_rejected"] = (
-                            fa_vid.get(fi_str, {}).get("_rejected", False)
-                        )
+                    else:
+                        ai_rejected = fa_vid.get(fi_str, {}).get("_rejected", False)
+                        if ai_rejected:
+                            # AI me-flag frame → paksa manual juga ditolak
+                            self.manual_labels[rel_path][fi_str]["_rejected"] = True
+                        elif "_rejected" not in self.manual_labels[rel_path][fi_str]:
+                            # Field belum ada (file lama) → isi default dari AI
+                            self.manual_labels[rel_path][fi_str]["_rejected"] = False
 
     def _save_manual_labels(self, extra_batch_path: str | None = None):
         """Simpan manual_labels ke disk (ke file yang sesuai batch aktif).
