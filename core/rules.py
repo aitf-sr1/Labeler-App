@@ -10,12 +10,13 @@ import json
 
 DEFAULT_RULES = {
     "gaze": {
-        "scale_h": 35.0,        # iris_x × ini = horizontal gaze contribution (°)
-        "scale_v": 25.0,        # iris_y × ini = vertical gaze contribution (°)
-        "iris_side_mult": 2.0,  # floor iris side = iris_x × scale_h × ini
-        "v_dead_zone": 15.0,    # downward gaze_v dead zone — besar agar nunduk/ngetik tidak kena boredom
-        "v_dead_zone_up": 5.0,  # upward gaze_v dead zone — kecil karena tatapan ke atas = tidak fokus ke layar
-        "roll_dz": 5.0,         # dead zone roll sebelum masuk gaze_dev — kepala miring (roll) ikut geser arah pandang dari layar
+        "scale_h": 35.0,              # iris_x × ini = horizontal gaze contribution (°)
+        "scale_v": 25.0,              # iris_y × ini = vertical gaze contribution (°)
+        "iris_side_mult": 2.0,        # floor iris side = iris_x × scale_h × ini
+        "v_dead_zone": 15.0,          # downward gaze_v dead zone — besar agar nunduk/ngetik tidak kena boredom
+        "v_dead_zone_up": 5.0,        # upward gaze_v dead zone — kecil karena tatapan ke atas = tidak fokus ke layar
+        "roll_dz": 5.0,               # dead zone roll sebelum masuk gaze_dev — kepala miring (roll) ikut geser arah pandang dari layar
+        "iris_blink_suppress_th": 0.60,  # blink_corrected di atas ini → iris_y mulai di-suppress (artifact mata menutup)
     },
     "boredom": {
         "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze. Nunduk dilindungi v_dead_zone=15, bukan dead_zone ini.

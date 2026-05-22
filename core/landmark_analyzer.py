@@ -389,11 +389,23 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     ccfg = cfg["confusion"]
     fcfg = cfg["frustration"]
 
+    # ── Iris Y reliability gate ───────────────────────────────────────────────
+    # Saat mata hampir menutup (blink tinggi), MediaPipe melaporkan iris_y ekstrem
+    # (iris di tepi atas celah mata yang nyaris menutup), bukan gaze sungguhan.
+    # Suppress iris_y secara proporsional terhadap blink_corrected supaya artifact
+    # menutupnya mata tidak polusi gaze_dev dan skor emosi.
+    _blink_pre  = (g("eyeBlinkLeft") + g("eyeBlinkRight")) / 2
+    _squint_pre = (g("eyeSquintLeft") + g("eyeSquintRight")) / 2
+    _blink_corr_pre = max(0.0, _blink_pre - _squint_pre * bcfg.get("squint_blink_correction", 0.5))
+    _iris_blink_th  = gcfg.get("iris_blink_suppress_th", 0.60)
+    _iris_y_factor  = max(0.0, 1.0 - _blink_corr_pre / max(_iris_blink_th, 1e-6))
+    iris_y_eff      = r.iris_y * _iris_y_factor   # scaled iris_y; = r.iris_y saat mata terbuka
+
     # ── Gaze deviation (shared basis) ─────────────────────────────────────────
     GAZE_SCALE   = gcfg["scale_h"]
     GAZE_SCALE_V = gcfg["scale_v"]
     gaze_h     = r.yaw + r.iris_x * GAZE_SCALE
-    gaze_v_raw = -r.pitch + r.iris_y * GAZE_SCALE_V
+    gaze_v_raw = -r.pitch + iris_y_eff * GAZE_SCALE_V
 
     look_down_v = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
 
@@ -570,7 +582,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     eng = max(eng, fwd_eng_min * fwd_eng_gate * (1.0 - bore_floor_cancel))
 
     # == 2: CONFUSION ==========================================================
-    iris_up_v  = _clamp((-r.iris_y - ccfg["iris_up_dead_zone"]) / max(ccfg["iris_up_range"], 1e-6), 0, 1)
+    iris_up_v  = _clamp((-iris_y_eff - ccfg["iris_up_dead_zone"]) / max(ccfg["iris_up_range"], 1e-6), 0, 1)
     look_up_v  = _clamp(max(g("eyeLookUpLeft"), g("eyeLookUpRight")) / max(ccfg["look_up_threshold"], 1e-6), 0, 1)
     # Lihat ke bawah (baca soal/layar) juga bisa confusion — gated oleh hadap depan
     look_dn_th = ccfg.get("look_dn_th", 0.40)
