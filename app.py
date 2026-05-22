@@ -1673,47 +1673,99 @@ class VideoLabelerApp:
             self._apply_siglip_result(rel_path, res)
 
             # ── DEBUG DUMP ────────────────────────────────────────────────────
+            from core.landmark_analyzer import compute_emotion_scores as _ces
             _n   = res.get("n_frames", 2)
             _ths = res["thresholds"]
             _fa  = self.frame_annotations.get(rel_path, {})
+            _KEY_BS = [
+                "jawOpen", "eyeBlinkLeft", "eyeBlinkRight",
+                "eyeWideLeft", "eyeWideRight",
+                "eyeSquintLeft", "eyeSquintRight",
+                "browInnerUp", "browDownLeft", "browDownRight",
+                "mouthSmileLeft", "mouthSmileRight",
+                "mouthUpperUpLeft", "mouthUpperUpRight",
+                "noseSneerLeft", "noseSneerRight",
+                "cheekSquintLeft", "cheekSquintRight",
+            ]
             _lines = [
                 "",
-                "=" * 64,
+                "=" * 70,
                 f"  VIDEO : {rel_path}",
-                "=" * 64,
+                "=" * 70,
             ]
             for _fi in range(_n):
                 _rej     = _fa.get(str(_fi), {}).get("_rejected", False)
                 _rej_tag = "  ⚠ REJECTED" if _rej else ""
-                _lines.append(f"\n  Frame {_fi}{_rej_tag}")
-                for _ii, _lbl in enumerate(LABELS):
-                    _r     = res["per_label"][_ii]
-                    _score = _r["frame_scores"][_fi] if _fi < len(_r["frame_scores"]) else 0.0
-                    _pred  = _r["frame_preds"][_fi]  if _fi < len(_r["frame_preds"])  else 0
-                    _mark  = "✓" if _pred == 1 else "✗"
+                _lines.append(f"\nFrame {_fi}{_rej_tag}")
+
+                # ── Raw landmark ──
+                _lr = landmark_results[_fi] if (landmark_results and _fi < len(landmark_results)) else None
+                if _lr and _lr.face_found:
                     _lines.append(
-                        f"    {_mark} {_lbl:<12} score={_score:.4f}  thr={_ths[_ii]:.2f}  pred={_pred}"
+                        f"  pose   yaw={_lr.yaw:+.1f}°  pitch={_lr.pitch:+.1f}°  roll={_lr.roll:+.1f}°"
                     )
-            _lines.append("\n  FINAL (avg hybrid per label):")
-            for _ii, _lbl in enumerate(LABELS):
-                _r      = res["per_label"][_ii]
-                _ph     = self.batch_history.get(rel_path, {}).get("per_label", {}).get(str(_ii), {})
-                _fin    = _ph.get("prediction", 0)
-                _avg    = _r.get("avg_score", 0.0)
-                _sig    = _r.get("siglip_avg", 0.0)
-                _land   = _r.get("landmark_avg")
-                _ls     = f"  land={_land:.4f}" if _land is not None else "              "
-                _mark   = "✓" if _fin == 1 else "✗"
-                _lines.append(
-                    f"    {_mark} {_lbl:<12} siglip={_sig:.4f}{_ls}  hybrid={_avg:.4f}  "
-                    f"thr={_ths[_ii]:.2f}  → FINAL={_fin}"
+                    _lines.append(
+                        f"  iris   eye=(x={_lr.iris_x:+.3f} y={_lr.iris_y:+.3f})  "
+                        f"img=(x={_lr.iris_img_x:+.3f} y={_lr.iris_img_y:+.3f})"
+                    )
+                    _lines.append(
+                        f"  hand   forehead={_lr.hand_forehead:.3f}  chin={_lr.hand_chin:.3f}"
+                    )
+                    # blendshapes dalam 2 kolom
+                    _bs = _lr.blendshapes
+                    _bs_vals = [f"{_k.replace('Left','L').replace('Right','R'):<20}={_bs.get(_k,0):.3f}"
+                                for _k in _KEY_BS]
+                    for _bi in range(0, len(_bs_vals), 2):
+                        _lines.append("  bs     " + "  ".join(_bs_vals[_bi:_bi+2]))
+
+                    # ── Landmark emotion scores ──
+                    _lsc = _ces(_lr, self.rules)
+                    _lsc_str = "  ".join(
+                        f"{LABELS[_ii][0]}={list(_lsc.values())[_ii] if isinstance(_lsc, dict) else _lsc[_ii]:.4f}"
+                        for _ii in range(len(LABELS))
+                    )
+                    _lines.append(f"  land   {_lsc_str}")
+                else:
+                    _lines.append("  pose   [no face]")
+
+                # ── SigLIP, hybrid per frame ──
+                _sig_row  = "  ".join(
+                    f"{LABELS[_ii][0]}={res['per_label'][_ii]['siglip_scores'][_fi]:.4f}"
+                    if res['per_label'][_ii].get('siglip_scores') and _fi < len(res['per_label'][_ii]['siglip_scores'])
+                    else f"{LABELS[_ii][0]}=—"
+                    for _ii in range(len(LABELS))
                 )
-            _lines += [
-                "",
-                "  ↑ Copy blok ini dan kirim ke Claude untuk minta revisi label.",
-                "=" * 64,
-                "",
-            ]
+                _hyb_row  = "  ".join(
+                    f"{LABELS[_ii][0]}={res['per_label'][_ii]['frame_scores'][_fi]:.4f}"
+                    if _fi < len(res['per_label'][_ii]['frame_scores'])
+                    else f"{LABELS[_ii][0]}=—"
+                    for _ii in range(len(LABELS))
+                )
+                _pred_row = "  ".join(
+                    f"{LABELS[_ii][0]}={'1✓' if res['per_label'][_ii]['frame_preds'][_fi] else '0✗'}"
+                    if _fi < len(res['per_label'][_ii]['frame_preds'])
+                    else f"{LABELS[_ii][0]}=—"
+                    for _ii in range(len(LABELS))
+                )
+                _lines.append(f"  siglip {_sig_row}")
+                _lines.append(f"  hybrid {_hyb_row}  (thr: {' '.join(f'{LABELS[_ii][0]}={_ths[_ii]:.2f}' for _ii in range(len(LABELS)))})")
+                _lines.append(f"  pred   {_pred_row}")
+
+            _lines.append("\nFINAL")
+            for _ii, _lbl in enumerate(LABELS):
+                _r    = res["per_label"][_ii]
+                _ph   = self.batch_history.get(rel_path, {}).get("per_label", {}).get(str(_ii), {})
+                _fin  = _ph.get("prediction", 0)
+                _avg  = _r.get("avg_score", 0.0)
+                _sig  = _r.get("siglip_avg", 0.0)
+                _land = _r.get("landmark_avg")
+                _ls   = f"  land_avg={_land:.4f}" if _land is not None else ""
+                _mark = "✓" if _fin == 1 else "✗"
+                _lines.append(
+                    f"  {_mark} {_lbl:<12} siglip_avg={_sig:.4f}{_ls}  "
+                    f"hybrid_avg={_avg:.4f}  thr={_ths[_ii]:.2f}  → {_fin}"
+                )
+            _lines += ["", "=" * 70, ""]
             print("\n".join(_lines))
             # ─────────────────────────────────────────────────────────────────
 

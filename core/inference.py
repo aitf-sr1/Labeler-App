@@ -225,6 +225,12 @@ def run_siglip_on_frames(
             "landmark_avg": land_avg,
             "frame_scores": hybrid_scores,
             "frame_preds":  frame_preds,
+            # per-frame breakdown untuk debug
+            "siglip_scores": siglip_scores,
+            "land_scores": (
+                [round(land_scores_per_frame[f][i], 4) for f in range(n_frames)]
+                if land_scores_per_frame else None
+            ),
         }
 
     # Cleanup GPU memory — cegah akumulasi tensor antar video dalam batch
