@@ -1268,6 +1268,17 @@ class VideoLabelerApp:
                 "frame_preds":  frame_preds,
             }
 
+        # Enforce mutual exclusion pada prediksi FINAL: jika kedua label dalam pasangan
+        # eksklusif sama-sama 1, nol-kan yang avg_score-nya lebih rendah.
+        for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+            idx_a = str(LABELS.index(lbl_a))
+            idx_b = str(LABELS.index(lbl_b))
+            if per_label_history[idx_a]["prediction"] == 1 and per_label_history[idx_b]["prediction"] == 1:
+                if per_label_history[idx_a]["avg_score"] >= per_label_history[idx_b]["avg_score"]:
+                    per_label_history[idx_b]["prediction"] = 0
+                else:
+                    per_label_history[idx_a]["prediction"] = 0
+
         # Auto-reject per FRAME: frame yang tidak punya label sama sekali (semua emosi < threshold)
         # ditolak otomatis. Frame yang punya minimal 1 label tetap dipertahankan.
         rejected_count = 0
