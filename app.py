@@ -2023,9 +2023,10 @@ class VideoLabelerApp:
                     )
                 self.root.after(0, upd_skip_count)
 
-            # Queue: CPU workers → GPU batcher
-            # maxsize = 3× batch_size agar CPU workers tidak terlalu jauh di depan GPU
-            prep_queue = _q.Queue(maxsize=siglip_batch_size * 3)
+            # Queue tanpa maxsize — CPU workers tidak pernah blok walau GPU berhenti.
+            # Ini penting agar cancel tidak deadlock: GPU stop consume → CPU drain
+            # queue lalu selesai sendiri → ThreadPoolExecutor bisa shutdown.
+            prep_queue = _q.Queue()
 
             def cpu_preprocess(idx, vp):
                 """CPU worker: ekstrak frame + MediaPipe, taruh di queue."""
@@ -2083,18 +2084,21 @@ class VideoLabelerApp:
                     print(f"[Error] MediaPipe failed for {os.path.relpath(vp, self.root_folder)}: {e}")
                     prep_queue.put({"type": "error"})
 
-            # Submit CPU workers
-            with concurrent.futures.ThreadPoolExecutor(max_workers=preprocess_workers) as cpu_exec:
-                cpu_futures = [cpu_exec.submit(cpu_preprocess, idx, vp) for idx, vp in todo]
+            # Submit CPU workers — tidak pakai context manager agar bisa shutdown(cancel_futures=True)
+            cpu_exec = concurrent.futures.ThreadPoolExecutor(max_workers=preprocess_workers)
+            cpu_futures = [cpu_exec.submit(cpu_preprocess, idx, vp) for idx, vp in todo]
 
-                # GPU batching loop — berjalan di worker thread ini sambil CPU bekerja
-                gpu_batch    = []   # list of "ready" items
-                received     = 0    # item masuk ke queue (semua tipe)
-                n_processed  = 0    # video berhasil di-SigLIP
+            # GPU batching loop — berjalan di worker thread ini sambil CPU bekerja
+            gpu_batch    = []   # list of "ready" items
+            received     = 0    # item masuk ke queue (semua tipe)
+            n_processed  = 0    # video berhasil di-SigLIP
 
+            try:
                 while received < n_todo:
+                    if self.cancel_batch:
+                        break
                     try:
-                        item = prep_queue.get(timeout=60.0)
+                        item = prep_queue.get(timeout=1.0)
                     except _q.Empty:
                         if all(f.done() for f in cpu_futures):
                             break
@@ -2147,6 +2151,10 @@ class VideoLabelerApp:
                                 save_batch_history(self.path_json_batch_history, self.batch_history)
 
                         gpu_batch = []
+            finally:
+                # Selalu shutdown executor — cancel_futures=True agar futures yang
+                # belum mulai tidak dieksekusi, futures yang sedang jalan selesai sendiri
+                cpu_exec.shutdown(wait=True, cancel_futures=True)
 
             # Simpan semua data sekaligus setelah batch selesai (bukan per-video)
             with self.save_lock:
