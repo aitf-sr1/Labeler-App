@@ -458,6 +458,7 @@ class VideoLabelerApp:
         if rel not in self.manual_labels:
             self._init_manual_for_current()
         self.manual_labels[rel][str(frame_idx)][label] = int(value)
+        self.manual_labels[rel]["_manual_override"] = True
 
         # Mutual exclusion: jika label diaktifkan, matikan pasangannya & update checkbox-nya
         if int(value) == 1 and label in MUTUAL_EXCLUSIVE:
@@ -557,10 +558,11 @@ class VideoLabelerApp:
                     save_frame_annotations(self.path_json_frames, self.frame_annotations)
 
                 def on_done(extra_path=extra, _rules=rules):
-                    # Sync manual_labels dari semua frame_annotations baru hasil recalculate.
-                    # save=False: hanya update dict di memori, simpan sekali di akhir
-                    # (sebelumnya save per-video = ribuan disk write = lag panjang).
+                    # Sync manual_labels dari frame_annotations baru — KECUALI video yang
+                    # sudah diedit manual (_manual_override=True). Label manual dilindungi.
                     for rel in self.frame_annotations:
+                        if self.manual_labels.get(rel, {}).get("_manual_override", False):
+                            continue  # jangan timpa label yang sudah diedit manual
                         self._sync_manual_from_ai(rel, save=False)
                     self._save_manual_labels(extra_batch_path=extra_path if extra_path else None)
 
@@ -1147,6 +1149,7 @@ class VideoLabelerApp:
         current_val = self.manual_labels[rel_path][str(frame_idx)].get(active_lbl, 0)
         new_val     = 1 if current_val == 0 else 0
         self.manual_labels[rel_path][str(frame_idx)][active_lbl] = new_val
+        self.manual_labels[rel_path]["_manual_override"] = True
 
         # Mutual exclusion: jika label diaktifkan, matikan pasangannya
         if new_val == 1 and active_lbl in MUTUAL_EXCLUSIVE:
@@ -1203,6 +1206,7 @@ class VideoLabelerApp:
         current_val = self.manual_labels[rel_path][str(frame_idx)].get(label, 0)
         new_val     = 1 if current_val == 0 else 0
         self.manual_labels[rel_path][str(frame_idx)][label] = new_val
+        self.manual_labels[rel_path]["_manual_override"] = True
 
         # Mutual exclusion: jika label diaktifkan, matikan pasangannya
         if new_val == 1 and label in MUTUAL_EXCLUSIVE:
@@ -1350,6 +1354,9 @@ class VideoLabelerApp:
             str(i): {l: 0 for l in LABELS} for i in range(2)
         }
         self.batch_history.pop(rel_path, None)
+        # Hapus flag manual_override supaya recalculate bisa sync lagi setelah reset
+        if rel_path in self.manual_labels:
+            self.manual_labels[rel_path].pop("_manual_override", None)
         self.save_current_state()
         self._sync_manual_from_ai(rel_path)
 
