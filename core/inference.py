@@ -103,7 +103,7 @@ def run_siglip_on_frames(
         text=all_texts, images=pil_images,
         return_tensors="pt", padding="max_length",
     )
-    inputs = {k: v.to(device, dtype=model.dtype) if v.is_floating_point() else v.to(device) for k, v in inputs.items()}
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
     with torch.no_grad():
         logits_per_image = model(**inputs).logits_per_image  # [n_frames, n_texts]

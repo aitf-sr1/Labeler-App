@@ -25,13 +25,10 @@ def get_siglip():
     with _siglip_lock:
         if _siglip_model is None:
             import os
-            MODEL_ID  = os.getenv("SIGLIP_MODEL_ID", "google/siglip2-base-patch16-224")
-            use_fp16  = (_device == "cuda")
-            dtype     = torch.float16 if use_fp16 else torch.float32
-            dtype_str = "fp16" if use_fp16 else "fp32"
-            print(f"Loading SigLIP2 on {_device.upper()} [{dtype_str}] ({MODEL_ID})...")
+            MODEL_ID = os.getenv("SIGLIP_MODEL_ID", "google/siglip2-base-patch16-224")
+            print(f"Loading SigLIP2 on {_device.upper()} ({MODEL_ID})...")
             _siglip_processor = AutoProcessor.from_pretrained(MODEL_ID)
-            _siglip_model     = AutoModel.from_pretrained(MODEL_ID, torch_dtype=dtype)
+            _siglip_model     = AutoModel.from_pretrained(MODEL_ID)
             _siglip_model.to(_device)
             _siglip_model.eval()
             print("SigLIP2 ready.")
