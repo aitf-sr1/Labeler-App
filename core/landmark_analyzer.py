@@ -27,14 +27,12 @@ _LANDMARKER_URL  = (
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
 _LANDMARKER_NAME = "face_landmarker.task"
-_landmarker      = None
 
 _HAND_URL  = (
     "https://storage.googleapis.com/mediapipe-models/"
     "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
 )
 _HAND_NAME = "hand_landmarker.task"
-_hand_landmarker = None
 
 # ── Landmark indices ─────────────────────────────────────────────────────────
 # Left eye
@@ -71,62 +69,72 @@ class LandmarkResult:
     hand_landmarks_raw: list = field(default_factory=list) # raw mediapipe hand landmarks
 
 
-# ── Lazy-load FaceLandmarker ─────────────────────────────────────────────────
-_face_lock = threading.Lock()
+# ── Per-thread MediaPipe instances (thread-local storage) ────────────────────
+# MediaPipe landmarker TIDAK thread-safe — instance yang sama tidak bisa dipakai
+# concurrently oleh beberapa thread. Solusi: satu instance per thread via threading.local().
+# Setiap thread CPU worker mendapat instance sendiri → benar-benar paralel.
+_thread_local = threading.local()
+
+def _ensure_model_files():
+    """Download model files jika belum ada. Dipanggil sekali saat pertama kali dibutuhkan."""
+    from mediapipe.tasks import python as mp_tasks  # noqa: F401
+    cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    face_path = os.path.join(cache_dir, _LANDMARKER_NAME)
+    if not os.path.exists(face_path):
+        print(f"Mengunduh FaceLandmarker model ke {face_path}…")
+        urllib.request.urlretrieve(_LANDMARKER_URL, face_path)
+
+    hand_path = os.path.join(cache_dir, _HAND_NAME)
+    if not os.path.exists(hand_path):
+        print(f"Mengunduh HandLandmarker model ke {hand_path}…")
+        urllib.request.urlretrieve(_HAND_URL, hand_path)
+
+    return face_path, hand_path
+
+# Lock hanya untuk serialisasi download pertama kali
+_download_lock = threading.Lock()
+_models_downloaded = False
+
 def _get_landmarker():
-    global _landmarker
-    with _face_lock:
-        if _landmarker is None:
-            from mediapipe.tasks import python as mp_tasks
-            from mediapipe.tasks.python import vision as mp_vision
-
-            cache_dir  = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
-            os.makedirs(cache_dir, exist_ok=True)
-            model_path = os.path.join(cache_dir, _LANDMARKER_NAME)
-
-            if not os.path.exists(model_path):
-                print(f"Mengunduh FaceLandmarker model ke {model_path}…")
-                urllib.request.urlretrieve(_LANDMARKER_URL, model_path)
-
-            base_opts = mp_tasks.BaseOptions(model_asset_path=model_path)
-            opts = mp_vision.FaceLandmarkerOptions(
-                base_options=base_opts,
-                output_face_blendshapes=True,
-                output_facial_transformation_matrixes=True,
-                num_faces=1,
-                min_face_detection_confidence=0.40,
-                min_face_presence_confidence=0.40,
-            )
-            _landmarker = mp_vision.FaceLandmarker.create_from_options(opts)
-    return _landmarker
+    """Kembalikan FaceLandmarker milik thread ini (buat jika belum ada)."""
+    global _models_downloaded
+    if not hasattr(_thread_local, "face_landmarker"):
+        from mediapipe.tasks import python as mp_tasks
+        from mediapipe.tasks.python import vision as mp_vision
+        with _download_lock:
+            face_path, _ = _ensure_model_files()
+            _models_downloaded = True
+        base_opts = mp_tasks.BaseOptions(model_asset_path=face_path)
+        opts = mp_vision.FaceLandmarkerOptions(
+            base_options=base_opts,
+            output_face_blendshapes=True,
+            output_facial_transformation_matrixes=True,
+            num_faces=1,
+            min_face_detection_confidence=0.40,
+            min_face_presence_confidence=0.40,
+        )
+        _thread_local.face_landmarker = mp_vision.FaceLandmarker.create_from_options(opts)
+    return _thread_local.face_landmarker
 
 
-# ── Lazy-load HandLandmarker ─────────────────────────────────────────────────
-_hand_lock = threading.Lock()
 def _get_hand_landmarker():
-    global _hand_landmarker
-    with _hand_lock:
-        if _hand_landmarker is None:
-            from mediapipe.tasks import python as mp_tasks
-            from mediapipe.tasks.python import vision as mp_vision
-
-            cache_dir  = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
-            os.makedirs(cache_dir, exist_ok=True)
-            model_path = os.path.join(cache_dir, _HAND_NAME)
-
-            if not os.path.exists(model_path):
-                print(f"Mengunduh HandLandmarker model ke {model_path}…")
-                urllib.request.urlretrieve(_HAND_URL, model_path)
-
-            base_opts = mp_tasks.BaseOptions(model_asset_path=model_path)
-            opts = mp_vision.HandLandmarkerOptions(
-                base_options=base_opts,
-                num_hands=2,
-                min_hand_detection_confidence=0.20,
-                min_hand_presence_confidence=0.20,
-            )
-            _hand_landmarker = mp_vision.HandLandmarker.create_from_options(opts)
-    return _hand_landmarker
+    """Kembalikan HandLandmarker milik thread ini (buat jika belum ada)."""
+    if not hasattr(_thread_local, "hand_landmarker"):
+        from mediapipe.tasks import python as mp_tasks
+        from mediapipe.tasks.python import vision as mp_vision
+        with _download_lock:
+            _, hand_path = _ensure_model_files()
+        base_opts = mp_tasks.BaseOptions(model_asset_path=hand_path)
+        opts = mp_vision.HandLandmarkerOptions(
+            base_options=base_opts,
+            num_hands=2,
+            min_hand_detection_confidence=0.20,
+            min_hand_presence_confidence=0.20,
+        )
+        _thread_local.hand_landmarker = mp_vision.HandLandmarker.create_from_options(opts)
+    return _thread_local.hand_landmarker
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
