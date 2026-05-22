@@ -1992,13 +1992,13 @@ class VideoLabelerApp:
         import core.landmark_analyzer as _lm
         _lm._DBG_LAND = False
         self.right_panel.btn_proses_semua.configure(
-            text="Hentikan Batch", fg_color="#ef4444", hover_color="#dc2626"
+            text="Hentikan", fg_color="#ef4444", hover_color="#dc2626"
         )
         self.right_panel.btn_proses_satu.configure(state="disabled")
 
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
         def worker():
-            import queue as _q
+            import queue as _q, time as _time
             total             = len(self.video_files)
             already_done      = set(self.batch_history.keys())
             preprocess_workers = int(os.getenv("PREPROCESS_WORKERS", "8"))
@@ -2009,6 +2009,23 @@ class VideoLabelerApp:
             todo = [(idx, vp) for idx, vp in enumerate(self.video_files)
                     if os.path.relpath(vp, self.root_folder) not in already_done]
             n_todo = len(todo)
+
+            batch_start_time = _time.monotonic()
+            n_done_so_far    = [0]  # mutable untuk closure
+
+            def _fmt_eta(done, total_left, elapsed):
+                if done == 0 or elapsed < 2:
+                    return ""
+                rate = done / elapsed          # vid/s
+                remaining = (total_left - done) / rate
+                if remaining < 60:
+                    return f" · sisa ~{int(remaining)}d"
+                elif remaining < 3600:
+                    return f" · sisa ~{int(remaining/60)}m"
+                else:
+                    h = int(remaining / 3600)
+                    m = int((remaining % 3600) / 60)
+                    return f" · sisa ~{h}j{m:02d}m"
 
             if n_todo == 0:
                 return
@@ -2035,8 +2052,11 @@ class VideoLabelerApp:
                     return
                 rel_path = os.path.relpath(vp, self.root_folder)
                 def upd_status(i=idx, r=rel_path):
+                    done    = n_done_so_far[0]
+                    elapsed = _time.monotonic() - batch_start_time
+                    eta     = _fmt_eta(done, n_todo, elapsed)
                     self.right_panel.lbl_batch_status.configure(
-                        text=f"Batch {i+1}/{total}: {os.path.basename(r)}",
+                        text=f"{done}/{n_todo}{eta}  ·  {os.path.basename(r)}",
                         text_color="#fbbf24",
                     )
                 self.root.after(0, upd_status)
@@ -2136,6 +2156,16 @@ class VideoLabelerApp:
                             for b_item, res in zip(gpu_batch, batch_results):
                                 self._apply_siglip_result(b_item["rel_path"], res)
                                 n_processed += 1
+                                n_done_so_far[0] += 1
+                                _done = n_done_so_far[0]
+                                _elapsed = _time.monotonic() - batch_start_time
+                                _eta = _fmt_eta(_done, n_todo, _elapsed)
+                                def _upd_prog(d=_done, e=_eta):
+                                    self.right_panel.lbl_batch_status.configure(
+                                        text=f"{d}/{n_todo}{e}",
+                                        text_color="#10b981",
+                                    )
+                                self.root.after(0, _upd_prog)
                                 if b_item["rel_path"] == current_rel:
                                     for i, lbl in enumerate(LABELS):
                                         fsc = list(res["per_label"][i]["frame_scores"])
@@ -2163,13 +2193,27 @@ class VideoLabelerApp:
 
             def on_finish():
                 self.batch_running = False
-                # Nyalakan kembali debug log setelah batch selesai
                 import core.landmark_analyzer as _lm
                 _lm._DBG_LAND = True
-                msg = "Dibatalkan" if self.cancel_batch else "Selesai"
-                self.right_panel.lbl_batch_status.configure(text=msg, text_color="#10b981" if not self.cancel_batch else "#ef4444")
+                elapsed_total = _time.monotonic() - batch_start_time
+                if elapsed_total < 60:
+                    elapsed_str = f"{int(elapsed_total)}d"
+                elif elapsed_total < 3600:
+                    elapsed_str = f"{int(elapsed_total/60)}m{int(elapsed_total%60):02d}d"
+                else:
+                    h = int(elapsed_total / 3600)
+                    m = int((elapsed_total % 3600) / 60)
+                    elapsed_str = f"{h}j{m:02d}m"
+                done_final = n_done_so_far[0]
+                if self.cancel_batch:
+                    msg = f"Dihentikan  {done_final}/{n_todo}  ({elapsed_str})"
+                    color = "#ef4444"
+                else:
+                    msg = f"Selesai  {done_final}/{n_todo}  ({elapsed_str})"
+                    color = "#10b981"
+                self.right_panel.lbl_batch_status.configure(text=msg, text_color=color)
                 self.right_panel.btn_proses_semua.configure(
-                    text="Proses Semua (Batch)", fg_color="#6366f1", hover_color="#4f46e5"
+                    text="Batch Semua", fg_color="#10b981", hover_color="#059669"
                 )
                 self.right_panel.btn_proses_satu.configure(state="normal")
                 thrs = [v.get() for v in self.right_panel.threshold_vars]
