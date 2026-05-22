@@ -25,7 +25,6 @@ import concurrent.futures
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
-import cv2
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,8 +38,7 @@ MUTUAL_EXCLUSIVE = {
     "Boredom": "Engagement",
     "Engagement": "Boredom",
 }
-from utils import (
-    prepare_cropped_frames,
+from utils.io import (
     load_annotations, save_annotations,
     load_flagged, save_flagged,
     load_frame_annotations, save_frame_annotations,
@@ -49,8 +47,9 @@ from utils import (
     load_skipped, save_skipped,
     load_thresholds, save_thresholds,
 )
-from core import run_siglip_on_frames, run_siglip_batch, load_rules, save_rules, DEFAULT_RULES, recalculate_batch
-from core.siglip_model import preload_siglip
+from core.rules import DEFAULT_RULES, load_rules, save_rules
+# Heavy modules (cv2, torch, mediapipe) are imported lazily inside the methods
+# that need them — this keeps app startup fast (~1-2s saved).
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -283,7 +282,6 @@ class VideoLabelerApp:
             messagebox.showinfo("Info", "Tidak ada file .mp4 ditemukan.")
             return
 
-        preload_siglip()   # mulai load model di background supaya siap sebelum proses pertama
         self._load_data()
         self.current_index = 0
         self.load_video()
@@ -600,6 +598,7 @@ class VideoLabelerApp:
         )
 
         def worker():
+            from core.recalculate import recalculate_batch
             try:
                 new_history, new_fa, skipped = recalculate_batch(
                     batch_history=self.batch_history,
@@ -762,6 +761,7 @@ class VideoLabelerApp:
             self.root.after_cancel(self.after_id)
             self.after_id = None
 
+        import cv2  # lazy — cached after first call
         vp = self.video_files[self.current_index]
         self.cap = cv2.VideoCapture(vp)
         self.total_frames = max(1, int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)))
@@ -799,6 +799,7 @@ class VideoLabelerApp:
         Menghitung frame target dari waktu yang sudah berlalu sejak play dimulai,
         sehingga playback tidak bergantung pada kecepatan CPU.
         """
+        import cv2  # lazy — already cached after load_video() runs, dict lookup only
         if not self.is_playing or not self.cap: return
         t_frame = self.play_start_frame + int(
             (time.time() - self.play_start_time) * self.fps
@@ -842,6 +843,7 @@ class VideoLabelerApp:
 
     def on_slider_move(self, val):
         """Sync posisi video ke slider. Dipanggil oleh callback slider saat digeser."""
+        import cv2
         if not self.cap: return
         self.current_frame    = int(float(val))
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame)
@@ -855,6 +857,7 @@ class VideoLabelerApp:
         Args:
             frame_idx: Index thumbnail (0-15), bukan frame absolut.
         """
+        import cv2
         if not self.cap or not self.video_files: return
         target = int(self.total_frames * frame_idx / 4)
         self.current_frame = self.play_start_frame = target
@@ -994,6 +997,7 @@ class VideoLabelerApp:
                     self.right_panel.update_ai_score_bar(lbl, fsc, thr)
 
         def worker():
+            from utils.video import prepare_cropped_frames
             result = prepare_cropped_frames(
                 vp, self.root_folder, self.path_dir_cropped,
                 raw_cache_dir=self.path_dir_raw_cache if hasattr(self, "path_dir_raw_cache") else None,
@@ -1788,6 +1792,8 @@ class VideoLabelerApp:
         self.right_panel.lbl_batch_status.configure(text="Memproses…", text_color="#fbbf24")
 
         def worker():
+            from utils.video import prepare_cropped_frames
+            from core.inference import run_siglip_on_frames
             imgs, no_face_count, multi_face_count, landmark_results, viz_imgs = prepare_cropped_frames(
                 vp, self.root_folder, self.path_dir_cropped,
                 raw_cache_dir=self.path_dir_raw_cache, cfg=self.rules,
@@ -1999,6 +2005,8 @@ class VideoLabelerApp:
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
         def worker():
             import queue as _q, time as _time
+            from utils.video import prepare_cropped_frames
+            from core.inference import run_siglip_batch
             total             = len(self.video_files)
             already_done      = set(self.batch_history.keys())
             preprocess_workers = int(os.getenv("PREPROCESS_WORKERS", "8"))
@@ -2223,7 +2231,21 @@ class VideoLabelerApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+def _start_siglip_preload_bg():
+    """Preload SigLIP model in background thread — starts ~800ms after window shows."""
+    def _load():
+        try:
+            from core.siglip_model import preload_siglip
+            preload_siglip()
+        except Exception:
+            pass
+    threading.Thread(target=_load, daemon=True, name="siglip-early-preload").start()
+
+
 if __name__ == "__main__":
     root = ctk.CTk()
     app = VideoLabelerApp(root)
+    # Start SigLIP preload shortly after window renders — heavy import happens
+    # in background so UI stays responsive; model ready before user runs inference.
+    root.after(800, _start_siglip_preload_bg)
     root.mainloop()

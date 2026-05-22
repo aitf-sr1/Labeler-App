@@ -10,7 +10,6 @@ Panel ini tidak menyimpan state anotasi — hanya tampilan.
 import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
-import cv2
 
 from .constants import LABELS, LABEL_COLORS
 
@@ -433,6 +432,7 @@ class LeftPanel:
         Args:
             frame_bgr: Frame dalam format BGR (output OpenCV).
         """
+        import cv2  # lazy import — cached after first call, no startup overhead
         img = ImageTk.PhotoImage(
             image=Image.fromarray(
                 cv2.cvtColor(cv2.resize(frame_bgr, (640, 320)), cv2.COLOR_BGR2RGB)

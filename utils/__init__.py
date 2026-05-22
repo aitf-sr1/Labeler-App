@@ -7,4 +7,7 @@ from .io import (
     load_skipped, save_skipped,
     load_thresholds, save_thresholds,
 )
-from .video import prepare_cropped_frames
+
+# prepare_cropped_frames (from utils.video) is NOT imported here —
+# utils/video.py imports cv2 + mediapipe which are heavy.
+# Import directly when needed: from utils.video import prepare_cropped_frames
