@@ -1224,6 +1224,18 @@ class VideoLabelerApp:
             for i, lbl in enumerate(LABELS):
                 self.frame_annotations[rel_path][str(f_idx)][lbl] = \
                     res["per_label"][i]["frame_preds"][f_idx]
+            # Enforce mutual exclusion per frame: jika keduanya 1, nol-kan yang lebih lemah
+            for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+                fa_frame = self.frame_annotations[rel_path][str(f_idx)]
+                if fa_frame.get(lbl_a, 0) == 1 and fa_frame.get(lbl_b, 0) == 1:
+                    idx_a = LABELS.index(lbl_a)
+                    idx_b = LABELS.index(lbl_b)
+                    score_a = res["per_label"][idx_a]["frame_scores"][f_idx]
+                    score_b = res["per_label"][idx_b]["frame_scores"][f_idx]
+                    if score_a >= score_b:
+                        fa_frame[lbl_b] = 0
+                    else:
+                        fa_frame[lbl_a] = 0
 
         # Build batch_history dengan koreksi rejected frames
         per_label_history = {}
