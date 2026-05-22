@@ -1672,13 +1672,55 @@ class VideoLabelerApp:
                                         rel_path=rel_path)
             self._apply_siglip_result(rel_path, res)
 
+            # ── DEBUG DUMP ────────────────────────────────────────────────────
+            _n   = res.get("n_frames", 2)
+            _ths = res["thresholds"]
+            _fa  = self.frame_annotations.get(rel_path, {})
+            _lines = [
+                "",
+                "=" * 64,
+                f"  VIDEO : {rel_path}",
+                "=" * 64,
+            ]
+            for _fi in range(_n):
+                _rej     = _fa.get(str(_fi), {}).get("_rejected", False)
+                _rej_tag = "  ⚠ REJECTED" if _rej else ""
+                _lines.append(f"\n  Frame {_fi}{_rej_tag}")
+                for _ii, _lbl in enumerate(LABELS):
+                    _r     = res["per_label"][_ii]
+                    _score = _r["frame_scores"][_fi] if _fi < len(_r["frame_scores"]) else 0.0
+                    _pred  = _r["frame_preds"][_fi]  if _fi < len(_r["frame_preds"])  else 0
+                    _mark  = "✓" if _pred == 1 else "✗"
+                    _lines.append(
+                        f"    {_mark} {_lbl:<12} score={_score:.4f}  thr={_ths[_ii]:.2f}  pred={_pred}"
+                    )
+            _lines.append("\n  FINAL (avg hybrid per label):")
+            for _ii, _lbl in enumerate(LABELS):
+                _r      = res["per_label"][_ii]
+                _ph     = self.batch_history.get(rel_path, {}).get("per_label", {}).get(str(_ii), {})
+                _fin    = _ph.get("prediction", 0)
+                _avg    = _r.get("avg_score", 0.0)
+                _sig    = _r.get("siglip_avg", 0.0)
+                _land   = _r.get("landmark_avg")
+                _ls     = f"  land={_land:.4f}" if _land is not None else "              "
+                _mark   = "✓" if _fin == 1 else "✗"
+                _lines.append(
+                    f"    {_mark} {_lbl:<12} siglip={_sig:.4f}{_ls}  hybrid={_avg:.4f}  "
+                    f"thr={_ths[_ii]:.2f}  → FINAL={_fin}"
+                )
+            _lines += [
+                "",
+                "  ↑ Copy blok ini dan kirim ke Claude untuk minta revisi label.",
+                "=" * 64,
+                "",
+            ]
+            print("\n".join(_lines))
+            # ─────────────────────────────────────────────────────────────────
+
             def update_ui():
                 for i, lbl in enumerate(LABELS):
                     r = res["per_label"][i]
                     self.right_panel.update_ai_score_bar(lbl, list(r["frame_scores"]), r.get("threshold"))
-                    land = f" land={r['landmark_avg']:.3f}" if r.get("landmark_avg") is not None else ""
-                    print(f"{lbl}: hybrid={r['avg_score']:.3f} "
-                          f"siglip={r['siglip_avg']:.3f}{land}")
                 self.save_current_state()
                 thrs = [v.get() for v in self.right_panel.threshold_vars]
                 update_batch_meta(self.path_json_batch_history, self.rules, thrs)
