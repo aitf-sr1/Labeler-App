@@ -619,6 +619,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
 
     pucker_co  = _clamp(g("mouthPucker") / max(ccfg["pucker_th"], 1e-6), 0, 1)
 
+    # Ketegangan bibir atas dengan rahang tertutup: bibir menegang saat fokus/konsentrasi berat.
+    # "mouthUpperUp" tinggi + jawOpen rendah + tanpa senyum = lippress saat bingung/konsentrasi,
+    # bukan ekspresi bicara atau tertawa. Hanya aktif kalau jaw nyaris tertutup.
+    jaw_closed_gate = _clamp(1.0 - jo / max(ccfg.get("jaw_closed_th", 0.10), 1e-6), 0, 1)
+    mu_avg    = (g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2
+    mu_conf_v = _clamp((mu_avg - ccfg.get("mu_conf_th", 0.40)) / max(ccfg.get("mu_conf_range", 0.30), 1e-6), 0, 1) * jaw_closed_gate
+
     sig_brow_conf = max(brow_dn_v, brow_in_v)
     sig_mata_conf = max(iris_up_v, look_up_v, look_dn_v)  # tatap ke atas ATAU bawah = ciri confusion
 
@@ -626,7 +633,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # max() tunggal terlalu permisif — roll sedikit SAJA atau jaw sedikit SAJA
     # seharusnya tidak cukup. Rata-rata 2 sinyal terkuat mensyaratkan
     # setidaknya 2 cue hadir bersamaan untuk skor tinggi.
-    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v, squint_conf_v], reverse=True)
+    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v, squint_conf_v, mu_conf_v], reverse=True)
     base_conf = _conf_signals[0] * 0.6 + _conf_signals[1] * 0.4
     conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 
