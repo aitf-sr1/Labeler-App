@@ -371,7 +371,14 @@ class VideoLabelerApp:
             try:
                 import json as _json
                 with open(path) as f:
-                    return _json.load(f)
+                    data = _json.load(f)
+                # Bersihkan konflik mutual exclusion dari data lama
+                for rel_path, frames in data.items():
+                    for f_idx, fdata in frames.items():
+                        for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+                            if fdata.get(lbl_a, 0) == 1 and fdata.get(lbl_b, 0) == 1:
+                                fdata[lbl_b] = 0  # default: pertahankan lbl_a
+                return data
             except Exception:
                 pass
         return {}
@@ -1487,6 +1494,13 @@ class VideoLabelerApp:
                 continue
 
             video_labels = {lbl: 1 if vote[lbl] >= MAJORITY else 0 for lbl in LABELS}
+            # Mutual exclusion pada video_labels: jika keduanya 1, pertahankan yang lebih banyak vote
+            for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+                if video_labels[lbl_a] == 1 and video_labels[lbl_b] == 1:
+                    if vote[lbl_a] >= vote[lbl_b]:
+                        video_labels[lbl_b] = 0
+                    else:
+                        video_labels[lbl_a] = 0
             videos_by_uuid[uuid].append({
                 "file_path": rel_path,
                 "frames":    frames,
@@ -1533,13 +1547,11 @@ class VideoLabelerApp:
                         frame_path = os.path.join(
                             "cropped_faces", "clean", base, f"frame_{i:02d}.jpg"
                         )
-                        w.writerow([
-                            frame_path,
-                            fdata.get("Boredom",     v["boredom"]),
-                            fdata.get("Engagement",  v["engagement"]),
-                            fdata.get("Confusion",   v["confusion"]),
-                            fdata.get("Frustration", v["frustration"]),
-                        ])
+                        row = {lbl: fdata.get(lbl, int(v[lbl.lower()])) for lbl in LABELS}
+                        for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
+                            if row[lbl_a] == 1 and row[lbl_b] == 1:
+                                row[lbl_b] = 0
+                        w.writerow([frame_path] + [row[lbl] for lbl in LABELS])
                         written += 1
             return written
 
