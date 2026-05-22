@@ -582,8 +582,17 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     pitch_cu   = _clamp((r.pitch - ccfg["pitch_start"]) / max(ccfg["pitch_range"], 1e-6), 0, 1)
     brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(ccfg["brow_dn_th"], 1e-6), 0, 1)
     brow_in_raw = g("browInnerUp")
-    co_signal   = max(iris_up_v, look_up_v, pitch_cu, look_dn_v)
-    brow_in_v   = _clamp(brow_in_raw / max(ccfg["brow_in_th"], 1e-6), 0, 1) * _clamp(co_signal / max(ccfg["brow_in_co_gate"], 1e-6), 0, 1)
+
+    # squint sebagai sinyal mata: sipit + alis naik dalam = thinking/confused
+    # Dijadikan co_signal khusus browInnerUp (iris/mata only, per kalibrasi)
+    squint_conf_th    = ccfg.get("squint_conf_th", 0.15)
+    squint_conf_range = ccfg.get("squint_conf_range", 0.25)
+    squint_as_co  = _clamp(squint_avg / max(squint_conf_th, 1e-6), 0, 1)
+    squint_conf_v = _clamp((squint_avg - squint_conf_th) / max(squint_conf_range, 1e-6), 0, 1)
+
+    co_signal  = max(iris_up_v, look_up_v, pitch_cu, look_dn_v)
+    brow_in_co = max(iris_up_v, look_up_v, squint_as_co)   # iris/mata only
+    brow_in_v  = _clamp(brow_in_raw / max(ccfg["brow_in_th"], 1e-6), 0, 1) * _clamp(brow_in_co / max(ccfg["brow_in_co_gate"], 1e-6), 0, 1)
 
     # Kepala miring ke samping (roll) — bukan muterin kepala (yaw) seperti boredom.
     # Siswa bingung sering miringin kepala sedikit. Dead zone supaya noise tidak trigger.
@@ -617,7 +626,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # max() tunggal terlalu permisif — roll sedikit SAJA atau jaw sedikit SAJA
     # seharusnya tidak cukup. Rata-rata 2 sinyal terkuat mensyaratkan
     # setidaknya 2 cue hadir bersamaan untuk skor tinggi.
-    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v], reverse=True)
+    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v, squint_conf_v], reverse=True)
     base_conf = _conf_signals[0] * 0.6 + _conf_signals[1] * 0.4
     conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 

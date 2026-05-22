@@ -95,6 +95,8 @@ DEFAULT_RULES = {
         "attentive_dead": 8.0,       # gaze_dev < ini = full attentive gate (1.0)
         "attentive_range": 20.0,     # gaze_dev > dead+range → gate turun ke floor
         "attentive_floor": 0.3,      # floor gate — bingung sebentar boleh lihat sekeliling
+        "squint_conf_th": 0.15,           # eyeSquint avg >= ini = mulai aktif sebagai co_signal browInnerUp dan sinyal confusion langsung
+        "squint_conf_range": 0.25,        # range squint_conf_v di atas threshold (saturasi di 0.40)
         "bore_conf_suppress_bore": 0.40,  # boredom tinggi → conf ditekan (bosan = checked out, bukan aktif bingung)
         "frus_conf_suppress": 0.5,   # frustrasi tinggi → conf ditekan (mutual exclusive)
         "look_dn_th": 0.40,          # lookDown > ini = mulai look_dn_v (lihat bawah = bisa confusion)
