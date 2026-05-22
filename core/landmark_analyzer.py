@@ -638,11 +638,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 
     # Gaze gate: confusion masih membutuhkan attention ke konten (definisi semantik).
-    # Floor di 0.3 supaya brief look-away saat thinking tidak menghilangkan confusion sepenuhnya.
+    # Pakai gaze_dev_eng (tanpa komponen ke bawah) — lihat keyboard/kertas = berpikir = BUKAN distraksi.
+    # Sama dengan engagement: nunduk tidak mengurangi gate. Hanya gaze ke samping/atas yang mengurangi.
     attentive_dead  = ccfg.get("attentive_dead",  8.0)
     attentive_range = ccfg.get("attentive_range", 20.0)
     attentive_floor = ccfg.get("attentive_floor", 0.3)
-    attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev - attentive_dead) / max(attentive_range, 1e-6), attentive_floor, 1.0)
+    attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev_eng - attentive_dead) / max(attentive_range, 1e-6), attentive_floor, 1.0)
     conf = _clamp(conf * attentive_gate, 0, 1)
 
     # Smile gate: senyum dan bingung adalah mutual exclusive secara semantik.
