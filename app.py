@@ -50,6 +50,7 @@ from utils import (
     load_thresholds, save_thresholds,
 )
 from core import run_siglip_on_frames, load_rules, save_rules, DEFAULT_RULES, recalculate_batch
+from core.siglip_model import preload_siglip
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -270,6 +271,7 @@ class VideoLabelerApp:
             messagebox.showinfo("Info", "Tidak ada file .mp4 ditemukan.")
             return
 
+        preload_siglip()   # mulai load model di background supaya siap sebelum proses pertama
         self._load_data()
         self.current_index = 0
         self.load_video()
