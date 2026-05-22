@@ -102,6 +102,15 @@ def recalculate_batch(
             lr = _reconstruct_lr(fd)
             land_scores.append(compute_emotion_scores(lr, rules))
 
+        # Filter dead frames (semua skor ≈ 0 = glitch MediaPipe)
+        DEAD_THRESHOLD = 0.01
+        valid_land_frames = [
+            f for f in range(n_frames)
+            if sum(land_scores[f]) > DEAD_THRESHOLD
+        ]
+        if not valid_land_frames:
+            valid_land_frames = list(range(n_frames))  # fallback
+
         # Rejected frames dari frame_annotations
         fa_vid = frame_annotations.get(rel_path, {})
         rejected_set = {
@@ -149,9 +158,13 @@ def recalculate_batch(
             vote_pos    = sum(valid_preds)
             prediction  = 1 if (n_valid > 0 and vote_pos >= max(1, (n_valid + 1) // 2)) else 0
 
-            avg_score   = round(sum(hybrid_scores) / n_frames, 4)
+            avg_score   = round(
+                sum(hybrid_scores[f] for f in valid_land_frames) / max(len(valid_land_frames), 1), 4
+            )
             siglip_avg  = round(sum(siglip_scores) / n_frames, 4)
-            land_avg    = round(sum(land_scores[f][i] for f in range(n_frames)) / n_frames, 4)
+            land_avg    = round(
+                sum(land_scores[f][i] for f in valid_land_frames) / max(len(valid_land_frames), 1), 4
+            )
 
             per_label_history[str(i)] = {
                 "prediction":   prediction,
@@ -166,18 +179,37 @@ def recalculate_batch(
                 "frame_preds":  frame_preds,
             }
 
-        updated_history[rel_path] = {
-            "per_label":  per_label_history,
-            "thresholds": thresholds,
-        }
+
 
         # Update frame_annotations dari frame_preds baru
         from ui.constants import LABELS
         for f_idx in range(n_frames):
-            if "_rejected" not in new_fa_vid.get(str(f_idx), {}):
-                new_fa_vid[str(f_idx)] = new_fa_vid.get(str(f_idx), {})
+            if str(f_idx) not in new_fa_vid:
+                new_fa_vid[str(f_idx)] = {}
             for li, lbl in enumerate(LABELS):
                 new_fa_vid[str(f_idx)][lbl] = per_label_history[str(li)]["frame_preds"][f_idx]
+
+        # Auto-reject per FRAME: hanya frame tanpa label yang ditolak
+        rejected_count = 0
+        for f_idx in range(n_frames):
+            frame_has_label = any(
+                per_label_history[str(i)]["frame_preds"][f_idx] == 1
+                for i in range(4)
+            )
+            if not frame_has_label:
+                new_fa_vid[str(f_idx)]["_rejected"] = True
+                rejected_count += 1
+        if rejected_count > 0:
+            print(f"  [NO_LABEL] {rel_path} → {rejected_count}/{n_frames} frame ditolak")
+
+        # Update no_label flag
+        no_label_flag = rejected_count == n_frames
+
+        updated_history[rel_path] = {
+            "per_label":  per_label_history,
+            "thresholds": thresholds,
+            "no_label":   no_label_flag,
+        }
 
         updated_fa[rel_path] = new_fa_vid
 

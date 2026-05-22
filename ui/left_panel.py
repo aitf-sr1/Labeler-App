@@ -71,20 +71,20 @@ class LeftPanel:
         scrollable_frame.bind("<Leave>", on_leave)
 
     def _build_video_player(self, parent):
-        vid_wrap = ctk.CTkFrame(parent, fg_color="#111111", corner_radius=8)
+        vid_wrap = ctk.CTkFrame(parent, fg_color="#0d0d0d", corner_radius=12)
         vid_wrap.grid(row=0, column=0, sticky="ew")
 
         self.canvas_video = tk.Canvas(
-            vid_wrap, width=640, height=320, bg="#111111", highlightthickness=0
+            vid_wrap, width=640, height=320, bg="#0d0d0d", highlightthickness=0
         )
-        self.canvas_video.pack(pady=4)
+        self.canvas_video.pack(pady=(8, 4))
         self.canvas_image_item = self.canvas_video.create_image(0, 0, anchor="nw")
 
         ctrl = ctk.CTkFrame(vid_wrap, fg_color="transparent")
-        ctrl.pack(fill="x", padx=8, pady=(0, 6))
+        ctrl.pack(fill="x", padx=10, pady=(0, 8))
         ctk.CTkButton(
             ctrl, text="Play / Pause", command=self.app.toggle_play,
-            font=self.app.font_sm, width=120, height=28,
+            font=self.app.font_sm, width=120, height=30, corner_radius=8,
         ).pack(side="left", padx=(0, 10))
         self.slider = ctk.CTkSlider(ctrl, from_=0, to=100, command=self.app.on_slider_move)
         self.slider.pack(side="left", fill="x", expand=True, padx=(0, 8))
@@ -92,28 +92,28 @@ class LeftPanel:
 
     def _build_frame_gallery(self, parent):
         gallery_scroll = ctk.CTkScrollableFrame(
-            parent, fg_color=("f3f4f6", "#161622"), corner_radius=8
+            parent, fg_color=("f3f4f6", "#161622"), corner_radius=12
         )
-        gallery_scroll.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        gallery_scroll.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         self._bind_mousewheel(gallery_scroll)
 
         hdr = ctk.CTkFrame(gallery_scroll, fg_color="transparent")
-        hdr.pack(fill="x", padx=10, pady=(8, 4))
+        hdr.pack(fill="x", padx=12, pady=(10, 6))
         ctk.CTkLabel(
             hdr, text="Frame-level labels — klik kanan untuk toggle",
-            font=self.app.font_sm, text_color="gray",
+            font=("Poppins", 9), text_color=("#9ca3af", "#6b7280"),
         ).pack(side="left")
-
 
         tab_row = ctk.CTkFrame(hdr, fg_color="transparent")
         tab_row.pack(side="right")
         for lbl in LABELS:
             color = LABEL_COLORS[lbl]
             b = ctk.CTkButton(
-                tab_row, text=lbl, width=88, height=24,
+                tab_row, text=lbl, width=88, height=26,
                 font=("Poppins", 10, "bold"),
                 fg_color="transparent",
                 border_width=1, border_color=color,
+                corner_radius=8,
                 text_color=color, hover_color=("e5e7eb", "#2a2a3a"),
                 command=lambda l=lbl: self.app._set_active_tab(l),
             )
@@ -123,10 +123,10 @@ class LeftPanel:
         self.lbl_frame_quality = ctk.CTkLabel(
             gallery_scroll, text="", font=("Poppins", 9), text_color="#f59e0b"
         )
-        self.lbl_frame_quality.pack(anchor="w", padx=12, pady=(0, 4))
+        self.lbl_frame_quality.pack(anchor="w", padx=14, pady=(0, 4))
 
         grid_frame = ctk.CTkFrame(gallery_scroll, fg_color="transparent")
-        grid_frame.pack(expand=True, fill="both", padx=10, pady=(0, 8))
+        grid_frame.pack(expand=True, fill="both", padx=12, pady=(0, 10))
         for col in range(2):
             grid_frame.columnconfigure(col, weight=1)
 
@@ -136,16 +136,16 @@ class LeftPanel:
             row_g, col_g = i // 2, i % 2
 
             # Outer cell: gambar + dot + manual checkboxes (vertikal)
-            outer = tk.Frame(grid_frame, bg="#0d0d0d")
+            outer = tk.Frame(grid_frame, bg="#161622", bd=0)
             outer.grid(row=row_g, column=col_g, padx=8, pady=8)
 
             # Baris atas: canvas + dot strip
-            cell = tk.Frame(outer, bg="#0d0d0d")
+            cell = tk.Frame(outer, bg="#161622")
             cell.pack()
 
             cv_widget = tk.Canvas(
                 cell, width=360, height=360,
-                bg="#111", highlightthickness=2, highlightbackground="#333",
+                bg="#111", highlightthickness=2, highlightbackground="#2d2d40",
             )
             cv_widget.pack(side="left")
             cv_widget.bind("<Button-1>", lambda e, idx=i: self.app.seek_to_frame(idx))
@@ -153,12 +153,13 @@ class LeftPanel:
             cv_widget.bind("<Double-Button-1>", lambda e, idx=i: self.app.toggle_frame_reject(idx))
             self.frame_canvases.append(cv_widget)
 
-            dot_cv = tk.Canvas(cell, width=20, height=360, bg="#0d0d0d", highlightthickness=0)
-            dot_cv.pack(side="left", padx=(4, 0))
+            dot_cv = tk.Canvas(cell, width=20, height=360, bg="#161622", highlightthickness=0, cursor="hand2")
+            dot_cv.pack(side="left", padx=(14, 0))
+            dot_cv.bind("<Button-1>", lambda e, idx=i: self.app.toggle_frame_label_by_dot(idx, e.y))
             self.frame_dot_canvases.append(dot_cv)
 
             # Baris bawah: checkboxes manual label (tersembunyi default)
-            chk_row = tk.Frame(outer, bg="#0d0d0d")
+            chk_row = tk.Frame(outer, bg="#161622")
             # TIDAK di-pack sekarang — muncul saat semi_manual aktif
             frame_vars = {}
             for lbl in LABELS:
@@ -166,8 +167,8 @@ class LeftPanel:
                 var = tk.BooleanVar(value=False)
                 cb = tk.Checkbutton(
                     chk_row, text=lbl, variable=var,
-                    bg="#0d0d0d", fg=color, selectcolor="#1a1a2e",
-                    activebackground="#0d0d0d", activeforeground=color,
+                    bg="#161622", fg=color, selectcolor="#1a1a2e",
+                    activebackground="#161622", activeforeground=color,
                     font=("Poppins", 9, "bold"), bd=0,
                     command=lambda fi=i, l=lbl, v=var: self.app._on_manual_check(fi, l, v.get()),
                 )
@@ -178,8 +179,8 @@ class LeftPanel:
         ctk.CTkLabel(
             gallery_scroll,
             text="Klik kiri: seek  |  Klik kanan: toggle label  |  Double-klik: tolak frame",
-            font=("Poppins", 9), text_color="#6b7280",
-        ).pack(pady=(0, 6))
+            font=("Poppins", 9), text_color=("#9ca3af", "#4b5563"),
+        ).pack(pady=(0, 8))
 
     def show_manual_checkboxes(self, visible: bool):
         """Tampilkan atau sembunyikan baris checkbox manual label di bawah tiap frame."""
@@ -200,7 +201,7 @@ class LeftPanel:
         """Tampilkan state loading di semua canvas frame (saat prepare_cropped_frames berjalan)."""
         for cv_widget in self.frame_canvases:
             cv_widget.delete("all")
-            cv_widget.configure(highlightbackground="#333")
+            cv_widget.configure(highlightbackground="#2d2d40")
             cv_widget.create_text(
                 180, 180, text="memuat...", fill="#4b5563",
                 font=("Poppins", 10), anchor="center",
@@ -257,8 +258,8 @@ class LeftPanel:
         dot_cv.delete("all")
         if not any(lbl in frame_data for lbl in LABELS):
             return
-        dot_r   = 6
-        gap     = 8
+        dot_r   = 7
+        gap     = 22
         n       = len(LABELS)
         total_h = n * (2 * dot_r) + (n - 1) * gap
         start_y = (360 - total_h) // 2
@@ -266,7 +267,7 @@ class LeftPanel:
         for j, lbl in enumerate(LABELS):
             cy     = start_y + j * (2 * dot_r + gap) + dot_r
             active = frame_data.get(lbl, 0) == 1
-            color  = LABEL_COLORS[lbl] if active else "#2a2a2a"
+            color  = LABEL_COLORS[lbl] if active else "#252535"
             border = LABEL_COLORS[lbl] if not active else color
             dot_cv.create_oval(
                 cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r,

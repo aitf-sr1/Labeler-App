@@ -8,44 +8,36 @@ LABEL_COLORS = {
 
 DEFAULT_PROMPT_GROUPS = [
     # 0 — Boredom
-    # Karena input adalah crop wajah, fokus pada EKSPRESI (mata ngantuk, menguap, tatapan kosong)
-    # bukan sekadar "noleh" (yang sudah ditangani MediaPipe).
-    # Termasuk: kepala nunduk + ekspresi kosong/mengantuk = bosan.
+    # Karena input adalah crop wajah, fokus pada EKSPRESI (mata ngantuk, menguap, tatapan kosong, menopang dagu)
     (
         "a face of a student with heavy droopy eyelids looking extremely sleepy and tired\n"
         "a face of a student yawning widely with an open mouth showing pure exhaustion\n"
-        "a face of a student with a completely blank, expressionless, and dull stare\n"
-        "a face of a student resting their chin on their hand with lazy unfocused eyes\n"
-        "a face of a student with half-closed eyes appearing mentally absent and disengaged\n"
-        "a face of a student with relaxed facial muscles and a vacant bored expression\n"
-        "a face of a student gazing far away into the distance with vacant unfocused eyes not paying attention to anything specific",
+        "a face of a student with progressively drooping eyelids and a limp unfocused expression, clearly losing focus\n"
+        "a face of a student with heavy-lidded half-closed eyes and a slack expressionless face, showing zero interest\n"
+        "a face of a student with half-closed eyes and a slack jaw, completely uninterested and mentally elsewhere\n"
+        "a face of a student gazing far away into the distance, mentally absent and completely disengaged",
         "",
     ),
     # 1 — Engagement
-    # Termasuk: mata lihat bawah ke keyboard/layar dengan ekspresi fokus = engaged.
-    # Kepala tidak harus menghadap ke kamera — yang penting ekspresi aktif dan alert.
+    # Termasuk: mata lihat bawah ke layar dengan ekspresi fokus, mata terbuka lebar, alis sedikit naik = engaged.
     (
-        "a face of a student making direct eye contact with clear focus and engaged attention\n"
-        "a face of a student with bright wide alert eyes actively watching and learning\n"
-        "a face of a student with an attentive expression and a subtle interested smile\n"
-        "a face of a student nodding and reacting with lively responsive facial features\n"
-        "a face of a student with slightly raised eyebrows showing curiosity and focus\n"
-        "a face of a student with a sharp, present, and actively involved expression\n"
-        "a face of a student looking down at keyboard or notes with an alert focused and engaged expression\n"
-        "a face of a student with eyes directed downward actively typing with an attentive concentrated look\n"
-        "a face of a student with head turned slightly but eyes clearly tracking the screen with focused engagement",
+        "a face of a student making direct eye contact with clear focus, highly engaged and alert\n"
+        "a face of a student with bright, wide, attentive eyes, actively watching and concentrating\n"
+        "a face of a student with concentrated eyes actively tracking content, showing clear mental engagement\n"
+        "a face of a student with a calm serious expression and steady open eyes, quietly focused and attentive\n"
+        "a face of a student looking down at a screen or keyboard with an intensely concentrated and focused look\n"
+        "a face of a student nodding or reacting, clearly processing information with a highly engaged expression",
         "",
     ),
     # 2 — Confusion
-    # Fokus: tidak mengerti — mulut sedikit terbuka, tatap atas/depan, ekspresi blank/lost
+    # Fokus: dahi berkerut (furrowed brow), mata menyipit (squinting), kepala miring, mulut sedikit terbuka
     (
-        "a face of a student with a slightly open mouth looking confused and uncertain\n"
-        "a face of a student with mouth slightly agape staring blankly not understanding\n"
-        "a face of a student with a slightly open mouth and raised inner brow looking lost\n"
-        "a face of a student with pursed or slightly open lips unable to follow the explanation\n"
-        "a face of a student looking confused and lost, clearly not understanding the lesson\n"
-        "a face of a student with a blank puzzled expression mouth slightly open\n"
-        "a face of a student staring with a slightly open mouth trying to process something unclear",
+        "a face of a student with heavily furrowed brows and squinting eyes, looking very confused and puzzled\n"
+        "a face of a student with a slightly open mouth and raised inner brows, looking completely lost\n"
+        "a face of a student tilting their head with a deeply perplexed and confused expression\n"
+        "a face of a student with pursed lips and slightly furrowed brow, looking uncertain and mentally stuck\n"
+        "a face of a student with a tense questioning expression, clearly trying to process something unclear\n"
+        "a face of a student with wide eyes and a slightly parted mouth, frozen in puzzlement and disbelief",
         "",
     ),
     # 3 — Frustration
@@ -55,8 +47,8 @@ DEFAULT_PROMPT_GROUPS = [
         "a face of a student with a fierce angry expression and gritting teeth\n"
         "a face of a student sighing heavily with eyes squeezed shut in frustration\n"
         "a face of a student pinching the bridge of their nose showing mental fatigue\n"
-        "a face of a student resting their head on their hand looking completely stressed out\n"
-        "a face of a student rubbing their eyes forcefully looking completely overwhelmed",
+        "a face of a student with a tense jaw and furrowed brows, looking completely overwhelmed and stressed\n"
+        "a face of a student rubbing their temples or eyes forcefully with a grimacing stressed expression",
         "",
     ),
 ]

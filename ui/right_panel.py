@@ -57,6 +57,15 @@ class RightPanel:
         self._build_statistics_panel(right)
         self._build_label_accordions(right)
 
+    # ── Section header helper ─────────────────────────────────────────────────
+    @staticmethod
+    def _section_label(parent, text: str):
+        ctk.CTkLabel(
+            parent, text=text,
+            font=("Poppins", 8, "bold"), text_color=("#9ca3af", "#6b7280"),
+            anchor="w",
+        ).pack(anchor="w", padx=14, pady=(8, 2))
+
     @staticmethod
     def _bind_mousewheel(scrollable_frame):
         """Aktifkan scroll mouse saat kursor masuk ke area scrollable frame."""
@@ -79,87 +88,115 @@ class RightPanel:
         scrollable_frame.bind("<Leave>", on_leave)
 
     def _build_action_buttons(self, parent):
-        top_btns = ctk.CTkFrame(parent, fg_color="transparent")
-        top_btns.pack(fill="x", padx=12, pady=(10, 4))
+        # ── Inferensi ─────────────────────────────────────────────────────────
+        self._section_label(parent, "INFERENSI")
+        infer_card = ctk.CTkFrame(parent, fg_color=("#eceef2", "#161620"), corner_radius=10)
+        infer_card.pack(fill="x", padx=12, pady=(0, 4))
+
+        top_btns = ctk.CTkFrame(infer_card, fg_color="transparent")
+        top_btns.pack(fill="x", padx=10, pady=(10, 4))
 
         self.btn_proses_satu = ctk.CTkButton(
             top_btns, text="Proses Video Ini",
             command=self.app._proses_satu,
             fg_color="#8b5cf6", hover_color="#7c3aed",
-            font=self.app.font_sm, height=30,
+            font=self.app.font_sm, height=32, corner_radius=8,
         )
-        self.btn_proses_satu.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.btn_proses_satu.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
         self.btn_proses_semua = ctk.CTkButton(
             top_btns, text="Batch Semua",
             command=self.app._toggle_batch,
             fg_color="#10b981", hover_color="#059669",
-            font=self.app.font_sm, height=30,
+            font=self.app.font_sm, height=32, corner_radius=8,
         )
         self.btn_proses_semua.pack(side="left", fill="x", expand=True)
 
+        status_row = ctk.CTkFrame(infer_card, fg_color="transparent")
+        status_row.pack(fill="x", padx=10, pady=(2, 4))
+
         self.lbl_batch_status = ctk.CTkLabel(
-            parent, text="Siap", font=("Poppins", 10), text_color="gray"
+            status_row, text="Siap", font=("Poppins", 9), text_color="gray", anchor="w",
         )
-        self.lbl_batch_status.pack(anchor="w", padx=14, pady=(0, 2))
+        self.lbl_batch_status.pack(side="left", fill="x", expand=True)
 
         self.btn_restart_batch = ctk.CTkButton(
-            parent, text="Restart Batch", command=self.app._restart_batch,
+            status_row, text="Restart", command=self.app._restart_batch,
             fg_color="#f59e0b", hover_color="#d97706",
-            font=("Poppins", 9), height=24, width=120,
+            font=("Poppins", 9), height=24, width=70, corner_radius=6,
         )
-        self.btn_restart_batch.pack(anchor="w", padx=14, pady=(0, 2))
+        self.btn_restart_batch.pack(side="right")
 
-        # ── Batch versioning ──────────────────────────────────────────────────
-        bv_frame = ctk.CTkFrame(parent, fg_color=("e8e8f0", "#1a1a2a"), corner_radius=4)
-        bv_frame.pack(fill="x", padx=14, pady=(4, 2))
+        # Batch versioning
+        bv_frame = ctk.CTkFrame(infer_card, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        bv_frame.pack(fill="x", padx=10, pady=(0, 10))
         self.batch_new_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
-            bv_frame, text="Buat batch baru:", variable=self.batch_new_var,
+            bv_frame, text="Batch baru:", variable=self.batch_new_var,
             font=("Poppins", 9), text_color="gray",
             checkbox_width=14, checkbox_height=14,
-        ).pack(side="left", padx=(6, 4), pady=4)
+        ).pack(side="left", padx=(8, 4), pady=6)
         self.batch_name_entry = ctk.CTkEntry(
             bv_frame, placeholder_text="nama file…", font=("Poppins", 9),
-            height=22, fg_color=("white", "#111122"),
+            height=24, corner_radius=6, fg_color=("white", "#111122"),
         )
-        self.batch_name_entry.pack(side="left", fill="x", expand=True, padx=(0, 6), pady=4)
+        self.batch_name_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), pady=6)
+
+        # ── Label & Dataset ───────────────────────────────────────────────────
+        self._section_label(parent, "LABEL & DATASET")
+        dataset_card = ctk.CTkFrame(parent, fg_color=("#eceef2", "#161620"), corner_radius=10)
+        dataset_card.pack(fill="x", padx=12, pady=(0, 4))
 
         self.btn_reset_label = ctk.CTkButton(
-            parent, text="Reset Label Video Ini", command=self.app.reset_current_labels,
+            dataset_card, text="Reset Label Video Ini", command=self.app.reset_current_labels,
             fg_color="#b91c1c", hover_color="#991b1b",
-            font=("Poppins", 9), height=24, width=120,
+            font=("Poppins", 9), height=26, corner_radius=7,
         )
-        self.btn_reset_label.pack(anchor="w", padx=14, pady=(6, 2))
+        self.btn_reset_label.pack(fill="x", padx=10, pady=(10, 6))
 
-        # ── Split Label 2D ────────────────────────────────────────────────────
-        split_hdr = ctk.CTkFrame(parent, fg_color="transparent")
-        split_hdr.pack(fill="x", padx=14, pady=(6, 0))
-        self.btn_split_2d = ctk.CTkButton(
-            split_hdr, text="Split Label 2D", command=self.app._split_dataset_2d,
+        # Split Label 2D
+        split_hdr = ctk.CTkFrame(dataset_card, fg_color="transparent")
+        split_hdr.pack(fill="x", padx=10, pady=(0, 4))
+        self.btn_split_ai = ctk.CTkButton(
+            split_hdr, text="Split AI", command=lambda: self.app._split_dataset_2d(source="ai"),
             fg_color="#0ea5e9", hover_color="#0284c7",
-            font=("Poppins", 9, "bold"), height=26,
+            font=("Poppins", 9, "bold"), height=28, corner_radius=7,
         )
-        self.btn_split_2d.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        ctk.CTkLabel(split_hdr, text="UUID idx:", font=("Poppins", 8), text_color="gray").pack(side="left")
+        self.btn_split_ai.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.btn_split_manual = ctk.CTkButton(
+            split_hdr, text="Split Manual", command=lambda: self.app._split_dataset_2d(source="manual"),
+            fg_color="#7c3aed", hover_color="#6d28d9",
+            font=("Poppins", 9, "bold"), height=28, corner_radius=7,
+        )
+        self.btn_split_manual.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkLabel(split_hdr, text="UUID:", font=("Poppins", 8), text_color="gray").pack(side="left")
         self.split_uuid_depth_entry = ctk.CTkEntry(
-            split_hdr, width=30, height=26, font=("Poppins", 9),
+            split_hdr, width=30, height=28, font=("Poppins", 9), corner_radius=6,
         )
         self.split_uuid_depth_entry.insert(0, "2")
         self.split_uuid_depth_entry.pack(side="left", padx=(2, 0))
 
-        sv_frame = ctk.CTkFrame(parent, fg_color=("e8e8f0", "#1a1a2a"), corner_radius=4)
-        sv_frame.pack(fill="x", padx=14, pady=(2, 2))
+        sv_frame = ctk.CTkFrame(dataset_card, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        sv_frame.pack(fill="x", padx=10, pady=(0, 4))
         self.split_new_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             sv_frame, text="Folder baru:", variable=self.split_new_var,
             font=("Poppins", 9), text_color="gray",
             checkbox_width=14, checkbox_height=14,
-        ).pack(side="left", padx=(6, 4), pady=4)
+        ).pack(side="left", padx=(8, 4), pady=5)
         ctk.CTkLabel(
             sv_frame, text="← nama batch di atas",
             font=("Poppins", 8), text_color="#6b7280",
-        ).pack(side="left", padx=(0, 6), pady=4)
+        ).pack(side="left", padx=(0, 6), pady=5)
+
+        self.btn_compare = ctk.CTkButton(
+            dataset_card, text="Bandingkan AI vs Manual",
+            command=self.app._compare_ai_vs_manual,
+            fg_color="transparent", border_width=1, border_color="#7c3aed",
+            text_color="#7c3aed", hover_color=("#ede9fe", "#2e1a4a"),
+            font=("Poppins", 9), height=26, corner_radius=7,
+        )
+        self.btn_compare.pack(fill="x", padx=10, pady=(0, 10))
 
         ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
             fill="x", padx=12, pady=(4, 6)
@@ -167,42 +204,64 @@ class RightPanel:
 
     def _build_statistics_panel(self, parent):
         import os
-        stats_frame = ctk.CTkFrame(parent, fg_color=("#f0f0f5", "#1e1e2e"), corner_radius=6)
+        self._section_label(parent, "STATISTIK")
+        stats_frame = ctk.CTkFrame(parent, fg_color=("#eceef2", "#161620"), corner_radius=10)
         stats_frame.pack(fill="x", padx=12, pady=(0, 6))
 
         hdr = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        hdr.pack(fill="x", padx=8, pady=(4, 0))
-        ctk.CTkLabel(hdr, text="Statistik AI", font=("Poppins", 10, "bold"), text_color="gray").pack(side="left")
+        hdr.pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(hdr, text="Hasil AI", font=("Poppins", 10, "bold"), text_color=("#4b5563", "#9ca3af")).pack(side="left")
 
-        self.lbl_stat_total = ctk.CTkLabel(hdr, text="Total: 0", font=("Poppins", 9, "bold"), text_color="#10b981")
-        self.lbl_stat_total.pack(side="right")
+        # ── Total diterima + ditolak dalam satu baris ─────────────────────────
+        summary_row = ctk.CTkFrame(stats_frame, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        summary_row.pack(fill="x", padx=10, pady=(4, 6))
+        summary_row.columnconfigure(0, weight=1)
+        summary_row.columnconfigure(1, weight=1)
+
+        acc_cell = ctk.CTkFrame(summary_row, fg_color="transparent")
+        acc_cell.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=6)
+        ctk.CTkLabel(acc_cell, text="✓", font=("Poppins", 11, "bold"), text_color="#10b981").pack(side="left")
+        self.lbl_stat_total = ctk.CTkLabel(
+            acc_cell, text="Diterima: 0",
+            font=("Poppins", 9, "bold"), text_color="#10b981",
+        )
+        self.lbl_stat_total.pack(side="left", padx=(2, 0))
+
+        rej_cell = ctk.CTkFrame(summary_row, fg_color="transparent")
+        rej_cell.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=6)
+        ctk.CTkLabel(rej_cell, text="✕", font=("Poppins", 11, "bold"), text_color="#ef4444").pack(side="left")
+        self.lbl_stat_rejected = ctk.CTkLabel(
+            rej_cell, text="Ditolak: 0",
+            font=("Poppins", 9, "bold"), text_color="#ef4444",
+        )
+        self.lbl_stat_rejected.pack(side="left", padx=(2, 0))
 
         # ── Batch file dropdown ───────────────────────────────────────────────
-        brow = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        brow.pack(fill="x", padx=8, pady=(0, 2))
+        brow = ctk.CTkFrame(stats_frame, fg_color=("#dde0e8", "#1e1e2c"), corner_radius=8)
+        brow.pack(fill="x", padx=10, pady=(0, 6))
 
-        ctk.CTkLabel(brow, text="Baca:", font=("Poppins", 8), text_color="gray").pack(side="left", padx=(0, 3))
+        ctk.CTkLabel(brow, text="File:", font=("Poppins", 8), text_color="gray").pack(side="left", padx=(8, 3), pady=5)
 
         self._batch_file_var = ctk.StringVar(value="batch_history.json")
         self._batch_file_menu = ctk.CTkOptionMenu(
             brow, variable=self._batch_file_var,
             values=["batch_history.json"],
-            width=175, height=22,
+            width=160, height=24,
             font=("Poppins", 8),
             command=self._on_batch_file_select,
         )
-        self._batch_file_menu.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        self._batch_file_menu.pack(side="left", fill="x", expand=True, padx=(0, 2), pady=5)
 
         ctk.CTkButton(
-            brow, text="↺", width=26, height=22,
-            font=("Poppins", 11), fg_color="transparent",
+            brow, text="↺", width=28, height=24,
+            font=("Poppins", 11), fg_color="transparent", corner_radius=6,
             text_color=("gray", "#6b7280"), hover_color=("#e5e7eb", "#374151"),
             command=self.refresh_batch_files,
-        ).pack(side="left")
+        ).pack(side="left", padx=(0, 6), pady=5)
 
         # ── Label count grid ──────────────────────────────────────────────────
         grid = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        grid.pack(fill="x", padx=8, pady=(2, 6))
+        grid.pack(fill="x", padx=10, pady=(0, 8))
 
         self.stat_labels = {}
         for i, lbl in enumerate(LABELS):
@@ -210,7 +269,7 @@ class RightPanel:
             row = i // 2
             col = i % 2
             var_label = ctk.CTkLabel(grid, text=f"{lbl}: 0", font=("Poppins", 9), text_color=color)
-            var_label.grid(row=row, column=col, sticky="w", padx=(0, 15))
+            var_label.grid(row=row, column=col, sticky="w", padx=(0, 15), pady=2)
             self.stat_labels[lbl] = var_label
 
     def refresh_batch_files(self, base_dir=None):
@@ -287,52 +346,62 @@ class RightPanel:
             print(f"[Stats] Gagal load {filename}: {exc}")
 
     def update_statistics(self, batch_history: dict):
-        total_frames = 0
+        total_frames   = 0
+        rejected_frames = 0
         counts = {lbl: 0 for lbl in LABELS}
 
-        for vid_data in batch_history.values():
+        fa = getattr(self.app, "frame_annotations", {})
+
+        for rel_path, vid_data in batch_history.items():
             per_label = vid_data.get("per_label", {})
+            fa_vid    = fa.get(rel_path, {})
 
-            try:
-                total_frames += len(per_label.get("0", {}).get("frame_preds", []))
-            except Exception:
-                total_frames += 6
+            frame_preds_0 = per_label.get("0", {}).get("frame_preds", [])
+            n_frames = len(frame_preds_0)
 
-            for i, lbl in enumerate(LABELS):
-                v_pos = per_label.get(str(i), {}).get("vote_pos", 0)
-                counts[lbl] += v_pos
+            for f_idx in range(n_frames):
+                if fa_vid.get(str(f_idx), {}).get("_rejected", False):
+                    rejected_frames += 1
+                    continue
+                total_frames += 1
+                for i, lbl in enumerate(LABELS):
+                    preds = per_label.get(str(i), {}).get("frame_preds", [])
+                    if f_idx < len(preds) and preds[f_idx] == 1:
+                        counts[lbl] += 1
 
-        self.lbl_stat_total.configure(text=f"Total: {total_frames} img")
+        self.lbl_stat_total.configure(text=f"Diterima: {total_frames}")
+        self.lbl_stat_rejected.configure(text=f"Ditolak: {rejected_frames}")
 
         for lbl in LABELS:
             self.stat_labels[lbl].configure(text=f"{lbl}: {counts[lbl]}")
 
     def _build_label_accordions(self, parent):
+        self._section_label(parent, "LABEL EMOSI")
         scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent", label_text="")
-        scroll.pack(fill="both", expand=True, padx=4, pady=(0, 6))
+        scroll.pack(fill="both", expand=True, padx=6, pady=(0, 8))
         self._bind_mousewheel(scroll)
 
         for i, lbl in enumerate(LABELS):
             color = LABEL_COLORS[lbl]
-            wrapper = ctk.CTkFrame(scroll, fg_color="transparent")
-            wrapper.pack(fill="x", pady=(4, 0), padx=2)
+            wrapper = ctk.CTkFrame(scroll, fg_color=("#eceef2", "#1a1a28"), corner_radius=10)
+            wrapper.pack(fill="x", pady=(0, 6), padx=2)
 
             hdr_btn = ctk.CTkButton(
                 wrapper, text=f"  {lbl}",
                 font=("Poppins", 11, "bold"),
                 anchor="w", fg_color="transparent",
                 text_color=color,
-                hover_color=("e5e7eb", "#252535"),
-                border_width=1, border_color=("d1d5db", "#333344"),
-                height=32,
+                hover_color=("#dde0e8", "#23233a"),
+                corner_radius=10,
+                height=36,
                 command=lambda idx=i: self._toggle_acc(idx),
             )
             hdr_btn.pack(fill="x")
             self.acc_open_flags.append(hdr_btn)
 
-            body  = ctk.CTkFrame(wrapper, fg_color=("f0f0f5", "#1e1e2e"), corner_radius=6)
+            body  = ctk.CTkFrame(wrapper, fg_color=("#e4e6ed", "#1e1e2e"), corner_radius=8)
             inner = ctk.CTkFrame(body, fg_color="transparent")
-            inner.pack(fill="x", padx=8, pady=6)
+            inner.pack(fill="x", padx=10, pady=8)
 
             self._build_ai_score_bar(inner, lbl, color)
             self._build_prompt_editor(inner, i)
@@ -348,42 +417,45 @@ class RightPanel:
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=(0, 1))
             ctk.CTkLabel(row, text=f"F{fi}",
-                         font=("Poppins", 9), text_color="gray", width=20).pack(side="left")
+                         font=("Poppins", 9), text_color=("#9ca3af", "#6b7280"), width=20).pack(side="left")
             sv = ctk.StringVar(value="—")
             ctk.CTkLabel(
-                row, textvariable=sv, font=("Poppins", 9),
-                text_color=color, width=34, anchor="e",
+                row, textvariable=sv, font=("Poppins", 9, "bold"),
+                text_color=color, width=36, anchor="e",
             ).pack(side="right")
             frame_labels.append(sv)
 
-            bar_bg = ctk.CTkFrame(parent, fg_color=("d1d5db", "#2a2a3a"), height=5, corner_radius=2)
-            bar_bg.pack(fill="x", pady=(1, 3))
-            sc = tk.Canvas(bar_bg, height=5, bg="#2a2a3a", highlightthickness=0)
+            bar_bg = ctk.CTkFrame(parent, fg_color=("#c8ccd6", "#252535"), height=7, corner_radius=3)
+            bar_bg.pack(fill="x", pady=(1, 4))
+            sc = tk.Canvas(bar_bg, height=7, bg="#252535", highlightthickness=0)
             sc.pack(fill="x")
             frame_canvases.append((sc, color))
 
         self.ai_score_labels[lbl]   = frame_labels
         self.ai_score_canvases[lbl] = frame_canvases
 
-        ctk.CTkFrame(parent, fg_color=("d1d5db", "#2e2e3e"), height=1).pack(
-            fill="x", pady=(0, 6)
+        ctk.CTkFrame(parent, fg_color=("#d0d3dc", "#2e2e3e"), height=1).pack(
+            fill="x", pady=(2, 8)
         )
 
     def _build_prompt_editor(self, parent, idx: int):
         ctk.CTkLabel(
             parent, text="Positive prompt — zero-shot",
-            font=("Poppins", 9), text_color="#10b981",
-        ).pack(anchor="w")
-        p_box = ctk.CTkTextbox(parent, height=76, font=("Poppins", 10), wrap="word")
+            font=("Poppins", 8, "bold"), text_color=("#6b7280", "#6b7280"),
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 2))
+        p_box = ctk.CTkTextbox(
+            parent, height=76, font=("Poppins", 10), wrap="word", corner_radius=8,
+        )
         p_box.insert("1.0", DEFAULT_PROMPT_GROUPS[idx][0])
-        p_box.pack(fill="x", pady=(2, 6))
+        p_box.pack(fill="x", pady=(0, 8))
         self.pos_textboxes.append(p_box)
 
     def _build_threshold_slider(self, parent, idx: int):
         thr_row = ctk.CTkFrame(parent, fg_color="transparent")
         thr_row.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(thr_row, text="Threshold",
-                     font=("Poppins", 9), text_color="gray").pack(side="left")
+                     font=("Poppins", 9), text_color=("#6b7280", "#6b7280")).pack(side="left")
 
         thr_entry = ctk.CTkEntry(thr_row, width=48, height=22,
                                   font=("Poppins", 9), justify="center")
@@ -452,10 +524,10 @@ class RightPanel:
             sc.delete("all")
             fill_w = int(w * score)
             if fill_w > 0:
-                sc.create_rectangle(0, 0, fill_w, 5, fill=color, outline="")
+                sc.create_rectangle(0, 0, fill_w, 7, fill=color, outline="")
             if threshold is not None:
                 tx = int(w * threshold)
-                sc.create_line(tx, 0, tx, 5, fill="#ffffff", width=1)
+                sc.create_line(tx, 0, tx, 7, fill="#ffffff", width=1)
             labels[fi].set(f"{score:.2f}" if score > 0 else "—")
 
     def get_prompts_and_thresholds(self) -> tuple:

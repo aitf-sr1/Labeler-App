@@ -181,11 +181,11 @@ def _analyze_hands(mp_image, h: int, w: int):
     try:
         res = _get_hand_landmarker().detect(mp_image)
     except Exception as e:
-        print(f"  [HAND] Exception saat detect: {e}")
+        if _DBG_LAND: print(f"  [HAND] Exception saat detect: {e}")
         return 0.0, 0.0, 0.0, [], []
 
     if not res.hand_landmarks:
-        print(f"  [HAND] Tidak ada tangan terdeteksi (res.hand_landmarks kosong)")
+        if _DBG_LAND: print(f"  [HAND] Tidak ada tangan terdeteksi")
         return 0.0, 0.0, 0.0, [], []
 
     # Kumpulkan semua titik landmark dari semua tangan yang terdeteksi
@@ -197,18 +197,18 @@ def _analyze_hands(mp_image, h: int, w: int):
     if not all_pts:
         return 0.0, 0.0, 0.0, [], []
 
-    print(f"  [HAND] Terdeteksi {len(res.hand_landmarks)} tangan, total {len(all_pts)} titik")
-    
+    if _DBG_LAND: print(f"  [HAND] Terdeteksi {len(res.hand_landmarks)} tangan, total {len(all_pts)} titik")
+
     # ZONASI TANGAN V3
     n = len(all_pts)
     pts_top = sum(1 for _, y in all_pts if -0.20 <= y < 0.25)
     pts_mid = sum(1 for _, y in all_pts if  0.25 <= y < 0.55)
     pts_bot = sum(1 for _, y in all_pts if  0.55 <= y <= 1.20)
     centered = sum(1 for x, _ in all_pts if 0.05 <= x <= 0.95)
-    print(f"  [HAND] centered={centered}, pts_top={pts_top}, pts_mid={pts_mid}, pts_bot={pts_bot}")
-    
+    if _DBG_LAND: print(f"  [HAND] centered={centered}, pts_top={pts_top}, pts_mid={pts_mid}, pts_bot={pts_bot}")
+
     if centered < 5:
-        print(f"  [HAND] DIFILTER: centered({centered}) < 5, skor di-reset 0")
+        if _DBG_LAND: print(f"  [HAND] DIFILTER: centered({centered}) < 5, skor di-reset 0")
         hand_top = hand_mid_bot = 0.0
     else:
         hand_top = _clamp(pts_top / 5, 0, 1)
@@ -245,11 +245,11 @@ def detect_hands_from_full_frame(
     try:
         res = _get_hand_landmarker().detect(mp_img)
     except Exception as e:
-        print(f"  [HAND-FULL] Exception: {e}")
+        if _DBG_LAND: print(f"  [HAND-FULL] Exception: {e}")
         return 0.0, 0.0, [], []
 
     if not res.hand_landmarks:
-        print(f"  [HAND-FULL] Tidak ada tangan di full frame")
+        if _DBG_LAND: print(f"  [HAND-FULL] Tidak ada tangan di full frame")
         return 0.0, 0.0, [], []
 
     x1_face, y1_face, x2_face, y2_face = face_bbox
@@ -278,8 +278,9 @@ def detect_hands_from_full_frame(
     # Tidak ada filter centered karena koordinat sudah di-remap ke crop
     in_crop = sum(1 for x, y in all_pts_remapped if -0.2 <= x <= 1.2 and -0.2 <= y <= 1.2)
 
-    print(f"  [HAND-FULL] Terdeteksi {len(res.hand_landmarks)} tangan, in_crop={in_crop}, "
-          f"pts_top={pts_top}, pts_mid={pts_mid}, pts_bot={pts_bot}")
+    if _DBG_LAND:
+        print(f"  [HAND-FULL] Terdeteksi {len(res.hand_landmarks)} tangan, in_crop={in_crop}, "
+              f"pts_top={pts_top}, pts_mid={pts_mid}, pts_bot={pts_bot}")
 
     if in_crop < 3:
         return 0.0, 0.0, [], []
@@ -356,7 +357,7 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
 
 
 # ── Emotion scoring ───────────────────────────────────────────────────────────
-_DBG_LAND = True   # set False untuk matikan debug log
+_DBG_LAND = True   # set False untuk matikan debug log (otomatis dimatikan saat batch)
 
 def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     """
@@ -367,9 +368,11 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         cfg: Dict parameter dari rules.py. Jika None, pakai DEFAULT_RULES.
 
     PRINSIP GAZE:
-      Satu metrik unified `gaze_dev` untuk Boredom & Engagement.
-      - Tatapan ke mana saja → gaze_dev tinggi → Bosan, Tidak Engaged.
-      - Tatapan lurus ke kamera → gaze_dev rendah → Tidak Bosan, Engaged.
+      Dua metrik gaze deviation:
+      - `gaze_dev_bore` (include roll) → Boredom. Kepala miring/noleh = bosan.
+      - `gaze_dev` (tanpa roll) → Engagement gate. Roll ditangani roll_gate terpisah
+        agar natural head tilt tidak mengurangi engagement.
+      Tatapan lurus ke kamera → gaze rendah → Tidak Bosan, Engaged.
     """
     from .rules import DEFAULT_RULES
     if cfg is None:
@@ -393,100 +396,279 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     gaze_v_raw = -r.pitch + r.iris_y * GAZE_SCALE_V
 
     look_down_v = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
-    gaze_v     = max(abs(gaze_v_raw), look_down_v * 40)
-    gaze_v_eff = max(0.0, gaze_v - gcfg["v_dead_zone"])
 
-    iris_side  = abs(r.iris_x) * GAZE_SCALE * gcfg["iris_side_mult"]
-    gaze_h_eff = max(abs(gaze_h), iris_side, abs(r.yaw))
-    gaze_dev   = (gaze_h_eff ** 2 + gaze_v_eff ** 2) ** 0.5
+    # Pisahkan komponen vertikal atas dan bawah:
+    #   - Ke atas : dead zone kecil (5°) — tatapan ke atas = melamun = boredom
+    #   - Ke bawah: dead zone besar (15°) — nunduk = baca/ngetik/berpikir = BUKAN boredom
+    gaze_v_up   = max(0.0, -gaze_v_raw)                             # komponen ke atas
+    gaze_v_down = max(max(0.0, gaze_v_raw), look_down_v * 40)       # komponen ke bawah + look_down blendshape
+    v_dz_up   = gcfg.get("v_dead_zone_up", 5.0)
+    v_dz_down = gcfg["v_dead_zone"]
+    gaze_v_up_eff   = max(0.0, gaze_v_up   - v_dz_up)
+    gaze_v_down_eff = max(0.0, gaze_v_down - v_dz_down)
+    gaze_v_eff = max(gaze_v_up_eff, gaze_v_down_eff)    # untuk engagement gate (atas dan bawah sama-sama suppress engagement)
+
+    # gaze_h sudah = yaw + iris_x*scale_h — menggabungkan head pose + posisi iris.
+    # Jika iris mengkompensasi head turn (natap depan walau kepala miring), gaze_h ≈ 0 → benar.
+    # iris_side dan abs(yaw) di max() MENGABAIKAN kompensasi ini dan menyebabkan false positive:
+    #   kepala miring 12° + iris kompensasi → gaze_h≈0 tapi iris_side=24° → boredom salah trigger.
+    # Solusi: gunakan abs(gaze_h) saja — kompensasi mata sudah terhitung.
+    gaze_h_eff = abs(gaze_h)
+
+    # Roll (kepala miring, ear→shoulder).
+    roll_gaze_eff = max(0.0, abs(r.roll) - gcfg.get("roll_dz", 5.0))
+
+    # gaze_dev_bore: untuk BOREDOM — include roll, HANYA gaze ke atas (bukan ke bawah).
+    #   Nunduk (ke bawah) = baca soal / ngetik / mikir = Engagement/Confusion, BUKAN Boredom.
+    #   Boredom datang dari: gaze ke samping + gaze ke atas + kepala miring.
+    #
+    # Roll ditambahkan secara ADITIF (bukan kuadrat/Euclidean):
+    #   Alasan: roll (kepala miring ke bahu) adalah dimensi inattention yang INDEPENDEN,
+    #   bukan komponen vektor gaze yang sama. Dengan kuadrat, roll=10° + gH=10° = 14.1° (terlalu kecil).
+    #   Dengan aditif, roll=10° + gH=10° = 20° — lebih mencerminkan dua cue distinct yang saling memperkuat.
+    gaze_dev_bore = (gaze_h_eff ** 2 + gaze_v_up_eff ** 2) ** 0.5 + roll_gaze_eff
+
+    # gaze_dev_eng: untuk ENGAGEMENT gate — TANPA roll, TANPA komponen ke bawah.
+    #   Lihat ke bawah = baca/ngetik = ENGAGEMENT, tidak boleh mengurangi gate engagement.
+    #   Ke bawah tetap dilindungi dead zone 15° via gaze_v_down_eff (sudah sangat toleran).
+    gaze_dev_eng  = (gaze_h_eff ** 2 + gaze_v_up_eff ** 2) ** 0.5
+
+    # gaze_dev: untuk confusion attentive gate — pakai SEMUA arah (atas+bawah), TANPA roll.
+    #   Confusion membutuhkan attention ke konten — gaze jauh ke manapun mengurangi gate.
+    gaze_dev      = (gaze_h_eff ** 2 + gaze_v_eff ** 2) ** 0.5
+
+    # ── Teeth gate (shared): gigi terlihat = BUKAN menguap ────────────────────
+    # Menguap = mulut terbuka lebar, bibir menutupi gigi (bentuk O).
+    # Jika gigi kelihatan (bibir atas naik / senyum) → jawOpen bukan menguap.
+    teeth_upper = (g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2
+    teeth_smile = max(g("mouthSmileLeft"), g("mouthSmileRight"))
+    teeth_signal = max(teeth_upper, teeth_smile)
+    teeth_gate_th = bcfg.get("teeth_gate_th", 0.20)
+    teeth_gate = _clamp(1.0 - teeth_signal / max(teeth_gate_th, 1e-6), 0, 1)
 
     # == 0: BOREDOM ============================================================
-    bore_gaze = _clamp((gaze_dev - bcfg["gaze_dead_zone"]) / bcfg["gaze_range"], 0, 1)
+    bore_gaze_raw = _clamp((gaze_dev_bore - bcfg["gaze_dead_zone"]) / max(bcfg["gaze_range"], 1e-6), 0, 1)
 
-    blink_v    = _clamp((max(g("eyeBlinkLeft"), g("eyeBlinkRight")) - bcfg["blink_dead_zone"]) / bcfg["blink_range"], 0, 1)
-    yawn_raw   = _clamp(g("jawOpen") / bcfg["yawn_threshold"], 0, 1) if r.pitch < 15 else 0.0
-    pitch_up_v = _clamp((r.pitch - 20) / 25, 0, 1)
+    # MUTLAK: hadap depan = gaze tidak menyimpang → komponen bore_gaze di-nol-kan.
+    # Tapi ekspresi (yawn, blink) dan chin-resting TETAP valid.
+    # Range kecil (4°) agar transisi cepat: di gaze_h=9° boredom sudah hampir penuh.
+    bore_fwd_th    = bcfg.get("fwd_yaw_th", 5.0)    # turun dari 8° ke 5°
+    bore_fwd_range = bcfg.get("fwd_yaw_range", 4.0)  # turun dari 8° ke 4°
+    bore_fwd_gate  = _clamp((gaze_h_eff - bore_fwd_th) / max(bore_fwd_range, 1e-6), 0, 1)
+    bore_gaze = bore_gaze_raw * bore_fwd_gate  # nol saat hadap depan, penuh di gaze_h≥9°
 
-    # Semua sinyal ekspresi (blink, yawn, pitch_up) hanya valid saat gaze deviated.
-    # look_down sudah masuk ke gaze_v_eff (via look_down_v * 40) sehingga
-    # siswa yang benar-benar nunduk sudah punya boreGaze tinggi — tidak perlu
-    # expr_gate tambahan dari look_down. Tanpa ini, blink saat ngetik = false boredom.
-    expr_gate = _clamp(bore_gaze / bcfg.get("expr_gaze_gate_th", 0.35), 0, 1)
-    yawn_v    = yawn_raw * expr_gate
-    sig_expr  = max(blink_v, yawn_v, pitch_up_v) * bcfg["sig_expr_weight"]
+    blink_avg  = (g("eyeBlinkLeft") + g("eyeBlinkRight")) / 2
+    squint_avg = (g("eyeSquintLeft") + g("eyeSquintRight")) / 2
+    squint_blink_correction = squint_avg * bcfg.get("squint_blink_correction", 0.5)
+    blink_corrected = max(0.0, blink_avg - squint_blink_correction)
+    blink_v    = _clamp((blink_corrected - bcfg["blink_dead_zone"]) / max(bcfg["blink_range"], 1e-6), 0, 1)
+    yawn_dz    = bcfg.get("yawn_dead_zone", 0.20)
+    _jaw_yawn  = max(0.0, g("jawOpen") - yawn_dz)
+    yawn_raw   = _clamp(_jaw_yawn / max(bcfg["yawn_threshold"] - yawn_dz, 1e-6), 0, 1) * teeth_gate if r.pitch < 15 else 0.0
+    pitch_up_v = _clamp((r.pitch - bcfg.get("pitch_up_th", 20.0)) / max(bcfg.get("pitch_up_range", 25.0), 1e-6), 0, 1)
+
+    # expr_gate dari bore_gaze yang sudah di-gate → blink/droopy tidak fire saat natap layar
+    expr_gate = _clamp(bore_gaze / max(bcfg.get("expr_gaze_gate_th", 0.35), 1e-6), 0, 1)
+
+    # yawn_direct: bypass gaze gate kalau yawn kuat (menguap nyata = bosan meski natap layar)
+    jaw_open_raw      = g("jawOpen") * teeth_gate if r.pitch < 15 else 0.0
+    yawn_strong_th    = bcfg.get("yawn_strong_th", 0.50)
+    yawn_strong_range = bcfg.get("yawn_strong_range", 0.25)
+    yawn_gate_bypass  = _clamp((jaw_open_raw - yawn_strong_th) / max(yawn_strong_range, 1e-6), 0, 1)
+    yawn_direct = yawn_raw * bcfg.get("yawn_bore_w", 0.75) * max(yawn_gate_bypass, expr_gate)
+    sig_expr       = max(blink_v, pitch_up_v) * bcfg["sig_expr_weight"]
     sig_expr_gated = sig_expr * expr_gate
 
-    base_bore  = max(bore_gaze, sig_expr_gated)
-    bore       = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr_gated) * bcfg["blend_b"], 0, 1)
+    base_bore = max(bore_gaze, sig_expr_gated, yawn_direct)
+    bore      = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr_gated) * bcfg["blend_b"], 0, 1)
+    _eye_wide_pre = (g("eyeWideLeft") + g("eyeWideRight")) / 2
+    bore = _clamp(bore - _eye_wide_pre * bcfg.get("eye_wide_suppress", 0.3), 0, 1)
+    bore = _clamp(bore - squint_avg * bcfg.get("squint_suppress", 0.3), 0, 1)
+    smile_gaze_max = bcfg.get("smile_gaze_max", 15.0)
+    facing_fwd_bore = _clamp(1.0 - gaze_dev_bore / max(smile_gaze_max, 1e-6), 0, 1)
+    bore = _clamp(bore - teeth_signal * bcfg.get("smile_suppress", 0.40) * facing_fwd_bore, 0, 1)
+
+    # chin-resting: bisa bosan meski natap layar (tidak butuh gaze gate)
+    chin_bore_th    = bcfg.get("chin_bore_th",    0.30)
+    chin_bore_range = bcfg.get("chin_bore_range", 0.40)
+    chin_bore_max   = bcfg.get("chin_bore_max",   0.65)
+    chin_bore_v = _clamp((r.hand_chin - chin_bore_th) / max(chin_bore_range, 1e-6), 0, 1)
+    bore = _clamp(max(bore, chin_bore_v * chin_bore_max), 0, 1)
+    # Tidak ada bore_fwd_gate pada bore final — sudah diterapkan di bore_gaze di awal
 
     # == 1: ENGAGEMENT =========================================================
-    gate = _clamp(1 - max(0, gaze_dev - ecfg["tegak_dead_zone"]) / ecfg["tegak_range"], 0, 1)
-    blink_heavy = max(0.0, max(g("eyeBlinkLeft"), g("eyeBlinkRight")) - ecfg["blink_heavy_th"]) / ecfg["blink_heavy_th"]
-    eng = gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy)
+    gate = _clamp(1 - max(0, gaze_dev_eng - ecfg["tegak_dead_zone"]) / max(ecfg["tegak_range"], 1e-6), 0, 1)
+
+    # Yaw gate: kepala miring ke samping (yaw besar) → engagement nol
+    yaw_gate_th    = ecfg.get("yaw_gate_th", 20.0)
+    yaw_gate_range = ecfg.get("yaw_gate_range", 10.0)
+    yaw_gate = _clamp(1.0 - max(0.0, abs(r.yaw) - yaw_gate_th) / max(yaw_gate_range, 1e-6), 0.0, 1.0)
+
+    # Roll gate: kepala miring kiri/kanan (roll besar) → engagement turun.
+    # Dead zone 10° agar natural head tilt (roll 5-8°) tidak kena penalti.
+    roll_gate_th    = ecfg.get("roll_gate_th", 10.0)   # mulai pengaruhi (°)
+    roll_gate_range = ecfg.get("roll_gate_range", 5.0)  # nol di th+range (default: 15°)
+    roll_gate = _clamp(1.0 - max(0.0, abs(r.roll) - roll_gate_th) / max(roll_gate_range, 1e-6), 0.0, 1.0)
+
+    # Sama seperti boredom: pakai rata-rata dan koreksi squint agar sipit tidak dianggap merem
+    blink_heavy_raw = max(0.0, blink_corrected - ecfg["blink_heavy_th"]) / max(ecfg["blink_heavy_th"], 1e-6)
+    blink_heavy = blink_heavy_raw
+    # Mata terbuka lebar (eyeWide) = sinyal attentif/fokus — kompensasi blink ringan
+    eye_wide    = (g("eyeWideLeft") + g("eyeWideRight")) / 2
+    eye_wide_boost = ecfg.get("eye_wide_boost", 0.20)
+    # Sipit (eyeSquint) = konsentrasi aktif — juga sinyal engagement, seperti eye_wide tapi lebih subtle
+    eye_squint_boost = ecfg.get("eye_squint_boost", 0.15)
+    # Menguap = tidak engaged. Pakai jawOpen langsung (BUKAN yawn_raw yang sudah dinormalisasi
+    # oleh boredom yawn_threshold) agar threshold engagement independen dan lebih stabil.
+    jaw_open_v   = g("jawOpen") * teeth_gate if r.pitch < 15 else 0.0
+    yawn_eng_pen = _clamp(jaw_open_v / max(ecfg.get("yawn_eng_th", 0.55), 1e-6), 0, 1) * ecfg.get("yawn_eng_pen_w", 0.35)
+    # Pitch gate: mendongak ke atas (pitch besar) = tidak fokus ke layar → engagement turun.
+    # Dead zone 15° agar variasi postur duduk normal tidak kena penalti (pitch 5-12° = wajar).
+    pitch_gate_th    = ecfg.get("pitch_gate_th", 15.0)
+    pitch_gate_range = ecfg.get("pitch_gate_range", 15.0)
+    pitch_gate = _clamp(1.0 - max(0.0, r.pitch - pitch_gate_th) / max(pitch_gate_range, 1e-6), 0.0, 1.0)
+    eng = _clamp(gate * yaw_gate * roll_gate * pitch_gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy - yawn_eng_pen + eye_wide * eye_wide_boost + squint_avg * eye_squint_boost), 0, 1)
+    # Senyum/gigi = sinyal engagement, tapi hanya kalau hadap depan (ketawa ke temen = bukan engaged)
+    smile_gaze_max_eng = ecfg.get("smile_gaze_max", 15.0)
+    facing_fwd_eng = _clamp(1.0 - gaze_dev_eng / max(smile_gaze_max_eng, 1e-6), 0, 1)
+    eng = _clamp(eng + teeth_signal * ecfg.get("smile_boost", 0.30) * facing_fwd_eng, 0, 1)
+
+    # Lihat ke bawah + hadap depan = baca/ngetik = boost engagement langsung.
+    # Gated oleh yaw (noleh sambil nunduk = bukan engaged ke konten).
+    look_dn_eng_th    = ecfg.get("look_dn_eng_th", 0.25)
+    look_dn_eng_boost = ecfg.get("look_dn_eng_boost", 0.20)
+    look_dn_eng_yaw_max = ecfg.get("look_dn_eng_yaw_max", 20.0)
+    look_dn_eng_gate  = _clamp(1.0 - abs(r.yaw) / max(look_dn_eng_yaw_max, 1e-6), 0, 1)
+    look_dn_eng_v     = _clamp((look_down_v - look_dn_eng_th) / max(0.3, 1e-6), 0, 1)
+    eng = _clamp(eng + look_dn_eng_v * look_dn_eng_boost * look_dn_eng_gate, 0, 1)
+
+    # Gaze tepat ke depan (dalam dead zone) = sinyal kuat engagement.
+    # Formula selama ini hanya menghindari penalti, tidak ada bonus aktif saat benar-benar natap layar.
+    gaze_fwd_v     = _clamp(1.0 - gaze_dev_eng / max(ecfg["tegak_dead_zone"], 1e-6), 0, 1)
+    gaze_fwd_bonus = ecfg.get("gaze_fwd_bonus", 0.15)
+    eng = _clamp(eng + gaze_fwd_v * gaze_fwd_bonus, 0, 1)
+
+    # Menopang dagu (chin-resting) mengurangi engagement — postur pasif/melamun, bukan aktif.
+    # Meskipun gaze masih ke depan, siswa yang menopang kepala di tangan tidak aktif terlibat.
+    chin_eng_pen_w = ecfg.get("hand_chin_eng_pen", 0.5)
+    eng = _clamp(eng - r.hand_chin * chin_eng_pen_w, 0, 1)
+
+    # Boredom dan engagement adalah near-mutually exclusive secara semantik.
+    # Dead zone 0.30 — boredom > 0.30 mulai suppress engagement secara agresif.
+    bore_suppress_th  = ecfg.get("bore_suppress_th", 0.30)
+    bore_suppress_v   = _clamp((bore - bore_suppress_th) / max(1.0 - bore_suppress_th, 1e-6), 0, 1)
+    bore_eng_suppress = ecfg.get("bore_eng_suppress", 0.70)
+    eng = _clamp(eng - bore_suppress_v * bore_eng_suppress, 0, 1)
+
+    # FLOOR hadap depan — tapi HANYA ketika boredom rendah.
+    # Kalau boredom sudah tinggi (bore > 0.30), floor tidak berlaku:
+    # siswa yang bosan tapi masih natap layar tidak boleh dipaksa jadi engaged.
+    fwd_eng_min     = ecfg.get("fwd_eng_min", 0.55)
+    fwd_eng_gaze_th = ecfg.get("fwd_eng_gaze_max", 10.0)
+    fwd_eng_gate    = _clamp(1.0 - gaze_dev_eng / max(fwd_eng_gaze_th, 1e-6), 0, 1)
+    bore_floor_cancel = _clamp(bore / max(ecfg.get("bore_floor_cancel_th", 0.30), 1e-6), 0, 1)
+    eng = max(eng, fwd_eng_min * fwd_eng_gate * (1.0 - bore_floor_cancel))
 
     # == 2: CONFUSION ==========================================================
-    iris_up_v  = _clamp((-r.iris_y - ccfg["iris_up_dead_zone"]) / ccfg["iris_up_range"], 0, 1)
-    look_up_v  = _clamp(max(g("eyeLookUpLeft"), g("eyeLookUpRight")) / ccfg["look_up_threshold"], 0, 1)
-    pitch_cu   = _clamp((r.pitch - ccfg["pitch_start"]) / ccfg["pitch_range"], 0, 1)
-    brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / ccfg["brow_dn_th"], 0, 1)
+    iris_up_v  = _clamp((-r.iris_y - ccfg["iris_up_dead_zone"]) / max(ccfg["iris_up_range"], 1e-6), 0, 1)
+    look_up_v  = _clamp(max(g("eyeLookUpLeft"), g("eyeLookUpRight")) / max(ccfg["look_up_threshold"], 1e-6), 0, 1)
+    # Lihat ke bawah (baca soal/layar) juga bisa confusion — gated oleh hadap depan
+    look_dn_th = ccfg.get("look_dn_th", 0.40)
+    look_dn_v  = _clamp((look_down_v - look_dn_th) / max(ccfg.get("look_dn_range", 0.30), 1e-6), 0, 1)
+    # Hanya aktif kalau hadap depan (yaw kecil) — lihat bawah sambil noleh = bukan confusion
+    look_dn_fwd_gate = _clamp(1.0 - abs(r.yaw) / max(ccfg.get("look_dn_yaw_max", 15.0), 1e-6), 0, 1)
+    look_dn_v *= look_dn_fwd_gate
+
+    pitch_cu   = _clamp((r.pitch - ccfg["pitch_start"]) / max(ccfg["pitch_range"], 1e-6), 0, 1)
+    brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(ccfg["brow_dn_th"], 1e-6), 0, 1)
     brow_in_raw = g("browInnerUp")
-    co_signal   = max(iris_up_v, look_up_v, pitch_cu)
-    brow_in_v   = _clamp(brow_in_raw / ccfg["brow_in_th"], 0, 1) * _clamp(co_signal / ccfg["brow_in_co_gate"], 0, 1)
+    co_signal   = max(iris_up_v, look_up_v, pitch_cu, look_dn_v)
+    brow_in_v   = _clamp(brow_in_raw / max(ccfg["brow_in_th"], 1e-6), 0, 1) * _clamp(co_signal / max(ccfg["brow_in_co_gate"], 1e-6), 0, 1)
 
     # Kepala miring ke samping (roll) — bukan muterin kepala (yaw) seperti boredom.
     # Siswa bingung sering miringin kepala sedikit. Dead zone supaya noise tidak trigger.
-    roll_v = _clamp((abs(r.roll) - ccfg.get("roll_dead_zone", 8.0)) / ccfg.get("roll_range", 15.0), 0, 1)
+    roll_v = _clamp((abs(r.roll) - ccfg.get("roll_dead_zone", 8.0)) / max(ccfg.get("roll_range", 15.0), 1e-6), 0, 1)
 
     smile_raw  = max(g("mouthSmileLeft"), g("mouthSmileRight"))
     smile_pen  = max(0.0, smile_raw - ccfg["smile_penalty_th"])
 
     jo = g("jawOpen")
+    jaw_rise = max(ccfg["jaw_peak"] - ccfg["jaw_start"], 1e-6)
+    jaw_fall = max(ccfg["jaw_end"]  - ccfg["jaw_peak"],  1e-6)
     if jo <= ccfg["jaw_start"]:
         jaw_val_conf = 0.0
     elif jo <= ccfg["jaw_peak"]:
-        jaw_val_conf = (jo - ccfg["jaw_start"]) / (ccfg["jaw_peak"] - ccfg["jaw_start"])
+        jaw_val_conf = (jo - ccfg["jaw_start"]) / jaw_rise
     elif jo <= ccfg["jaw_end"]:
-        jaw_val_conf = 1.0 - (jo - ccfg["jaw_peak"]) / (ccfg["jaw_end"] - ccfg["jaw_peak"])
+        jaw_val_conf = 1.0 - (jo - ccfg["jaw_peak"]) / jaw_fall
     else:
         jaw_val_conf = 0.0
 
+    # Teeth gate: mulut terbuka + gigi kelihatan = bukan bingung, lebih ke bicara/senyum
+    jaw_val_conf *= teeth_gate
     jaw_co = _clamp(jaw_val_conf - smile_pen * 1.5, 0, 1)
 
-    pucker_co  = _clamp(g("mouthPucker") / ccfg["pucker_th"], 0, 1)
+    pucker_co  = _clamp(g("mouthPucker") / max(ccfg["pucker_th"], 1e-6), 0, 1)
 
     sig_brow_conf = max(brow_dn_v, brow_in_v)
-    sig_mata_conf = max(iris_up_v, look_up_v)  # tatap ke atas = ciri khas confusion
+    sig_mata_conf = max(iris_up_v, look_up_v, look_dn_v)  # tatap ke atas ATAU bawah = ciri confusion
 
-    # Confusion = facial only. Sinyal: tatap atas, kepala miring, mulut sedikit terbuka, brow.
-    base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v)
+    # Confusion membutuhkan CO-OCCURRENCE minimal 2 sinyal.
+    # max() tunggal terlalu permisif — roll sedikit SAJA atau jaw sedikit SAJA
+    # seharusnya tidak cukup. Rata-rata 2 sinyal terkuat mensyaratkan
+    # setidaknya 2 cue hadir bersamaan untuk skor tinggi.
+    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v], reverse=True)
+    base_conf = _conf_signals[0] * 0.6 + _conf_signals[1] * 0.4
     conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 
     # Gaze gate: confusion masih membutuhkan attention ke konten (definisi semantik).
     # Floor di 0.3 supaya brief look-away saat thinking tidak menghilangkan confusion sepenuhnya.
     attentive_dead  = ccfg.get("attentive_dead",  8.0)
     attentive_range = ccfg.get("attentive_range", 20.0)
-    attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev - attentive_dead) / attentive_range, 0.3, 1.0)
+    attentive_floor = ccfg.get("attentive_floor", 0.3)
+    attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev - attentive_dead) / max(attentive_range, 1e-6), attentive_floor, 1.0)
     conf = _clamp(conf * attentive_gate, 0, 1)
+
+    # Smile gate: senyum dan bingung adalah mutual exclusive secara semantik.
+    # Senyum sedang (>= smile_conf_gate_th) → conf turun proporsional ke 0.
+    smile_gate_th = ccfg.get("smile_conf_gate_th", 0.20)
+    smile_gate    = _clamp(1.0 - smile_raw / max(smile_gate_th, 1e-6), 0.0, 1.0)
+    conf = _clamp(conf * smile_gate, 0, 1)
 
     # Hand suppression: kehadiran tangan dekat kepala (zona manapun) = cue Frustrasi, BUKAN Confusion.
     # Tangan terdeteksi → confusion ditekan additive supaya tidak fire bersama Frustration.
     hand_near_head = max(r.hand_forehead, r.hand_chin)
     conf = _clamp(conf - hand_near_head, 0, 1)
 
+    # FLOOR MUTLAK: Lihat ke bawah + hadap depan = confusion minimum.
+    # Ditaruh SETELAH semua gate supaya tidak bisa ditekan oleh smile/attentive/hand.
+    # Siswa nunduk baca soal = pasti ada unsur confusion.
+    look_dn_boost = ccfg.get("look_dn_boost", 0.50)
+    conf = max(conf, look_dn_v * look_dn_boost)
+
+    # Boredom dan confusion saling eksklusif: sangat bosan = sudah "checked out",
+    # tidak sedang aktif bingung memproses konten. Ketika boredom tinggi, sinyal confusion
+    # seperti browInnerUp dan lookDn sering merupakan artefak ekspresi bosan/mengantuk,
+    # bukan kebingungan aktif. Ditaruh SETELAH look_dn_boost floor.
+    bore_conf_suppress_val = ccfg.get("bore_conf_suppress_bore", 0.40)
+    conf = _clamp(conf - bore * bore_conf_suppress_val, 0, 1)
+
     # == 3: FRUSTRATION ========================================================
-    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / fcfg["brow_dn_th"], 0, 1)
-    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / fcfg["nose_sneer_th"], 0, 1)
-    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / fcfg["cheek_squint_th"], 0, 1)
-    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / fcfg["mouth_press_th"], 0, 1)
-    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / fcfg["eye_squint_th"], 0, 1)
+    br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(fcfg["brow_dn_th"], 1e-6), 0, 1)
+    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / max(fcfg["nose_sneer_th"], 1e-6), 0, 1)
+    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / max(fcfg["cheek_squint_th"], 1e-6), 0, 1)
+    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / max(fcfg["mouth_press_th"], 1e-6), 0, 1)
+    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / max(fcfg["eye_squint_th"], 1e-6), 0, 1)
 
     jaw_val_frus = max(0.0, jo - fcfg["jaw_start"])
-    jw_fr = _clamp((jaw_val_frus - smile_pen * 1.5) / fcfg["jaw_range"], 0, 1)
+    jw_fr = _clamp((jaw_val_frus - smile_pen * 1.5) / max(fcfg["jaw_range"], 1e-6), 0, 1)
+    # Sudut mulut turun (frown) = ekspresi kecewa/frustasi yang sering terlewat
+    mf_fr = _clamp((g("mouthFrownLeft") + g("mouthFrownRight")) / 2 / max(fcfg.get("mouth_frown_th", 0.25), 1e-6), 0, 1)
 
     # Tangan adalah sinyal primer frustasi; ekspresi wajah hanya suplemen.
     # Gunakan max() antar sinyal wajah (bukan sum) agar tidak saling inflate,
     # lalu skala dengan face_weight sehingga kontribusi wajah maksimal terbatas.
-    face_peak = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr)
+    face_peak = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr, mf_fr)
     face_w    = fcfg.get("face_weight", 0.35)
     sig_wajah_frus = _clamp(face_peak * face_w - smile_pen * 1.5, 0, 1)
 
@@ -506,11 +688,18 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     )
     frus = _clamp(base_frus * fcfg["blend_a"] + (ck_fr + jw_fr) * fcfg["blend_b"], 0, 1)
 
+    # Frustration suppression pada Confusion: kedua emosi tidak boleh tinggi bersamaan.
+    # Sinyal alis (browDown) dipakai di keduanya — ketika frustrasi tinggi, itu alis tegang
+    # bukan alis bingung. Terapkan setelah frus selesai dihitung.
+    frus_conf_suppress = ccfg.get("frus_conf_suppress", 0.5)
+    conf = _clamp(conf - frus * frus_conf_suppress, 0, 1)
+
     # Debug log
     if _DBG_LAND:
         print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} roll={r.roll:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
-              f"lookDn={look_down_v:.2f} | gH={gaze_h:+.1f}° gV={gaze_v:.1f}° dev={gaze_dev:.1f}° | "
-              f"boreGaze={bore_gaze:.2f} gate={gate:.2f} | "
+              f"lookDn={look_down_v:.2f} teeth={teeth_signal:.2f}(gate={teeth_gate:.2f}) | gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev:.1f}° | "
+              f"rollGate={roll_gate:.2f} yawGate={yaw_gate:.2f} gate={gate:.2f} | "
+              f"boreGaze={bore_gaze:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
         if conf > 0.5:
             print(f"  [CONF] brow_dn={brow_dn_v:.2f} brow_in={brow_in_v:.2f} co={co_signal:.2f} "
@@ -625,6 +814,8 @@ def draw_landmark_viz(frame_bgr: np.ndarray, r: LandmarkResult,
         ("Sneer",  max(g("noseSneerLeft"),  g("noseSneerRight")),          (255,  40,  40)),
         ("Press",  (g("mouthPressLeft") + g("mouthPressRight")) / 2,      (200,  80, 200)),
         ("Squint", (g("eyeSquintLeft") + g("eyeSquintRight")) / 2,        (255, 160,   0)),
+        ("Frown",  (g("mouthFrownLeft") + g("mouthFrownRight")) / 2,      (255,  60, 120)),
+        ("EyeWide",(g("eyeWideLeft") + g("eyeWideRight")) / 2,            (80,  255, 200)),
         ("HFore",  r.hand_forehead,                                       (0,   200, 255)),
         ("HChin",  r.hand_chin,                                           (0,   255, 140)),
     ]

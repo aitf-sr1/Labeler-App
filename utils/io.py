@@ -93,25 +93,79 @@ def save_frame_annotations(json_path: str, frame_annotations: dict) -> None:
 def load_batch_history(json_path: str) -> dict:
     """
     Baca batch_history.json — riwayat hasil inferensi AI per video.
-    Digunakan untuk skip otomatis pada video yang sudah diproses.
+    Key __meta__ (rules, thresholds, timestamp) di-strip sebelum dikembalikan.
     Return {} jika file belum ada atau rusak.
     """
     if not os.path.exists(json_path):
         return {}
     try:
         with open(json_path, "r") as f:
-            return json.load(f)
+            data = json.load(f)
+        return {k: v for k, v in data.items() if k != "__meta__"}
     except Exception:
         return {}
 
 
+def load_batch_meta(json_path: str) -> dict:
+    """
+    Baca section __meta__ dari batch_history.json.
+    Return {"rules": {...}, "thresholds": [...], "saved_at": "..."} atau {} jika tidak ada.
+    """
+    if not os.path.exists(json_path):
+        return {}
+    try:
+        with open(json_path, "r") as f:
+            data = json.load(f)
+        return data.get("__meta__", {})
+    except Exception:
+        return {}
+
+
+def update_batch_meta(json_path: str, rules: dict, thresholds: list) -> None:
+    """
+    Tulis/update section __meta__ di batch_history.json dengan rules dan thresholds aktif.
+    Dipanggil setelah batch/recalculate selesai agar rules tersimpan bersama hasil.
+    """
+    import datetime
+    if not json_path or not os.path.exists(json_path):
+        return
+    try:
+        with open(json_path, "r") as f:
+            data = json.load(f)
+        data["__meta__"] = {
+            "saved_at":  datetime.datetime.now().isoformat(),
+            "thresholds": thresholds,
+            "rules":      rules,
+        }
+        with open(json_path, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"[Meta] Gagal update batch meta: {e}")
+
+
 def save_batch_history(json_path: str, batch_history: dict) -> None:
-    """Tulis ulang batch_history.json. Dipanggil setelah setiap video selesai diproses AI."""
+    """
+    Tulis ulang batch_history.json.
+    __meta__ yang ada di disk dipertahankan agar tidak hilang saat save parsial.
+    """
     os.makedirs(os.path.dirname(json_path), exist_ok=True)
     try:
+        # Pertahankan __meta__ yang sudah ada di disk
+        existing_meta = None
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r") as f:
+                    existing_meta = json.load(f).get("__meta__")
+            except Exception:
+                pass
+
+        to_write = {}
+        if existing_meta:
+            to_write["__meta__"] = existing_meta
+        to_write.update({k: v for k, v in batch_history.items() if k != "__meta__"})
+
         with open(json_path, "w") as f:
-            # Gunakan dict() untuk copy guna menghindari RuntimeError
-            json.dump(dict(batch_history), f, indent=4)
+            json.dump(to_write, f, indent=4)
     except Exception as e:
         print(f"Gagal menyimpan batch_history: {e}")
 

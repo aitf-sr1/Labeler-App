@@ -167,12 +167,22 @@ def run_siglip_on_frames(
 
         # Hybrid scoring per frame
         if land_scores_per_frame:
+            # Filter: frame yang semua landmark scores ≈ 0 dianggap glitch MediaPipe,
+            # tidak ikut rata-rata supaya tidak menurunkan skor frame yang valid.
+            DEAD_THRESHOLD = 0.01
+            valid_frames = [
+                f for f in range(n_frames)
+                if sum(land_scores_per_frame[f]) > DEAD_THRESHOLD
+            ]
+            if not valid_frames:
+                valid_frames = list(range(n_frames))  # fallback semua
+
             hybrid_scores = [
                 round(siglip_w * siglip_scores[f] + land_w * land_scores_per_frame[f][i], 4)
                 for f in range(n_frames)
             ]
             land_avg = round(
-                sum(land_scores_per_frame[f][i] for f in range(n_frames)) / n_frames, 4
+                sum(land_scores_per_frame[f][i] for f in valid_frames) / len(valid_frames), 4
             )
 
             # ── Temporal Restlessness Bonus (khusus Boredom, i=0) ────────
@@ -194,14 +204,19 @@ def run_siglip_on_frames(
             hybrid_scores = siglip_scores
             land_avg      = None
 
-        avg_score   = round(sum(hybrid_scores) / n_frames, 4)
+        avg_score   = round(
+            sum(hybrid_scores[f] for f in (valid_frames if land_scores_per_frame else range(n_frames)))
+            / max(len(valid_frames) if land_scores_per_frame else n_frames, 1), 4
+        )
         siglip_avg  = round(sum(siglip_scores) / n_frames, 4)
         thr         = thresholds[i]
-        vote_pos    = sum(1 for s in hybrid_scores if s >= thr)
         frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
+        vote_pos    = sum(frame_preds)
+        # Majority vote — konsisten dengan recalculate.py
+        prediction  = 1 if (n_frames > 0 and vote_pos >= max(1, (n_frames + 1) // 2)) else 0
 
         per_label_result[i] = {
-            "prediction":   1 if vote_pos >= 2 else 0,
+            "prediction":   prediction,
             "vote_pos":     vote_pos,
             "vote_neg":     n_frames - vote_pos,
             "skipped":      0,
@@ -212,9 +227,20 @@ def run_siglip_on_frames(
             "frame_preds":  frame_preds,
         }
 
+    # Cleanup GPU memory — cegah akumulasi tensor antar video dalam batch
+    del inputs, logits_per_image, norm_by_label
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Deteksi sampel tanpa label — semua emosi di bawah threshold
+    has_any_label = any(
+        per_label_result[i]["prediction"] == 1 for i in range(n_labels)
+    )
+
     return {
         "per_label":  per_label_result,
         "n_frames":   n_frames,
         "thresholds": thresholds,
+        "no_label":   not has_any_label,
     }
 

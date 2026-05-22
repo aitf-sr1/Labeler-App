@@ -125,38 +125,38 @@ class VideoLabelerApp:
 
     def _build_topbar(self):
         """Bangun bar atas: tombol buka folder, label nama video, dan progress counter."""
-        bar = ctk.CTkFrame(self.root, fg_color=("#e5e7eb", "#1f1f1f"), corner_radius=0, height=46)
+        bar = ctk.CTkFrame(self.root, fg_color=("#e8eaef", "#181826"), corner_radius=0, height=50)
         bar.grid(row=0, column=0, columnspan=2, sticky="ew")
         bar.grid_propagate(False)
 
         ctk.CTkButton(
             bar, text="Buka Folder", command=self.open_folder,
             font=self.font_bold, fg_color="#10b981", hover_color="#059669",
-            width=110, height=30,
-        ).pack(side="left", padx=(14, 4), pady=8)
+            width=110, height=32, corner_radius=8,
+        ).pack(side="left", padx=(14, 4), pady=9)
 
         ctk.CTkButton(
             bar, text="Output", command=self._change_output_folder,
             font=self.font_sm, fg_color="#6366f1", hover_color="#4f46e5",
-            width=80, height=30,
-        ).pack(side="left", padx=(0, 6), pady=8)
+            width=80, height=32, corner_radius=8,
+        ).pack(side="left", padx=(0, 4), pady=9)
 
         ctk.CTkButton(
             bar, text="Rules", command=self._open_rules_panel,
             font=self.font_sm, fg_color="#7c3aed", hover_color="#6d28d9",
-            width=70, height=30,
-        ).pack(side="left", padx=(0, 10), pady=8)
+            width=70, height=32, corner_radius=8,
+        ).pack(side="left", padx=(0, 14), pady=9)
 
         self.lbl_info = ctk.CTkLabel(
             bar, text="Pilih folder dataset untuk memulai",
-            font=self.font_sm, text_color="gray",
+            font=self.font_sm, text_color=("#6b7280", "#6b7280"),
         )
         self.lbl_info.pack(side="left")
 
         self.lbl_fps = ctk.CTkLabel(bar, text="", font=self.font_sm, text_color="#10b981")
         self.lbl_fps.pack(side="left", padx=16)
 
-        self.lbl_progress = ctk.CTkLabel(bar, text="", font=self.font_sm, text_color="gray")
+        self.lbl_progress = ctk.CTkLabel(bar, text="", font=self.font_sm, text_color=("#4b5563", "#9ca3af"))
         self.lbl_progress.pack(side="right", padx=16)
 
         self.lbl_flag_count = ctk.CTkLabel(
@@ -168,59 +168,60 @@ class VideoLabelerApp:
             bar, text="Viz", variable=self.show_viz,
             font=self.font_sm, progress_color="#6366f1",
             command=self.refresh_frame_gallery,
-        ).pack(side="right", padx=(0, 12))
+        ).pack(side="right", padx=(0, 14))
 
     def _build_bottombar(self):
         """Bangun bar bawah: navigasi prev/skip/next, toggle flag, dan jump to video."""
-        bar = ctk.CTkFrame(self.root, fg_color=("#e5e7eb", "#1f1f1f"), corner_radius=0, height=46)
+        bar = ctk.CTkFrame(self.root, fg_color=("#e8eaef", "#181826"), corner_radius=0, height=50)
         bar.grid(row=2, column=0, columnspan=2, sticky="ew")
         bar.grid_propagate(False)
 
         ctk.CTkButton(
             bar, text="Prev", command=self.prev_video,
-            font=self.font_sm, fg_color=("#9ca3af", "#4b5563"),
-            hover_color=("#6b7280", "#374151"), width=90, height=30,
-        ).pack(side="left", padx=(14, 6), pady=8)
+            font=self.font_sm, fg_color=("#9ca3af", "#3b3b52"),
+            hover_color=("#6b7280", "#374151"), width=90, height=32, corner_radius=8,
+        ).pack(side="left", padx=(14, 5), pady=9)
 
         ctk.CTkButton(
             bar, text="Skip", command=self.skip_video,
             font=self.font_sm, fg_color=("#f59e0b", "#b45309"),
-            hover_color=("#d97706", "#92400e"), width=90, height=30,
-        ).pack(side="left", padx=(6, 6), pady=8)
+            hover_color=("#d97706", "#92400e"), width=90, height=32, corner_radius=8,
+        ).pack(side="left", padx=(0, 16), pady=9)
 
         self.chk_flag = ctk.CTkSwitch(
             bar, text="Flag / Reject", variable=self.flag_var,
             font=self.font_sm, progress_color="#ef4444",
         )
-        self.chk_flag.pack(side="left", padx=16)
+        self.chk_flag.pack(side="left", padx=(0, 16))
 
         self.chk_semi_manual = ctk.CTkSwitch(
             bar, text="Label Semi Manual", variable=self.semi_manual_var,
             font=self.font_sm, progress_color="#10b981",
             command=self._on_semi_manual_toggle,
         )
-        self.chk_semi_manual.pack(side="left", padx=16)
+        self.chk_semi_manual.pack(side="left")
 
         ctk.CTkButton(
             bar, text="Save & Next", command=self.save_and_next,
             font=self.font_bold, fg_color="#3b82f6", hover_color="#2563eb",
-            width=130, height=30,
-        ).pack(side="right", padx=14, pady=8)
+            width=130, height=32, corner_radius=8,
+        ).pack(side="right", padx=14, pady=9)
 
         ctk.CTkButton(
             bar, text="Go", command=self.jump_to_video,
             font=self.font_sm, fg_color=("#6b7280", "#374151"),
-            hover_color=("#4b5563", "#1f2937"), width=40, height=30,
-        ).pack(side="right", padx=(0, 4), pady=8)
+            hover_color=("#4b5563", "#1f2937"), width=40, height=32, corner_radius=8,
+        ).pack(side="right", padx=(0, 4), pady=9)
 
         self.jump_entry = ctk.CTkEntry(
-            bar, width=52, height=30, font=self.font_sm, placeholder_text="No."
+            bar, width=52, height=32, font=self.font_sm,
+            placeholder_text="No.", corner_radius=8,
         )
-        self.jump_entry.pack(side="right", pady=8)
+        self.jump_entry.pack(side="right", pady=9)
         self.jump_entry.bind("<Return>", lambda e: self.jump_to_video())
 
         ctk.CTkLabel(
-            bar, text="Loncat ke:", font=("Poppins", 9), text_color="gray"
+            bar, text="Loncat ke:", font=("Poppins", 9), text_color=("#6b7280", "#6b7280")
         ).pack(side="right", padx=(0, 4))
 
     # Folder & data
@@ -246,7 +247,7 @@ class VideoLabelerApp:
         self.path_json_skipped       = os.path.join(base, "skipped_videos.json")
         self.path_json_thresholds    = os.path.join(base, "thresholds.json")
         self.path_json_rules         = os.path.join(base, "rules.json")
-        self.path_json_manual        = os.path.join(base, "manual_labels.json")
+        # path_json_manual dihapus — pakai _manual_path_for() secara dinamis
         self.path_dir_cropped        = os.path.join(base, "cropped_faces")
         self.path_dir_raw_cache      = os.path.join(base, "raw_cache")
         self.path_dir_siglip_cache   = os.path.join(base, "siglip_cache")
@@ -324,36 +325,59 @@ class VideoLabelerApp:
 
     # ── Semi-manual labeling ──────────────────────────────────────────────────
 
+    @staticmethod
+    def _manual_path_for(batch_path: str) -> str:
+        """Derive path manual_labels dari path batch_history.
+        Contoh: .../hasil2/batch_history_hasil2.json → .../hasil2/manual_labels_hasil2.json
+                .../hasil/batch_history.json          → .../hasil/manual_labels.json
+        """
+        base_dir = os.path.dirname(batch_path)
+        fname    = os.path.basename(batch_path)          # batch_history_xxx.json
+        fname    = fname.replace("batch_history", "manual_labels", 1)
+        return os.path.join(base_dir, fname)
+
     def _load_manual_labels(self) -> dict:
-        """Muat manual_labels.json dari disk, atau return dict kosong."""
-        if not hasattr(self, "path_json_manual") or not self.path_json_manual:
+        """Muat manual_labels yang sesuai dengan batch aktif, atau return dict kosong."""
+        if not self.path_json_batch_history:
             return {}
-        if os.path.exists(self.path_json_manual):
+        path = self._manual_path_for(self.path_json_batch_history)
+        if os.path.exists(path):
             try:
                 import json as _json
-                with open(self.path_json_manual) as f:
+                with open(path) as f:
                     return _json.load(f)
             except Exception:
                 pass
         return {}
 
-    def _save_manual_labels(self):
-        """Simpan manual_labels ke disk."""
-        if not self.path_json_manual:
+    def _save_manual_labels(self, extra_batch_path: str | None = None):
+        """Simpan manual_labels ke disk (ke file yang sesuai batch aktif).
+        Jika extra_batch_path diberikan, simpan salinan ke sana juga."""
+        if not self.path_json_batch_history:
             return
         import json as _json
-        with open(self.path_json_manual, "w") as f:
+        # Simpan ke path batch utama
+        path = self._manual_path_for(self.path_json_batch_history)
+        with open(path, "w") as f:
             _json.dump(self.manual_labels, f, indent=2)
+        # Simpan salinan ke batch extra jika ada
+        if extra_batch_path:
+            path_extra = self._manual_path_for(extra_batch_path)
+            with open(path_extra, "w") as f:
+                _json.dump(self.manual_labels, f, indent=2)
 
-    def _sync_manual_from_ai(self, rel_path: str):
+    def _sync_manual_from_ai(self, rel_path: str, save: bool = True):
         """Reset manual_labels untuk satu video dari frame_annotations (label AI terbaru).
-        Dipanggil setiap kali AI selesai proses atau label direset."""
+        Dipanggil setiap kali AI selesai proses atau label direset.
+        save=False: hanya update dict di memori, tidak tulis ke disk (untuk bulk sync).
+        """
         fa = self.frame_annotations.get(rel_path, {})
         self.manual_labels[rel_path] = {
             str(fi): {lbl: int(fa.get(str(fi), {}).get(lbl, 0)) for lbl in LABELS}
             for fi in range(2)
         }
-        self._save_manual_labels()
+        if save:
+            self._save_manual_labels()
         # Refresh checkbox jika mode aktif dan ini video yang sedang tampil
         if self.semi_manual_var.get() and self.video_files:
             cur_rel = os.path.relpath(self.video_files[self.current_index], self.root_folder)
@@ -364,11 +388,16 @@ class VideoLabelerApp:
                     )
 
     def _on_semi_manual_toggle(self):
-        """Dipanggil saat toggle Label Semi Manual diubah."""
+        """Dipanggil saat toggle Label Semi Manual diubah.
+        ON  → tampilkan checkbox, highlight dari manual_labels
+        OFF → sembunyikan checkbox, highlight kembali dari frame_annotations (AI)
+        """
         active = self.semi_manual_var.get()
         self.left_panel.show_manual_checkboxes(active)
         if active:
             self._init_manual_for_current()
+        # Selalu refresh gallery agar highlight frame sesuai mode (manual / AI)
+        self.refresh_frame_gallery()
 
     def _init_manual_for_current(self):
         """Tampilkan manual_labels untuk video aktif di checkbox.
@@ -395,6 +424,16 @@ class VideoLabelerApp:
             self._init_manual_for_current()
         self.manual_labels[rel][str(frame_idx)][label] = int(value)
         self._save_manual_labels()
+        # Update highlight frame yang berubah sesuai label aktif
+        active_lbl = self.active_frame_label.get()
+        if label == active_lbl:
+            # Rebuild frame_data dari manual_labels untuk frame ini
+            fa  = self.frame_annotations.get(rel, {})
+            mfr = dict(self.manual_labels[rel].get(str(frame_idx), {}))
+            mfr["_rejected"] = fa.get(str(frame_idx), {}).get("_rejected", False)
+            # render_frames tidak dipanggil supaya tidak flicker — hanya update satu frame
+            self.left_panel._current_frame_annotations[str(frame_idx)] = mfr
+            self.left_panel.update_single_frame_highlight(frame_idx, active_lbl, int(value))
 
     # ── Rules ─────────────────────────────────────────────────────────────────
 
@@ -426,6 +465,7 @@ class VideoLabelerApp:
             threshold_vars=self.right_panel.threshold_vars,
             on_save=self._save_rules,
             on_recalculate=self._recalculate_all,
+            on_rebatch=self._toggle_batch,
         )
 
     def _recalculate_all(self, rules: dict, extra_path_sentinel: str | None = None):
@@ -473,9 +513,12 @@ class VideoLabelerApp:
                     save_frame_annotations(self.path_json_frames, self.frame_annotations)
 
                 def on_done(extra_path=extra, _rules=rules):
-                    # Sync manual_labels dari semua frame_annotations baru hasil recalculate
+                    # Sync manual_labels dari semua frame_annotations baru hasil recalculate.
+                    # save=False: hanya update dict di memori, simpan sekali di akhir
+                    # (sebelumnya save per-video = ribuan disk write = lag panjang).
                     for rel in self.frame_annotations:
-                        self._sync_manual_from_ai(rel)
+                        self._sync_manual_from_ai(rel, save=False)
+                    self._save_manual_labels(extra_batch_path=extra_path if extra_path else None)
 
                     total  = len(self.batch_history)
                     done   = total - skipped
@@ -770,6 +813,24 @@ class VideoLabelerApp:
         self.left_panel.set_active_tab_highlight(label)
         self.refresh_frame_gallery()
 
+    def _active_vid_data(self, rel_path: str) -> dict:
+        """Kembalikan data label frame untuk video rel_path sesuai mode aktif.
+        Mode manual: ambil dari manual_labels (jika ada), fallback ke frame_annotations.
+        Mode AI: selalu ambil dari frame_annotations."""
+        if self.semi_manual_var.get():
+            ml = self.manual_labels.get(rel_path)
+            if ml:
+                # Gabungkan: ambil _rejected dari frame_annotations, label dari manual_labels
+                fa = self.frame_annotations.get(rel_path, {})
+                merged = {}
+                for fi in range(2):
+                    fi_str = str(fi)
+                    m = dict(ml.get(fi_str, {}))
+                    m["_rejected"] = fa.get(fi_str, {}).get("_rejected", False)
+                    merged[fi_str] = m
+                return merged
+        return self.frame_annotations.get(rel_path, {})
+
     def refresh_frame_gallery(self, *args):
         """
         Render ulang galeri frame.
@@ -791,7 +852,7 @@ class VideoLabelerApp:
             self.viz_images = viz_images
             n = len(pil_images) or 2
             if pil_images:
-                vid_data = self.frame_annotations.get(rel_path, {})
+                vid_data = self._active_vid_data(rel_path)
                 display  = viz_images if (self.show_viz.get() and viz_images) else pil_images
                 self.left_panel.render_frames(display, vid_data, active_lbl)
             self.left_panel.update_frame_quality(
@@ -884,7 +945,7 @@ class VideoLabelerApp:
             return
 
         active_lbl = self.active_frame_label.get()
-        vid_data   = self.frame_annotations.get(rel_path, {})
+        vid_data   = self._active_vid_data(rel_path)
         display    = viz_images if (self.show_viz.get() and viz_images) else pil_images
         self.left_panel.render_frames(display, vid_data, active_lbl)
 
@@ -906,12 +967,55 @@ class VideoLabelerApp:
                 if new_viz:
                     self.left_panel.render_frames(
                         new_viz,
-                        self.frame_annotations.get(rel_path, {}),
+                        self._active_vid_data(rel_path),
                         self.active_frame_label.get(),
                     )
 
     def _regenerate_viz_for_current(self, rules: dict):
         """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
         Regenerate viz overlay untuk video yang sedang ditampilkan menggunakan rules baru.
         Menggunakan landmark_results yang tersimpan di gallery cache — tidak re-run MediaPipe.
         Update gallery cache, self.viz_images, dan file viz di disk.
@@ -975,32 +1079,96 @@ class VideoLabelerApp:
 
     def toggle_single_frame(self, frame_idx: int):
         """
-        Toggle label aktif pada satu frame.
-
-        State langsung disimpan ke disk setelah setiap toggle.
-
-        Args:
-            frame_idx: Index frame yang di-toggle (0-15).
+        Toggle label aktif pada satu frame — hanya aktif saat mode Label Semi Manual ON.
+        Edit manual_labels (bukan frame_annotations).
         """
         if not self.video_files: return
-        vp       = self.video_files[self.current_index]
-        rel_path = os.path.relpath(vp, self.root_folder)
+        if not self.semi_manual_var.get():
+            # Beri tahu user bahwa editing perlu mode semi manual
+            self.right_panel.lbl_batch_status.configure(
+                text="Aktifkan 'Label Semi Manual' untuk mengedit label",
+                text_color="#f59e0b",
+            )
+            return
+
+        vp         = self.video_files[self.current_index]
+        rel_path   = os.path.relpath(vp, self.root_folder)
         active_lbl = self.active_frame_label.get()
 
-        if rel_path not in self.frame_annotations:
-            self.frame_annotations[rel_path] = {
-                str(i): {l: 0 for l in LABELS} for i in range(2)
-            }
-        if str(frame_idx) not in self.frame_annotations[rel_path]:
-            self.frame_annotations[rel_path][str(frame_idx)] = {l: 0 for l in LABELS}
+        if rel_path not in self.manual_labels:
+            self._init_manual_for_current()
+        if str(frame_idx) not in self.manual_labels[rel_path]:
+            self.manual_labels[rel_path][str(frame_idx)] = {l: 0 for l in LABELS}
 
-        current_val = self.frame_annotations[rel_path][str(frame_idx)][active_lbl]
+        current_val = self.manual_labels[rel_path][str(frame_idx)].get(active_lbl, 0)
         new_val     = 1 if current_val == 0 else 0
-        self.frame_annotations[rel_path][str(frame_idx)][active_lbl] = new_val
+        self.manual_labels[rel_path][str(frame_idx)][active_lbl] = new_val
+        self._save_manual_labels()
 
+        # Update checkbox di panel kiri
+        self.left_panel.update_manual_checkboxes(
+            frame_idx, self.manual_labels[rel_path][str(frame_idx)]
+        )
+        # Update highlight canvas
         self.left_panel.update_single_frame_highlight(frame_idx, active_lbl, new_val)
+        fa  = self.frame_annotations.get(rel_path, {})
+        mfr = dict(self.manual_labels[rel_path].get(str(frame_idx), {}))
+        mfr["_rejected"] = fa.get(str(frame_idx), {}).get("_rejected", False)
+        self.left_panel._current_frame_annotations[str(frame_idx)] = mfr
 
-        self.save_current_state()
+    def toggle_frame_label_by_dot(self, frame_idx: int, y: int):
+        """
+        Toggle label spesifik dengan klik pada dot strip — hanya saat mode Semi Manual ON.
+        y: koordinat klik pada dot_cv (tinggi 360px).
+        Label j ada di cy = start_y + j * (2*dot_r + gap) + dot_r.
+        """
+        if not self.video_files: return
+        if not self.semi_manual_var.get():
+            self.right_panel.lbl_batch_status.configure(
+                text="Aktifkan 'Label Semi Manual' untuk mengedit label",
+                text_color="#f59e0b",
+            )
+            return
+
+        # Hitung index label dari posisi y (harus sync dengan _draw_frame_dots)
+        dot_r   = 7
+        gap     = 22
+        n       = len(LABELS)
+        total_h = n * (2 * dot_r) + (n - 1) * gap
+        start_y = (360 - total_h) // 2
+
+        j = (y - start_y) // (2 * dot_r + gap)
+        if j < 0 or j >= n:
+            return  # klik di luar area dot
+
+        label = LABELS[j]
+        vp       = self.video_files[self.current_index]
+        rel_path = os.path.relpath(vp, self.root_folder)
+
+        if rel_path not in self.manual_labels:
+            self._init_manual_for_current()
+        if str(frame_idx) not in self.manual_labels[rel_path]:
+            self.manual_labels[rel_path][str(frame_idx)] = {l: 0 for l in LABELS}
+
+        current_val = self.manual_labels[rel_path][str(frame_idx)].get(label, 0)
+        new_val     = 1 if current_val == 0 else 0
+        self.manual_labels[rel_path][str(frame_idx)][label] = new_val
+        self._save_manual_labels()
+
+        # Update checkbox
+        self.left_panel.update_manual_checkboxes(
+            frame_idx, self.manual_labels[rel_path][str(frame_idx)]
+        )
+        # Update highlight jika label yang diklik adalah label aktif
+        active_lbl = self.active_frame_label.get()
+        if label == active_lbl:
+            self.left_panel.update_single_frame_highlight(frame_idx, label, new_val)
+        fa  = self.frame_annotations.get(rel_path, {})
+        mfr = dict(self.manual_labels[rel_path].get(str(frame_idx), {}))
+        mfr["_rejected"] = fa.get(str(frame_idx), {}).get("_rejected", False)
+        self.left_panel._current_frame_annotations[str(frame_idx)] = mfr
+        # Gambar ulang dots untuk frame ini
+        self.left_panel._draw_frame_dots(self.left_panel.frame_dot_canvases[frame_idx], mfr)
 
     # SigLIP inference
 
@@ -1059,9 +1227,27 @@ class VideoLabelerApp:
                 "frame_preds":  frame_preds,
             }
 
+        # Auto-reject per FRAME: frame yang tidak punya label sama sekali (semua emosi < threshold)
+        # ditolak otomatis. Frame yang punya minimal 1 label tetap dipertahankan.
+        rejected_count = 0
+        for f_idx in range(n_res):
+            frame_has_label = any(
+                per_label_history[str(i)]["frame_preds"][f_idx] == 1
+                for i in range(len(LABELS))
+            )
+            if not frame_has_label:
+                self.frame_annotations[rel_path][str(f_idx)]["_rejected"] = True
+                rejected_count += 1
+        if rejected_count > 0:
+            print(f"  [NO_LABEL] {rel_path} → {rejected_count}/{n_res} frame ditolak (tidak ada label)")
+
+        # no_label = True jika SEMUA frame tidak punya label
+        no_label = rejected_count == n_res
+
         self.batch_history[rel_path] = {
             "per_label":  per_label_history,
             "thresholds": res["thresholds"],
+            "no_label":   no_label,
         }
         with self.save_lock:
             save_batch_history(self.path_json_batch_history, self.batch_history)
@@ -1094,12 +1280,14 @@ class VideoLabelerApp:
             text="Semua label direset ke 0", text_color="#10b981"
         )
 
-    def _split_dataset_2d(self, silent: bool = False, force_default: bool = False):
+    def _split_dataset_2d(self, silent: bool = False, force_default: bool = False, source: str = "ai"):
         """
         Split frame_annotations per UUID (siswa) → Label2d/train|val|test.csv.
         Hanya frame yang tidak di-reject yang masuk.
         Folder output: Label2d/ (nimpa) atau Label2d_{name}/ (buat baru).
 
+        source="ai"     : gunakan frame_annotations (label AI).
+        source="manual" : gunakan manual_labels (label semi-manual user).
         silent=True: skip messagebox, hanya print ke console.
         """
         import csv as _csv
@@ -1116,12 +1304,31 @@ class VideoLabelerApp:
             return
 
         # Pilih sumber frame_annotations:
-        # Jika dropdown memilih batch bukan default, derive label dari batch itu.
+        # Jika source="manual", gunakan manual_labels langsung (tanpa override batch dropdown).
+        # Jika source="ai", cek dropdown batch; jika bukan default, derive dari batch itu.
         selected_batch = getattr(self.right_panel, "_batch_file_var", None)
         selected_batch = selected_batch.get() if selected_batch else "batch_history.json"
         default_batch  = os.path.basename(self.path_json_batch_history)
 
-        if not force_default and selected_batch and selected_batch != default_batch:
+        if source == "manual":
+            if not self.manual_labels:
+                if not silent:
+                    messagebox.showinfo("Split Manual", "Belum ada label manual. Aktifkan mode Label Semi Manual terlebih dahulu.")
+                return
+            # manual_labels hanya menyimpan label (0|1), tanpa _rejected.
+            # Gabungkan dengan _rejected dari frame_annotations.
+            fa_source = {}
+            for rp, frames_m in self.manual_labels.items():
+                fa_ai = self.frame_annotations.get(rp, {})
+                vid_fa = {}
+                for fi_str, lbl_dict in frames_m.items():
+                    fd = dict(lbl_dict)
+                    fd["_rejected"] = fa_ai.get(fi_str, {}).get("_rejected", False)
+                    vid_fa[fi_str] = fd
+                fa_source[rp] = vid_fa
+            if not silent:
+                print(f"[Split] Menggunakan label: MANUAL")
+        elif not force_default and selected_batch and selected_batch != default_batch:
             # Load batch history yang dipilih dan derive frame_annotations dari frame_preds
             from utils import load_batch_history
             from ui.constants import LABELS as _LABELS
@@ -1154,9 +1361,10 @@ class VideoLabelerApp:
             if not split_name:
                 import datetime
                 split_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            out_dir = os.path.join(base_out, f"Label2d_{split_name}")
+            suffix = f"{split_name}_manual" if source == "manual" else split_name
+            out_dir = os.path.join(base_out, f"Label2d_{suffix}")
         else:
-            out_dir = os.path.join(base_out, "Label2d")
+            out_dir = os.path.join(base_out, "Label2d_manual" if source == "manual" else "Label2d")
 
         # UUID depth dari entry
         try:
@@ -1170,8 +1378,16 @@ class VideoLabelerApp:
         # Grouping by UUID
         videos_by_uuid = defaultdict(list)
         skipped = 0
+        no_label_count = 0
         for rel_path, frames in fa_source.items():
             if rel_path in self.flagged_data:
+                skipped += 1
+                continue
+
+            # Skip video tanpa label (dari batch_history no_label flag)
+            bh_entry = self.batch_history.get(rel_path, {})
+            if bh_entry.get("no_label", False):
+                no_label_count += 1
                 skipped += 1
                 continue
 
@@ -1188,6 +1404,13 @@ class VideoLabelerApp:
                     vote[lbl] += fdata.get(lbl, 0)
 
             if valid == 0:
+                skipped += 1
+                continue
+
+            # Skip juga jika voting menghasilkan 0 di semua label
+            all_zero = all(vote[lbl] < MAJORITY for lbl in LABELS)
+            if all_zero:
+                no_label_count += 1
                 skipped += 1
                 continue
 
@@ -1255,11 +1478,12 @@ class VideoLabelerApp:
         total_frames = sum(counts.values())
         total_vids   = len(train_vids) + len(val_vids) + len(test_vids)
 
+        src_label = "MANUAL" if source == "manual" else f"AI ({selected_batch})"
         summary = (
-            f"Batch: {selected_batch}\n"
+            f"Sumber: {src_label}\n"
             f"Output: {out_dir}\n\n"
             f"UUID/siswa: {n} → train={len(train_uuids)} / val={len(val_uuids)} / test={n - len(train_uuids) - len(val_uuids)}\n"
-            f"Video: {total_vids} ({skipped} diskip)\n"
+            f"Video: {total_vids} ({skipped} diskip, {no_label_count} tanpa label)\n"
             f"Frame: {total_frames} total\n"
             f"  train.csv : {counts['train']}\n"
             f"  val.csv   : {counts['val']}\n"
@@ -1269,6 +1493,80 @@ class VideoLabelerApp:
             messagebox.showinfo("Split Label 2D Selesai", summary)
         print(f"[Split 2D] Selesai → {out_dir} | "
               f"train={counts['train']} val={counts['val']} test={counts['test']} frame")
+
+    def _compare_ai_vs_manual(self):
+        """
+        Bandingkan label AI (frame_annotations) vs label Manual (manual_labels).
+        Tampilkan jumlah video berbeda, jumlah frame berbeda, persentase, dan breakdown per label.
+        """
+        if not self.manual_labels:
+            messagebox.showinfo("Perbandingan", "Belum ada label manual. Aktifkan mode Label Semi Manual terlebih dahulu.")
+            return
+        if not self.frame_annotations:
+            messagebox.showinfo("Perbandingan", "Belum ada label AI. Proses batch terlebih dahulu.")
+            return
+
+        total_videos  = 0
+        diff_videos   = 0
+        total_frames  = 0
+        diff_frames   = 0
+        per_label_diff = {lbl: 0 for lbl in LABELS}
+        per_label_total = {lbl: 0 for lbl in LABELS}
+
+        common_videos = set(self.manual_labels.keys()) & set(self.frame_annotations.keys())
+        total_videos  = len(common_videos)
+
+        for rel in common_videos:
+            man_vid = self.manual_labels[rel]
+            ai_vid  = self.frame_annotations[rel]
+            vid_has_diff = False
+            for fi in range(2):
+                fi_str = str(fi)
+                man_fr = man_vid.get(fi_str, {})
+                ai_fr  = ai_vid.get(fi_str, {})
+                if ai_fr.get("_rejected", False):
+                    continue
+                total_frames += 1
+                frame_has_diff = False
+                for lbl in LABELS:
+                    m_val = int(man_fr.get(lbl, 0))
+                    a_val = int(ai_fr.get(lbl, 0))
+                    per_label_total[lbl] += 1
+                    if m_val != a_val:
+                        per_label_diff[lbl] += 1
+                        frame_has_diff = True
+                if frame_has_diff:
+                    diff_frames += 1
+                    vid_has_diff = True
+            if vid_has_diff:
+                diff_videos += 1
+
+        if total_videos == 0:
+            messagebox.showinfo("Perbandingan", "Tidak ada video yang memiliki kedua label AI dan Manual.")
+            return
+
+        pct_vid   = 100 * diff_videos  / total_videos  if total_videos  else 0
+        pct_frame = 100 * diff_frames  / total_frames  if total_frames  else 0
+
+        lines = [
+            f"Video dengan label berbeda : {diff_videos}/{total_videos} ({pct_vid:.1f}%)",
+            f"Frame dengan label berbeda : {diff_frames}/{total_frames} ({pct_frame:.1f}%)",
+            "",
+            "Breakdown per label (frame):",
+        ]
+        for lbl in LABELS:
+            tot = per_label_total[lbl]
+            dif = per_label_diff[lbl]
+            pct = 100 * dif / tot if tot else 0
+            lines.append(f"  {lbl:<12}: {dif}/{tot} frame berbeda ({pct:.1f}%)")
+
+        lines += [
+            "",
+            f"(Hanya video yang memiliki kedua label AI & Manual dihitung.)",
+            f"Total video AI: {len(self.frame_annotations)} | Total video Manual: {len(self.manual_labels)}",
+        ]
+
+        messagebox.showinfo("Perbandingan AI vs Manual", "\n".join(lines))
 
     def _proses_satu(self):
         """
@@ -1390,6 +1688,9 @@ class VideoLabelerApp:
         if not self.video_files: return
         self.batch_running = True
         self.cancel_batch  = False
+        # Matikan debug log saat batch — print per-frame sangat memperlambat
+        import core.landmark_analyzer as _lm
+        _lm._DBG_LAND = False
         self.right_panel.btn_proses_semua.configure(
             text="Hentikan Batch", fg_color="#ef4444", hover_color="#dc2626"
         )
@@ -1489,7 +1790,14 @@ class VideoLabelerApp:
                                 self.right_panel.update_ai_score_bar(l, s, t))
                         self.root.after(0, self.refresh_frame_gallery)
 
-                    save_frame_annotations(self.path_json_frames, self.frame_annotations)
+                    # Cleanup referensi frame agar tidak menumpuk di memori
+                    del imgs, landmark_results, res
+
+                    # Periodic save setiap 50 video — cegah kehilangan progress jika crash
+                    if idx % 50 == 49:
+                        with self.save_lock:
+                            save_frame_annotations(self.path_json_frames, self.frame_annotations)
+                            save_batch_history(self.path_json_batch_history, self.batch_history)
 
                 except Exception as e:
                     print(f"[Error] Failed to process {rel_path}: {e}")
@@ -1499,8 +1807,16 @@ class VideoLabelerApp:
                 futures = [executor.submit(process_video, idx, vp) for idx, vp in enumerate(self.video_files)]
                 concurrent.futures.wait(futures)
 
+            # Simpan semua data sekaligus setelah batch selesai (bukan per-video)
+            with self.save_lock:
+                save_frame_annotations(self.path_json_frames, self.frame_annotations)
+                save_batch_history(self.path_json_batch_history, self.batch_history)
+
             def on_finish():
                 self.batch_running = False
+                # Nyalakan kembali debug log setelah batch selesai
+                import core.landmark_analyzer as _lm
+                _lm._DBG_LAND = True
                 msg = "Dibatalkan" if self.cancel_batch else "Selesai"
                 self.right_panel.lbl_batch_status.configure(text=msg, text_color="#10b981" if not self.cancel_batch else "#ef4444")
                 self.right_panel.btn_proses_semua.configure(

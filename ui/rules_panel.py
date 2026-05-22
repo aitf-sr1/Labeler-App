@@ -12,64 +12,194 @@ import customtkinter as ctk
 from core.rules import DEFAULT_RULES, _deep_copy
 
 # ── Definisi slider per seksi ─────────────────────────────────────────────────
-# (section, key, label, min_val, max_val)
+# (section, key, label, min_val, max_val, description)
 _SLIDER_DEFS = [
     # GAZE (shared)
-    ("gaze", "scale_h",        "H Scale (iris→°)",    10.0, 60.0),
-    ("gaze", "scale_v",        "V Scale (iris→°)",    10.0, 50.0),
-    ("gaze", "iris_side_mult", "Iris Side Mult",       0.5,  4.0),
-    ("gaze", "v_dead_zone",    "V Dead Zone (°)",      0.0, 30.0),
+    ("gaze", "scale_h",        "H Scale (iris→°)",    10.0, 60.0,
+     "Pengali iris_x → derajat horizontal. Makin besar, gerakan iris kecil = gaze deviation besar."),
+    ("gaze", "scale_v",        "V Scale (iris→°)",    10.0, 50.0,
+     "Pengali iris_y → derajat vertikal. Mempengaruhi seberapa sensitif deteksi pandangan atas/bawah."),
+    ("gaze", "iris_side_mult", "Iris Side Mult",       0.5,  4.0,
+     "Pengali tambahan saat iris ke samping. Makin besar = iris ke samping lebih kuat trigger gaze deviation."),
+    ("gaze", "v_dead_zone",    "V Dead Zone ↓ (°)",    0.0, 30.0,
+     "Dead zone gaze ke BAWAH (°). Nilai besar = nunduk/ngetik dilindungi, tidak dianggap bored. Default 15°."),
+    ("gaze", "v_dead_zone_up", "V Dead Zone ↑ (°)",    0.0, 15.0,
+     "Dead zone gaze ke ATAS (°). Nilai kecil = pandangan ke atas lebih mudah trigger boredom. Default 5°."),
+    ("gaze", "roll_dz",        "Roll Dead Zone (°)",    0.0, 15.0,
+     "Dead zone roll (kepala miring) sebelum masuk perhitungan gaze_dev_bore. Natural tilt ~5°."),
     # BOREDOM
-    ("boredom", "gaze_dead_zone",     "Gaze Dead Zone (°)",    0.0, 20.0),
-    ("boredom", "gaze_range",         "Gaze Range (°)",        4.0, 25.0),
-    ("boredom", "pitch_nunduk_th",    "Pitch Nunduk Th (°)",   5.0, 25.0),
-    ("boredom", "pitch_nunduk_range", "Nunduk Range (°)",      3.0, 20.0),
-    ("boredom", "pitch_up_th",        "Pitch Up Th (°)",       3.0, 20.0),
-    ("boredom", "pitch_up_range",     "Pitch Up Range (°)",    5.0, 20.0),
-    ("boredom", "blink_dead_zone",    "Blink Dead Zone",       0.0,  0.5),
-    ("boredom", "blink_range",        "Blink Range",           0.1,  1.0),
-    ("boredom", "yawn_threshold",     "Yawn Threshold",        0.1,  0.8),
-    ("boredom", "sig_expr_weight",    "Expr Weight",           0.0,  1.0),
-    ("boredom", "frus_suppress",      "Frus Suppress",         0.0,  1.0),
+    ("boredom", "gaze_dead_zone",  "Gaze Dead Zone (°)",  0.0, 20.0,
+     "Gaze deviation di bawah ini = tidak bosan. Makin besar = siswa perlu lihat lebih jauh dari layar baru dianggap bored."),
+    ("boredom", "gaze_range",      "Gaze Range (°)",      4.0, 25.0,
+     "Rentang gaze di atas dead zone sampai jenuh. Makin besar = transisi boredom lebih landai/gradual."),
+    ("boredom", "pitch_up_th",     "Pitch Up Th (°)",     5.0, 35.0,
+     "Kepala mendongak > ini = mulai sinyal boredom. Mendongak berarti lihat ke atas, bukan ke layar."),
+    ("boredom", "pitch_up_range",  "Pitch Up Range (°)",  5.0, 40.0,
+     "Rentang pitch di atas threshold sampai jenuh. Makin besar = transisi lebih pelan."),
+    ("boredom", "blink_dead_zone", "Blink Dead Zone",     0.0,  0.5,
+     "Blink di bawah ini diabaikan. Mencegah kedipan normal trigger boredom."),
+    ("boredom", "blink_range",     "Blink Range",         0.1,  1.0,
+     "Rentang blink di atas dead zone. Makin besar = butuh mata lebih merem baru efek signifikan."),
+    ("boredom", "yawn_dead_zone",  "Yawn Dead Zone",      0.0,  0.4,
+     "jawOpen di bawah ini = yawn_raw 0 (tidak dihitung). Mencegah mulut sedikit terbuka/napas santai ikut trigger boredom ketika gaze sedikit menyimpang."),
+    ("boredom", "yawn_threshold",  "Yawn Threshold",      0.1,  0.8,
+     "jawOpen di atas dead zone / ini = skor menguap → 1.0. Makin besar = butuh bukaan mulut nyata untuk skor penuh."),
+    ("boredom", "sig_expr_weight", "Expr Weight",         0.0,  1.0,
+     "Bobot sinyal ekspresi (blink/yawn/pitch_up) dalam boredom. 0 = hanya gaze, 1 = ekspresi penuh."),
+    ("boredom", "eye_wide_suppress", "EyeWide Suppress",  0.0,  0.6,
+     "Mata terbuka lebar mengurangi skor boredom. Mata lebar = perhatian, bukan bosan."),
+    ("boredom", "squint_suppress",   "Squint Suppress",   0.0,  0.6,
+     "Sipit (eyeSquint) mengurangi skor boredom. Sipit = konsentrasi/frustrasi, BUKAN ngantuk. Mencegah false positive boredom pada siswa fokus bermata sipit."),
+    ("boredom", "squint_blink_correction", "Squint→Blink Correction", 0.0, 1.0,
+     "Koreksi blink_avg dari inflasi akibat squinting sebelum dihitung. 0.5 = separuh squint dikoreksi dari blink reading."),
+    ("boredom", "teeth_gate_th",     "Teeth Gate Th",     0.05, 0.5,
+     "Gigi terlihat > ini → mulut terbuka BUKAN menguap. Menguap = bibir menutupi gigi (bentuk O). Makin kecil = lebih sensitif."),
+    ("boredom", "smile_suppress",    "Smile Suppress",    0.0,  0.8,
+     "Senyum/gigi kelihatan mengurangi skor boredom. Orang yang senyum/ketawa jelas tidak bosan. 0.4 = suppress sedang."),
+    ("boredom", "smile_gaze_max",    "Smile Gaze Max (°)", 5.0,  30.0,
+     "Gaze deviation > ini → senyum TIDAK mengurangi boredom. Ketawa sambil noleh ke temen = tetap bosan."),
+    ("boredom", "chin_bore_th",     "Chin Bore Th",      0.0,  0.6,
+     "Proporsi titik tangan di zona dagu/pipi minimum sebelum 'menopang dagu' dihitung sebagai boredom. 0.3 = butuh 1-2 tangan terlihat."),
+    ("boredom", "chin_bore_range",  "Chin Bore Range",   0.1,  0.6,
+     "Rentang di atas threshold sampai boost penuh. th+range = saturasi chin_bore. Default: 0.3+0.4=0.7."),
+    ("boredom", "chin_bore_max",    "Chin Bore Max",     0.0,  1.0,
+     "Kontribusi maksimal menopang dagu ke skor boredom. 0.65 = tangan di dagu saja sudah cukup memicu boredom."),
+    ("boredom", "yawn_bore_w",      "Yawn Bore Weight",  0.0,  1.0,
+     "Bobot kontribusi langsung menguap ke boredom. Menguap = bosan walau tatap layar — tapi hanya jika yawn kuat."),
+    ("boredom", "yawn_strong_th",   "Yawn Strong Th",    0.2,  0.8,
+     "jawOpen minimum (raw, 0-1) untuk bypass gaze gate. 0.5 = mulut harus terbuka lebar (yawn beneran). Lebih besar = lebih ketat."),
+    ("boredom", "yawn_strong_range","Yawn Strong Range",  0.05, 0.4,
+     "Rentang di atas threshold sampai bypass penuh. Kecil = transisi cepat ke bypass penuh saat jawOpen besar."),
+    ("boredom", "fwd_yaw_th",        "Fwd Yaw Th (°)",    3.0,  20.0,
+     "MUTLAK: |yaw| < ini = hadap depan = TIDAK BOSAN. Boredom hanya muncul kalau kepala menoleh. Default 8°."),
+    ("boredom", "fwd_yaw_range",     "Fwd Yaw Range (°)", 3.0,  15.0,
+     "Range transisi dari threshold. Boredom 0 di yaw=th, naik linear, penuh di yaw=th+range. Default 7° → penuh di 15°."),
     # ENGAGEMENT
-    ("engagement", "nunduk_gate_range", "Nunduk Gate Range",   2.0, 15.0),
-    ("engagement", "tegak_dead_zone",   "Tegak Dead Zone (°)", 0.0, 10.0),
-    ("engagement", "tegak_range",       "Tegak Range (°)",     5.0, 25.0),
-    ("engagement", "blink_heavy_th",    "Heavy Blink Th",      0.2,  0.9),
-    ("engagement", "blink_heavy_min",   "Min Engagement",      0.0,  0.5),
+    ("engagement", "tegak_dead_zone", "Tegak Dead Zone (°)", 0.0, 10.0,
+     "Gaze deviation di bawah ini = engaged penuh. Makin besar = lebih toleran pandangan agak menyimpang."),
+    ("engagement", "tegak_range",     "Tegak Range (°)",     5.0, 25.0,
+     "Rentang gaze di atas dead zone. Di dead+range, engagement = 0. Makin besar = transisi lebih pelan."),
+    ("engagement", "yaw_gate_th",     "Yaw Gate Th (°)",    10.0, 30.0,
+     "Yaw (kepala menoleh) > ini = engagement mulai turun. Default 20° = toleran sampai menoleh cukup jauh."),
+    ("engagement", "yaw_gate_range",  "Yaw Gate Range (°)",  5.0, 20.0,
+     "Rentang yaw di atas threshold. Di th+range, engagement = 0. Default 10°."),
+    ("engagement", "roll_gate_th",    "Roll Gate Th (°)",    5.0, 20.0,
+     "Roll (kepala miring) > ini = engagement mulai turun. Default 10° = natural tilt aman."),
+    ("engagement", "roll_gate_range", "Roll Gate Range (°)", 3.0, 15.0,
+     "Rentang roll sampai engagement = 0. Default 5° → nol di roll 15°."),
+    ("engagement", "blink_heavy_th",  "Heavy Blink Th",      0.2,  0.9,
+     "Blink > ini = mata terlalu merem (ngantuk). Menurunkan engagement."),
+    ("engagement", "blink_heavy_min", "Min Engagement",      0.0,  0.5,
+     "Engagement minimum saat blink sangat berat. Lantai engagement tidak pernah di bawah ini."),
+    ("engagement", "eye_wide_boost",  "EyeWide Boost",       0.0,  0.5,
+     "Mata terbuka lebar meningkatkan engagement. Mata lebar = fokus/perhatian."),
+    ("engagement", "eye_squint_boost","EyeSquint Boost",     0.0,  0.4,
+     "Sipit meningkatkan engagement sedikit. Sipit = konsentrasi aktif, seperti eye_wide tapi lebih subtle."),
+    ("engagement", "smile_boost",     "Smile Boost",         0.0,  0.6,
+     "Senyum/gigi kelihatan meningkatkan engagement. Orang yang senyum/ketawa = aktif terlibat."),
+    ("engagement", "smile_gaze_max",  "Smile Gaze Max (°)",  5.0,  30.0,
+     "Gaze deviation > ini → senyum TIDAK boost engagement. Ketawa sambil noleh ke temen ≠ engaged."),
+    ("engagement", "yawn_eng_th",     "Yawn Eng Th",         0.1,  0.8,
+     "jawOpen >= ini = mulai penalti engagement. Independent dari boredom yawn_threshold. Makin kecil = lebih sensitif."),
+    ("engagement", "yawn_eng_pen_w",  "Yawn Eng Penalty",    0.0,  0.8,
+     "Besar penalti engagement dari menguap. 0.5 = menguap penuh mengurangi engagement setengah."),
+    ("engagement", "pitch_gate_th",   "Pitch Gate Th (°)",   0.0, 30.0,
+     "Kepala mendongak > ini = engagement mulai turun. 15° = wajar duduk, nol di th+range."),
+    ("engagement", "pitch_gate_range","Pitch Gate Range (°)", 5.0, 40.0,
+     "Rentang pitch di atas threshold sampai engagement = 0. Default 15° → nol di pitch 30°."),
+    ("engagement", "gaze_fwd_bonus",   "Gaze Forward Bonus",  0.0,  0.4,
+     "Bonus engagement saat gaze tepat ke depan (dalam dead zone). Natap layar langsung = sinyal aktif engaged, bukan cuma tidak dihukum."),
+    ("engagement", "bore_suppress_th", "Bore Suppress Th",    0.0,  0.5,
+     "Boredom di bawah ini tidak menekan engagement (dead zone noise). Hanya bore yang jelas tinggi yang suppress."),
+    ("engagement", "bore_eng_suppress","Bore→Eng Suppress",   0.0,  1.0,
+     "Boredom di atas threshold menekan engagement. Bosan dan fokus adalah kondisi berlawanan secara semantik."),
+    ("engagement", "look_dn_eng_th",  "LookDn Eng Th",       0.1,  0.6,
+     "lookDown > ini = mulai boost engagement. Lihat bawah = baca/ngetik = engaged."),
+    ("engagement", "look_dn_eng_boost","LookDn Eng Boost",   0.0,  0.5,
+     "Besar boost engagement dari lihat bawah + hadap depan. 0.2 = boost sedang."),
+    ("engagement", "look_dn_eng_yaw_max","LookDn Eng YawMax (°)", 5.0, 30.0,
+     "Yaw > ini → look_dn boost nonaktif. Noleh sambil nunduk = bukan baca konten = bukan engaged."),
+    ("engagement", "hand_chin_eng_pen", "Chin Eng Penalty",     0.0,  1.0,
+     "Tangan di dagu/pipi (menopang kepala) mengurangi engagement. Postur pasif/mengantuk bukan aktif fokus. 0.5 = penalti sedang."),
     # CONFUSION
-    ("confusion", "iris_up_dead_zone",  "Iris Up Dead Zone",   0.0,  0.4),
-    ("confusion", "iris_up_range",      "Iris Up Range",       0.1,  0.6),
-    ("confusion", "look_up_threshold",  "LookUp Threshold",    0.1,  0.7),
-    ("confusion", "pitch_start",        "Pitch Start (°)",     0.0, 15.0),
-    ("confusion", "pitch_range",        "Pitch Range (°)",     5.0, 30.0),
-    ("confusion", "brow_dn_th",         "BrowDown Th",         0.1,  0.5),
-    ("confusion", "brow_in_th",         "BrowInnerUp Th",      0.1,  0.5),
-    ("confusion", "brow_in_co_gate",    "BrowInner CoGate",    0.1,  0.5),
-    ("confusion", "smile_penalty_th",   "Smile Penalty Th",    0.0,  0.3),
-    ("confusion", "jaw_start",          "Jaw Start",           0.0,  0.2),
-    ("confusion", "jaw_peak",           "Jaw Peak",            0.1,  0.5),
-    ("confusion", "jaw_end",            "Jaw End",             0.3,  0.8),
-    ("confusion", "pucker_th",          "Pucker Th",           0.1,  0.6),
-    ("confusion", "pucker_gate_th",     "Pucker Gate Th",      0.1,  0.6),
-    ("confusion", "gaze_gate_dead",     "Gaze Gate Dead (°)",  0.0, 15.0),
-    ("confusion", "gaze_gate_range",    "Gaze Gate Range (°)", 5.0, 25.0),
+    ("confusion", "iris_up_dead_zone",  "Iris Up Dead Zone",   0.0,  0.4,
+     "Iris ke atas di bawah ini diabaikan. Mencegah posisi mata normal trigger confusion."),
+    ("confusion", "iris_up_range",      "Iris Up Range",       0.1,  0.6,
+     "Rentang iris ke atas di atas dead zone. Makin besar = butuh tatapan lebih ke atas untuk confusion."),
+    ("confusion", "look_up_threshold",  "LookUp Threshold",    0.1,  0.7,
+     "Pembagi blendshape eyeLookUp. Makin kecil = mata lihat atas sedikit sudah dianggap confusion."),
+    ("confusion", "look_dn_th",          "LookDn Threshold",    0.2,  0.7,
+     "Lihat bawah > ini = sinyal confusion. Siswa baca soal sambil bingung. Default 0.4."),
+    ("confusion", "look_dn_range",       "LookDn Range",        0.1,  0.5,
+     "Rentang lihat bawah di atas threshold. Makin besar = transisi lebih pelan."),
+    ("confusion", "look_dn_yaw_max",     "LookDn Yaw Max (°)",  5.0, 25.0,
+     "Lihat bawah + yaw > ini = BUKAN confusion. Noleh sambil nunduk = bukan bingung."),
+    ("confusion", "look_dn_boost",        "LookDn Boost",        0.0,  0.7,
+     "Boost langsung confusion saat lihat bawah + hadap depan. Siswa baca soal = mungkin bingung."),
+    ("confusion", "pitch_start",        "Pitch Start (°)",     0.0, 15.0,
+     "Kepala mendongak > ini = sinyal confusion dari pitch. Bingung kadang sambil mendongak."),
+    ("confusion", "pitch_range",        "Pitch Range (°)",     5.0, 30.0,
+     "Rentang pitch di atas start. Makin besar = transisi lebih pelan."),
+    ("confusion", "brow_dn_th",         "BrowDown Th",         0.1,  0.5,
+     "Pembagi browDown. Makin kecil = alis turun sedikit sudah trigger confusion. Alis turun = mengernyit."),
+    ("confusion", "brow_in_th",         "BrowInnerUp Th",      0.1,  0.5,
+     "Pembagi browInnerUp. Makin kecil = alis naik di tengah sedikit sudah trigger. Alis naik = heran."),
+    ("confusion", "brow_in_co_gate",    "BrowInner CoGate",    0.1,  0.5,
+     "Gate: browInnerUp hanya aktif jika ada co-signal (iris atas/lookUp/pitch). Mencegah alis naik saja tanpa pandangan bingung."),
+    ("confusion", "smile_penalty_th",   "Smile Penalty",       0.0,  0.3,
+     "Senyum > ini = penalti pada skor jaw confusion. Senyum + mulut terbuka bukan bingung."),
+    ("confusion", "smile_conf_gate_th", "Smile Gate Th",       0.1,  0.5,
+     "Senyum >= ini → confusion langsung turun ke 0. Orang tersenyum tidak bingung."),
+    ("confusion", "jaw_start",          "Jaw Start",           0.0,  0.2,
+     "jawOpen < ini = jaw tidak berkontribusi ke confusion. Mulut harus terbuka sedikit."),
+    ("confusion", "jaw_peak",           "Jaw Peak",            0.1,  0.5,
+     "Titik puncak kontribusi jaw ke confusion. Mulut terbuka sedang = paling bingung."),
+    ("confusion", "jaw_end",            "Jaw End",             0.3,  0.8,
+     "jawOpen > ini = jaw tidak berkontribusi. Mulut terlalu terbuka = menguap, bukan bingung."),
+    ("confusion", "pucker_th",          "Pucker Th",           0.1,  0.6,
+     "Pembagi mouthPucker. Mulut mengerucut = ekspresi thinking/bingung."),
+    ("confusion", "roll_dead_zone",     "Roll Dead Zone (°)",  0.0, 15.0,
+     "Kepala miring < ini diabaikan. Sedikit miring = normal. Miring banyak = ciri bingung."),
+    ("confusion", "roll_range",         "Roll Range (°)",      5.0, 30.0,
+     "Rentang roll di atas dead zone. Makin besar = transisi lebih pelan."),
+    ("confusion", "attentive_dead",     "Attentive Dead (°)",  0.0, 15.0,
+     "Gaze deviation < ini = confusion penuh (masih attentive). Confusion butuh pandangan ke konten."),
+    ("confusion", "attentive_range",    "Attentive Range (°)", 5.0, 30.0,
+     "Rentang gaze di atas dead. Makin jauh lihat dari layar = makin kecil confusion (floor = Attentive Floor)."),
+    ("confusion", "attentive_floor",    "Attentive Floor",     0.0,  0.6,
+     "Lantai gate attentive. 0.3 = confusion minimal 30% saat pandangan jauh dari layar."),
+    ("confusion", "frus_conf_suppress", "Frus→Conf Suppress",  0.0,  1.0,
+     "Frustrasi tinggi menekan confusion. Alis tegang saat frustrasi ≠ alis bingung. 0.5 = suppress sedang."),
     # FRUSTRATION
-    ("frustration", "brow_dn_th",       "BrowDown Th",         0.1,  0.6),
-    ("frustration", "nose_sneer_th",    "NoseSneer Th",        0.05, 0.5),
-    ("frustration", "cheek_squint_th",  "CheekSquint Th",      0.1,  0.6),
-    ("frustration", "mouth_press_th",   "MouthPress Th",       0.1,  0.6),
-    ("frustration", "eye_squint_th",    "EyeSquint Th",        0.1,  0.6),
-    ("frustration", "jaw_start",        "Jaw Start",           0.0,  0.3),
-    ("frustration", "jaw_range",        "Jaw Range",           0.05, 0.5),
-    ("frustration", "restless_dead",    "Restless Dead (°)",   0.0, 15.0),
-    ("frustration", "restless_range",   "Restless Range (°)",  3.0, 20.0),
-    ("frustration", "restless_w",       "Restless Weight",     0.0,  1.0),
+    ("frustration", "brow_dn_th",      "BrowDown Th",     0.1,  0.6,
+     "Pembagi browDown. Makin kecil = alis turun sedikit sudah trigger frustrasi."),
+    ("frustration", "nose_sneer_th",   "NoseSneer Th",    0.05, 0.5,
+     "Pembagi noseSneer. Hidung mengernyit = ekspresi jijik/frustrasi."),
+    ("frustration", "cheek_squint_th", "CheekSquint Th",  0.1,  0.6,
+     "Pembagi cheekSquint. Pipi menyempit = ekspresi tegang."),
+    ("frustration", "mouth_press_th",  "MouthPress Th",   0.1,  0.6,
+     "Pembagi mouthPress. Bibir tertekan = menahan emosi/frustasi."),
+    ("frustration", "mouth_frown_th",  "MouthFrown Th",   0.05, 0.5,
+     "Pembagi mouthFrown. Sudut mulut turun = ekspresi kecewa/frustasi."),
+    ("frustration", "eye_squint_th",   "EyeSquint Th",    0.1,  0.6,
+     "Pembagi eyeSquint. Mata menyipit = ekspresi frustrasi/ketidakpuasan."),
+    ("frustration", "jaw_start",       "Jaw Start",       0.0,  0.3,
+     "jawOpen < ini = jaw tidak berkontribusi ke frustrasi."),
+    ("frustration", "jaw_range",       "Jaw Range",       0.05, 0.5,
+     "Rentang jaw di atas start. Gigi terkatup rapat = tanda frustrasi."),
+    ("frustration", "face_weight",     "Face Weight",     0.1,  0.8,
+     "Skala maks kontribusi ekspresi wajah ke frustrasi. Makin besar = wajah saja bisa trigger lebih kuat."),
+    ("frustration", "hand_weight",     "Hand Weight",     0.3,  1.0,
+     "Bobot tangan dalam fusion. Tangan di wajah/kepala = sinyal utama frustrasi."),
     # HYBRID
-    ("hybrid", "empirical_bias",       "SigLIP Empirical Bias", 1.0, 6.0),
-    ("hybrid", "restless_bonus_max",   "Restless Bonus Max",    0.0, 0.3),
-    ("hybrid", "restless_std_min",     "Restless Std Min (°)",  1.0, 8.0),
-    ("hybrid", "restless_std_range",   "Restless Std Range (°)", 3.0, 15.0),
+    ("hybrid", "empirical_bias",       "SigLIP Empirical Bias", 1.0, 6.0,
+     "Bias ditambahkan ke logits sebelum sigmoid. Makin besar = skor SigLIP makin tinggi secara global."),
+    ("hybrid", "restless_bonus_max",   "Restless Bonus Max",    0.0, 0.3,
+     "Bonus maks boredom dari variasi yaw antar frame. 0 = disabled (direkomendasikan)."),
+    ("hybrid", "restless_std_min",     "Restless Std Min (°)",  1.0, 8.0,
+     "Std-dev yaw minimum sebelum restless bonus aktif."),
+    ("hybrid", "restless_std_range",   "Restless Std Range (°)", 3.0, 15.0,
+     "Rentang std-dev yaw dari min sampai bonus maks."),
 ]
 
 _SECTION_COLORS = {
@@ -102,11 +232,12 @@ class RulesPanel:
         on_recalculate(rules: dict) — dipanggil saat Recalculate ditekan.
     """
 
-    def __init__(self, parent, rules: dict, threshold_vars=None, on_save=None, on_recalculate=None):
+    def __init__(self, parent, rules: dict, threshold_vars=None, on_save=None, on_recalculate=None, on_rebatch=None):
         self._rules_ref = _deep_copy(rules)  # working copy
         self._threshold_vars = threshold_vars or []   # shared DoubleVar dari right panel
         self._on_save = on_save
         self._on_recalculate = on_recalculate
+        self._on_rebatch = on_rebatch
 
         self.win = ctk.CTkToplevel(parent)
         self.win.title("Rules Editor — Parameter Landmark & Hybrid")
@@ -124,6 +255,23 @@ class RulesPanel:
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _bind_scroll(scrollable_frame):
+        """Aktifkan scroll mouse di CTkScrollableFrame (Toplevel tidak auto-bind)."""
+        canvas = scrollable_frame._parent_canvas
+        scrollable_frame.bind("<Enter>", lambda _: scrollable_frame.bind_all(
+            "<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        ))
+        scrollable_frame.bind("<Enter>", lambda _: scrollable_frame.bind_all(
+            "<Button-4>", lambda _e: canvas.yview_scroll(-1, "units")
+        ), add="+")
+        scrollable_frame.bind("<Enter>", lambda _: scrollable_frame.bind_all(
+            "<Button-5>", lambda _e: canvas.yview_scroll(1, "units")
+        ), add="+")
+        scrollable_frame.bind("<Leave>", lambda _: scrollable_frame.unbind_all("<MouseWheel>"))
+        scrollable_frame.bind("<Leave>", lambda _: scrollable_frame.unbind_all("<Button-4>"), add="+")
+        scrollable_frame.bind("<Leave>", lambda _: scrollable_frame.unbind_all("<Button-5>"), add="+")
+
     def _build(self):
         # Main layout: scroll area + batch strip + button bar
         self.win.rowconfigure(0, weight=1)
@@ -133,6 +281,7 @@ class RulesPanel:
 
         scroll = ctk.CTkScrollableFrame(self.win, fg_color="transparent")
         scroll.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 0))
+        self._bind_scroll(scroll)
 
         self._build_slider_sections(scroll)
         self._build_hybrid_weight_section(scroll)
@@ -179,22 +328,30 @@ class RulesPanel:
         bar.grid_propagate(False)
 
         ctk.CTkButton(
-            bar, text="Reset Default", width=120, height=32,
+            bar, text="Reset Default", width=110, height=32,
             fg_color=("#9ca3af", "#374151"), hover_color=("#6b7280", "#1f2937"),
             font=("Poppins", 10), command=self._reset_default,
         ).pack(side="left", padx=(12, 6), pady=9)
 
+        # Simpan = tulis file saja, TIDAK recalculate (cepat)
         ctk.CTkButton(
-            bar, text="Simpan", width=100, height=32,
+            bar, text="Simpan", width=90, height=32,
+            fg_color="#6366f1", hover_color="#4f46e5",
+            font=("Poppins", 10, "bold"), command=self._save_only,
+        ).pack(side="right", padx=(4, 12), pady=9)
+
+        # Recalculate = simpan + hitung ulang semua batch dari cache
+        ctk.CTkButton(
+            bar, text="Recalculate", width=100, height=32,
             fg_color="#3b82f6", hover_color="#2563eb",
             font=("Poppins", 10, "bold"), command=self._save,
-        ).pack(side="right", padx=(6, 12), pady=9)
+        ).pack(side="right", padx=4, pady=9)
 
         ctk.CTkButton(
-            bar, text="Recalculate Batch", width=150, height=32,
-            fg_color="#8b5cf6", hover_color="#7c3aed",
-            font=("Poppins", 10, "bold"), command=self._recalculate,
-        ).pack(side="right", padx=6, pady=9)
+            bar, text="Rebatch", width=80, height=32,
+            fg_color="#dc2626", hover_color="#b91c1c",
+            font=("Poppins", 10, "bold"), command=self._rebatch,
+        ).pack(side="right", padx=4, pady=9)
 
         self.lbl_status = ctk.CTkLabel(
             bar, text="", font=("Poppins", 9), text_color="#10b981"
@@ -205,10 +362,10 @@ class RulesPanel:
         """Bangun slider per parameter, dikelompokkan per seksi."""
         sections_seen = []
         sliders_by_section: dict = {}
-        for sec, key, lbl, lo, hi in _SLIDER_DEFS:
+        for sec, key, lbl, lo, hi, desc in _SLIDER_DEFS:
             if sec == "hybrid" and key in ("siglip_w", "land_w"):
                 continue  # handled separately
-            sliders_by_section.setdefault(sec, []).append((key, lbl, lo, hi))
+            sliders_by_section.setdefault(sec, []).append((key, lbl, lo, hi, desc))
             if sec not in sections_seen:
                 sections_seen.append(sec)
 
@@ -224,10 +381,10 @@ class RulesPanel:
             divider = ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0)
             divider.pack(fill="x", padx=4, pady=(0, 4))
 
-            for key, lbl, lo, hi in sliders_by_section[sec]:
-                self._build_one_slider(parent, sec, key, lbl, lo, hi)
+            for key, lbl, lo, hi, desc in sliders_by_section[sec]:
+                self._build_one_slider(parent, sec, key, lbl, lo, hi, desc)
 
-    def _build_one_slider(self, parent, sec, key, lbl, lo, hi):
+    def _build_one_slider(self, parent, sec, key, lbl, lo, hi, desc=""):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=8, pady=1)
 
@@ -264,6 +421,14 @@ class RulesPanel:
         entry.bind("<Return>", lambda e: _commit())
         entry.bind("<FocusOut>", lambda e: _commit())
 
+        # Deskripsi kecil di bawah slider
+        if desc:
+            ctk.CTkLabel(
+                parent, text=f"    ↳ {desc}",
+                font=("Poppins", 8), text_color=("#6b7280", "#6b7280"),
+                anchor="w", wraplength=500,
+            ).pack(fill="x", padx=8, pady=(0, 2))
+
     def _build_hybrid_weight_section(self, parent):
         """Bangun slider siglip_w dan land_w per label."""
         color = _SECTION_COLORS["hybrid"]
@@ -275,13 +440,13 @@ class RulesPanel:
         ctk.CTkFrame(parent, fg_color=color, height=1, corner_radius=0).pack(fill="x", padx=4, pady=(0, 4))
 
         # Also include scalar hybrid params from _SLIDER_DEFS
-        for sec, key, lbl, lo, hi in _SLIDER_DEFS:
+        for sec, key, lbl, lo, hi, desc in _SLIDER_DEFS:
             if sec == "hybrid" and key not in ("siglip_w", "land_w"):
-                self._build_one_slider(parent, sec, key, lbl, lo, hi)
+                self._build_one_slider(parent, sec, key, lbl, lo, hi, desc)
 
-        # Per-label weight rows
+        # Per-label weight rows — SigLIP dan Landmark saling terhubung (total = 1.0)
         from ui.constants import LABEL_COLORS as LC
-        self._weight_vars: list = []  # list of (siglip_var, land_var, siglip_sv, land_sv, siglip_slider, land_slider)
+        self._weight_vars: list = []  # list of (siglip_var, land_var, siglip_sv, land_sv)
 
         for i, lbl_name in enumerate(_LABEL_NAMES):
             lcolor = LC.get(lbl_name, "#6b7280")
@@ -296,36 +461,80 @@ class RulesPanel:
             sv_sv  = ctk.StringVar(value="0.50")
             lv_sv  = ctk.StringVar(value="0.50")
 
-            def _mk_cb(sv, _sv):
+            # Flag untuk mencegah infinite loop saat update saling
+            _updating = [False]
+
+            def _mk_siglip_cb(_sv_var=sv_var, _lv_var=lv_var, _sv_sv=sv_sv, _lv_sv=lv_sv, _upd=_updating):
                 def cb(v):
-                    _sv.set(f"{float(v):.2f}")
+                    if _upd[0]:
+                        return
+                    _upd[0] = True
+                    val = float(v)
+                    comp = round(1.0 - val, 2)
+                    _lv_var.set(comp)
+                    _sv_sv.set(f"{val:.2f}")
+                    _lv_sv.set(f"{comp:.2f}")
+                    _upd[0] = False
                 return cb
 
-            def _mk_commit(dv, _sv, lo=0.0, hi=1.0):
+            def _mk_land_cb(_sv_var=sv_var, _lv_var=lv_var, _sv_sv=sv_sv, _lv_sv=lv_sv, _upd=_updating):
+                def cb(v):
+                    if _upd[0]:
+                        return
+                    _upd[0] = True
+                    val = float(v)
+                    comp = round(1.0 - val, 2)
+                    _sv_var.set(comp)
+                    _lv_sv.set(f"{val:.2f}")
+                    _sv_sv.set(f"{comp:.2f}")
+                    _upd[0] = False
+                return cb
+
+            def _mk_commit_linked(dv, _sv, other_dv, other_sv, _upd, lo=0.0, hi=1.0):
                 def commit():
+                    if _upd[0]:
+                        return
+                    _upd[0] = True
                     try:
                         v = float(_sv.get().replace(",", "."))
                         v = max(lo, min(hi, v))
+                        comp = round(1.0 - v, 2)
                         dv.set(v)
+                        other_dv.set(comp)
                         _sv.set(f"{v:.2f}")
+                        other_sv.set(f"{comp:.2f}")
                     except ValueError:
                         _sv.set(f"{dv.get():.2f}")
+                    _upd[0] = False
                 return commit
 
-            for label_txt, dv, sv_str in [("SigLIP", sv_var, sv_sv), ("Landmark", lv_var, lv_sv)]:
-                rw = ctk.CTkFrame(sec_frame, fg_color="transparent")
-                rw.pack(fill="x", padx=8, pady=1)
-                ctk.CTkLabel(rw, text=label_txt, font=("Poppins", 9), width=60, anchor="w").pack(side="left")
-                ent = ctk.CTkEntry(rw, textvariable=sv_str, width=52, height=20,
-                                   font=("Poppins", 9, "bold"), justify="right",
-                                   fg_color=("white", "#111122"))
-                ent.pack(side="right", padx=(2, 0))
-                commit_fn = _mk_commit(dv, sv_str)
-                ent.bind("<Return>", lambda e, fn=commit_fn: fn())
-                ent.bind("<FocusOut>", lambda e, fn=commit_fn: fn())
-                sl = ctk.CTkSlider(rw, from_=0.0, to=1.0, variable=dv,
-                                   command=_mk_cb(dv, sv_str))
-                sl.pack(side="left", fill="x", expand=True, padx=(4, 4))
+            # SigLIP row
+            rw_s = ctk.CTkFrame(sec_frame, fg_color="transparent")
+            rw_s.pack(fill="x", padx=8, pady=1)
+            ctk.CTkLabel(rw_s, text="SigLIP", font=("Poppins", 9), width=60, anchor="w").pack(side="left")
+            ent_s = ctk.CTkEntry(rw_s, textvariable=sv_sv, width=52, height=20,
+                                 font=("Poppins", 9, "bold"), justify="right",
+                                 fg_color=("white", "#111122"))
+            ent_s.pack(side="right", padx=(2, 0))
+            commit_s = _mk_commit_linked(sv_var, sv_sv, lv_var, lv_sv, _updating)
+            ent_s.bind("<Return>", lambda e, fn=commit_s: fn())
+            ent_s.bind("<FocusOut>", lambda e, fn=commit_s: fn())
+            ctk.CTkSlider(rw_s, from_=0.0, to=1.0, variable=sv_var,
+                          command=_mk_siglip_cb()).pack(side="left", fill="x", expand=True, padx=(4, 4))
+
+            # Landmark row
+            rw_l = ctk.CTkFrame(sec_frame, fg_color="transparent")
+            rw_l.pack(fill="x", padx=8, pady=1)
+            ctk.CTkLabel(rw_l, text="Landmark", font=("Poppins", 9), width=60, anchor="w").pack(side="left")
+            ent_l = ctk.CTkEntry(rw_l, textvariable=lv_sv, width=52, height=20,
+                                 font=("Poppins", 9, "bold"), justify="right",
+                                 fg_color=("white", "#111122"))
+            ent_l.pack(side="right", padx=(2, 0))
+            commit_l = _mk_commit_linked(lv_var, lv_sv, sv_var, sv_sv, _updating)
+            ent_l.bind("<Return>", lambda e, fn=commit_l: fn())
+            ent_l.bind("<FocusOut>", lambda e, fn=commit_l: fn())
+            ctk.CTkSlider(rw_l, from_=0.0, to=1.0, variable=lv_var,
+                          command=_mk_land_cb()).pack(side="left", fill="x", expand=True, padx=(4, 4))
 
             ctk.CTkFrame(sec_frame, fg_color="transparent", height=2).pack()
             self._weight_vars.append((sv_var, lv_var, sv_sv, lv_sv))
@@ -400,8 +609,8 @@ class RulesPanel:
                 var.set(float(val))
                 sv = self._lbl_vars.get((sec, key))
                 if sv:
-                    hi = next((h for s, k, _, _, h in _SLIDER_DEFS if s == sec and k == key), 2)
-                    lo = next((l for s, k, _, l, _ in _SLIDER_DEFS if s == sec and k == key), 0)
+                    hi = next((h for s, k, _, _, h, *_ in _SLIDER_DEFS if s == sec and k == key), 2)
+                    lo = next((l for s, k, _, l, *_ in _SLIDER_DEFS if s == sec and k == key), 0)
                     sv.set(f"{float(val):.3f}" if (hi - lo) < 2 else f"{float(val):.2f}")
             except (KeyError, TypeError):
                 pass
@@ -441,28 +650,39 @@ class RulesPanel:
         self._load_from_rules(DEFAULT_RULES)
         self.lbl_status.configure(text="Reset ke default", text_color="#fbbf24")
 
-    def _save(self):
+    def _save_only(self):
+        """Simpan rules ke file saja — tidak recalculate. Cepat."""
         rules = self._collect_rules()
         self._rules_ref = rules
         if self._on_save:
             self._on_save(rules)
         self.lbl_status.configure(text="Tersimpan ✓", text_color="#10b981")
 
-    def _recalculate(self):
+    def _save(self):
         rules = self._collect_rules()
         self._rules_ref = rules
         if self._on_save:
             self._on_save(rules)
         if self._on_recalculate:
-            # Hitung extra_path dari batch mode strip
             extra_path = None
             if self._batch_new_var.get():
                 import datetime, os
                 name = self._batch_name_var.get().strip()
                 if not name:
                     name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                extra_path = f"__batch_name__{name}"  # sentinel, resolved di app.py
-
-            self.lbl_status.configure(text="Menghitung ulang…", text_color="#fbbf24")
+                extra_path = f"__batch_name__{name}"
+            self.lbl_status.configure(text="Menyimpan + Menghitung ulang…", text_color="#fbbf24")
             self.win.update_idletasks()
             self._on_recalculate(rules, extra_path)
+        else:
+            self.lbl_status.configure(text="Tersimpan ✓", text_color="#10b981")
+
+    def _rebatch(self):
+        rules = self._collect_rules()
+        self._rules_ref = rules
+        if self._on_save:
+            self._on_save(rules)
+        if self._on_rebatch:
+            self.lbl_status.configure(text="Memulai rebatch…", text_color="#f59e0b")
+            self.win.update_idletasks()
+            self._on_rebatch()
