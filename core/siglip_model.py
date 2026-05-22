@@ -28,7 +28,7 @@ def get_siglip():
             MODEL_ID = os.getenv("SIGLIP_MODEL_ID", "google/siglip2-base-patch16-224")
             print(f"Loading SigLIP2 on {_device.upper()} ({MODEL_ID})...")
             _siglip_processor = AutoProcessor.from_pretrained(MODEL_ID)
-            _siglip_model     = AutoModel.from_pretrained(MODEL_ID)
+            _siglip_model     = AutoModel.from_pretrained(MODEL_ID, low_cpu_mem_usage=True)
             _siglip_model.to(_device)
             _siglip_model.eval()
             print("SigLIP2 ready.")
