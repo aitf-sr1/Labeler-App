@@ -31,6 +31,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ui import LABELS, LABEL_COLORS, LeftPanel, RightPanel, RulesPanel
+
+# Pasangan label yang saling eksklusif: jika satu = 1, pasangannya harus 0
+MUTUAL_EXCLUSIVE = {
+    "Confusion": "Frustration",
+    "Frustration": "Confusion",
+    "Boredom": "Engagement",
+    "Engagement": "Boredom",
+}
 from utils import (
     prepare_cropped_frames,
     load_annotations, save_annotations,
@@ -423,6 +431,15 @@ class VideoLabelerApp:
         if rel not in self.manual_labels:
             self._init_manual_for_current()
         self.manual_labels[rel][str(frame_idx)][label] = int(value)
+
+        # Mutual exclusion: jika label diaktifkan, matikan pasangannya & update checkbox-nya
+        if int(value) == 1 and label in MUTUAL_EXCLUSIVE:
+            pair = MUTUAL_EXCLUSIVE[label]
+            self.manual_labels[rel][str(frame_idx)][pair] = 0
+            self.left_panel.update_manual_checkboxes(
+                frame_idx, self.manual_labels[rel][str(frame_idx)]
+            )
+
         self._save_manual_labels()
         # Update highlight frame yang berubah sesuai label aktif
         active_lbl = self.active_frame_label.get()
@@ -1103,6 +1120,12 @@ class VideoLabelerApp:
         current_val = self.manual_labels[rel_path][str(frame_idx)].get(active_lbl, 0)
         new_val     = 1 if current_val == 0 else 0
         self.manual_labels[rel_path][str(frame_idx)][active_lbl] = new_val
+
+        # Mutual exclusion: jika label diaktifkan, matikan pasangannya
+        if new_val == 1 and active_lbl in MUTUAL_EXCLUSIVE:
+            pair = MUTUAL_EXCLUSIVE[active_lbl]
+            self.manual_labels[rel_path][str(frame_idx)][pair] = 0
+
         self._save_manual_labels()
 
         # Update checkbox di panel kiri
@@ -1153,6 +1176,12 @@ class VideoLabelerApp:
         current_val = self.manual_labels[rel_path][str(frame_idx)].get(label, 0)
         new_val     = 1 if current_val == 0 else 0
         self.manual_labels[rel_path][str(frame_idx)][label] = new_val
+
+        # Mutual exclusion: jika label diaktifkan, matikan pasangannya
+        if new_val == 1 and label in MUTUAL_EXCLUSIVE:
+            pair = MUTUAL_EXCLUSIVE[label]
+            self.manual_labels[rel_path][str(frame_idx)][pair] = 0
+
         self._save_manual_labels()
 
         # Update checkbox
