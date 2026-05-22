@@ -1,4 +1,4 @@
-from .inference import run_siglip_on_frames
+from .inference import run_siglip_on_frames, run_siglip_batch
 from .siglip_model import get_siglip
 from .face_detector import crop_face
 from .rules import load_rules, save_rules, DEFAULT_RULES

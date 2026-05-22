@@ -250,3 +250,182 @@ def run_siglip_on_frames(
         "no_label":   not has_any_label,
     }
 
+
+def run_siglip_batch(
+    batch_items:   list,
+    prompt_groups: list,
+    thresholds:    list,
+    cfg:           dict = None,
+) -> list:
+    """
+    Proses multiple video dalam SATU GPU forward pass.
+
+    batch_items: list of dict dengan keys:
+        - pil_images:        List[PIL.Image]  — crop wajah per frame
+        - landmark_results:  List[LandmarkResult] atau None
+        - rel_path:          str
+        - siglip_cache_path: str atau None
+
+    Returns: list of result dict, urutan sama dengan batch_items.
+    Format tiap result sama dengan run_siglip_on_frames().
+    """
+    from core.landmark_analyzer import compute_emotion_scores
+    from core.rules import DEFAULT_RULES
+    import datetime, json, os
+
+    if not batch_items:
+        return []
+    if cfg is None:
+        cfg = DEFAULT_RULES
+
+    device           = get_device()
+    model, processor = get_siglip()
+    n_labels         = len(prompt_groups)
+
+    # ── Build text prompts (sama untuk semua video) ───────────────────────────
+    all_texts, group_indices, current_idx = [], [], 0
+    for pos_lines, _neg in prompt_groups:
+        if isinstance(pos_lines, str):
+            lines = [l.strip() for l in pos_lines.strip().split("\n") if l.strip()]
+        else:
+            lines = [str(l).strip() for l in pos_lines if str(l).strip()]
+        all_texts.extend(lines)
+        group_indices.append(list(range(current_idx, current_idx + len(lines))))
+        current_idx += len(lines)
+
+    # ── Stack semua frame dari semua video ────────────────────────────────────
+    all_pil_images = []
+    n_frames_per_video = []
+    for item in batch_items:
+        imgs = item["pil_images"]
+        all_pil_images.extend(imgs)
+        n_frames_per_video.append(len(imgs))
+
+    # ── Satu GPU forward pass untuk seluruh batch ─────────────────────────────
+    inputs = processor(
+        text=all_texts, images=all_pil_images,
+        return_tensors="pt", padding="max_length",
+    )
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        logits_all = model(**inputs).logits_per_image  # [total_frames, n_texts]
+
+    EMPIRICAL_BIAS = cfg["hybrid"]["empirical_bias"]
+
+    # sigmoid untuk semua frame × semua label sekaligus
+    norm_all = []
+    for i in range(n_labels):
+        group_logits = logits_all[:, group_indices[i]]
+        probs        = torch.sigmoid(group_logits + EMPIRICAL_BIAS)
+        norm_all.append(probs.mean(dim=1))   # [total_frames]
+
+    # ── Post-process per video ────────────────────────────────────────────────
+    results      = []
+    frame_offset = 0
+
+    for item, n_frames in zip(batch_items, n_frames_per_video):
+        landmark_results  = item.get("landmark_results")
+        rel_path          = item["rel_path"]
+        siglip_cache_path = item.get("siglip_cache_path")
+
+        norm_by_label = [norm_all[i][frame_offset:frame_offset + n_frames] for i in range(n_labels)]
+
+        # Landmark scores
+        land_scores_per_frame = None
+        if landmark_results and len(landmark_results) == n_frames:
+            land_scores_per_frame = [compute_emotion_scores(r, cfg) for r in landmark_results]
+
+        # Simpan siglip cache
+        if siglip_cache_path:
+            try:
+                os.makedirs(os.path.dirname(siglip_cache_path), exist_ok=True)
+                siglip_frame_data = [
+                    {"frame_idx": f,
+                     "siglip_scores": [round(norm_by_label[i][f].item(), 4) for i in range(n_labels)]}
+                    for f in range(n_frames)
+                ]
+                with open(siglip_cache_path, "w") as fp:
+                    json.dump({
+                        "video_rel":      rel_path or "",
+                        "generated_at":   datetime.datetime.now().isoformat(),
+                        "empirical_bias": EMPIRICAL_BIAS,
+                        "frames":         siglip_frame_data,
+                    }, fp, indent=2)
+            except Exception as e:
+                print(f"[SigLIP Cache] Gagal simpan {rel_path}: {e}")
+
+        # Per-label hybrid scoring
+        per_label_result = {}
+        hcfg = cfg["hybrid"]
+        for i in range(n_labels):
+            sw_raw   = hcfg["siglip_w"][i] if i < len(hcfg["siglip_w"]) else 0.5
+            lw_raw   = hcfg["land_w"][i]   if i < len(hcfg["land_w"])   else 0.5
+            total    = (sw_raw + lw_raw) or 1.0
+            siglip_w = sw_raw / total
+            land_w   = lw_raw / total
+
+            siglip_scores = [round(norm_by_label[i][f].item(), 4) for f in range(n_frames)]
+
+            if land_scores_per_frame:
+                DEAD_THRESHOLD = 0.01
+                valid_frames = [f for f in range(n_frames) if sum(land_scores_per_frame[f]) > DEAD_THRESHOLD] or list(range(n_frames))
+                hybrid_scores = [
+                    round(siglip_w * siglip_scores[f] + land_w * land_scores_per_frame[f][i], 4)
+                    for f in range(n_frames)
+                ]
+                land_avg = round(sum(land_scores_per_frame[f][i] for f in valid_frames) / len(valid_frames), 4)
+
+                if i == 0 and landmark_results:
+                    yaws = [r.yaw for r in landmark_results if r.face_found]
+                    if len(yaws) >= 2:
+                        import numpy as np
+                        yaw_std       = float(np.std(yaws))
+                        restless_bonus = min(max((yaw_std - hcfg["restless_std_min"]) / hcfg["restless_std_range"], 0.0), 1.0) * hcfg["restless_bonus_max"]
+                        if restless_bonus > 0.01:
+                            hybrid_scores = [round(min(s + restless_bonus, 1.0), 4) for s in hybrid_scores]
+            else:
+                hybrid_scores = siglip_scores
+                land_avg      = None
+                valid_frames  = list(range(n_frames))
+
+            avg_score   = round(sum(hybrid_scores[f] for f in valid_frames) / max(len(valid_frames), 1), 4)
+            siglip_avg  = round(sum(siglip_scores) / n_frames, 4)
+            thr         = thresholds[i]
+            frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
+            vote_pos    = sum(frame_preds)
+            prediction  = 1 if (n_frames > 0 and vote_pos >= max(1, (n_frames + 1) // 2)) else 0
+
+            per_label_result[i] = {
+                "prediction":   prediction,
+                "vote_pos":     vote_pos,
+                "vote_neg":     n_frames - vote_pos,
+                "skipped":      0,
+                "avg_score":    avg_score,
+                "siglip_avg":   siglip_avg,
+                "landmark_avg": land_avg,
+                "frame_scores": hybrid_scores,
+                "frame_preds":  frame_preds,
+                "siglip_scores": siglip_scores,
+                "land_scores": (
+                    [round(land_scores_per_frame[f][i], 4) for f in range(n_frames)]
+                    if land_scores_per_frame else None
+                ),
+            }
+
+        has_any_label = any(per_label_result[i]["prediction"] == 1 for i in range(n_labels))
+        results.append({
+            "per_label":  per_label_result,
+            "n_frames":   n_frames,
+            "thresholds": thresholds,
+            "no_label":   not has_any_label,
+        })
+        frame_offset += n_frames
+
+    # Cleanup GPU memory
+    del inputs, logits_all, norm_all
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    return results
+

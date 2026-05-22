@@ -49,7 +49,7 @@ from utils import (
     load_skipped, save_skipped,
     load_thresholds, save_thresholds,
 )
-from core import run_siglip_on_frames, load_rules, save_rules, DEFAULT_RULES, recalculate_batch
+from core import run_siglip_on_frames, run_siglip_batch, load_rules, save_rules, DEFAULT_RULES, recalculate_batch
 from core.siglip_model import preload_siglip
 
 ctk.set_appearance_mode("Dark")
@@ -1998,23 +1998,41 @@ class VideoLabelerApp:
 
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
         def worker():
-            total         = len(self.video_files)
-            already_done  = set(self.batch_history.keys())
-            max_workers   = int(os.getenv("MAX_WORKERS", "2"))
+            import queue as _q
+            total             = len(self.video_files)
+            already_done      = set(self.batch_history.keys())
+            preprocess_workers = int(os.getenv("PREPROCESS_WORKERS", "8"))
+            siglip_batch_size  = int(os.getenv("SIGLIP_BATCH_VIDEOS", "8"))
+            mf_thr             = int(os.getenv("MULTI_FACE_FRAMES_THRESHOLD", "1"))
 
-            def process_video(idx, vp):
-                if self.cancel_batch: return
-                rel_path = os.path.relpath(vp, self.root_folder)
+            # Filter video yang perlu diproses
+            todo = [(idx, vp) for idx, vp in enumerate(self.video_files)
+                    if os.path.relpath(vp, self.root_folder) not in already_done]
+            n_todo = len(todo)
 
-                if rel_path in already_done:
-                    def upd_skip(i=idx, r=rel_path):
-                        self.right_panel.lbl_batch_status.configure(
-                            text=f"Skip (sudah ada) {i+1}/{total}: {os.path.basename(r)}",
-                            text_color="#6b7280",
-                        )
-                    self.root.after(0, upd_skip)
+            if n_todo == 0:
+                return
+
+            # Update status skip untuk video yang sudah selesai
+            skip_count = total - n_todo
+            if skip_count > 0:
+                def upd_skip_count(sc=skip_count):
+                    self.right_panel.lbl_batch_status.configure(
+                        text=f"Skip {sc} video (sudah ada), proses {n_todo} sisanya…",
+                        text_color="#6b7280",
+                    )
+                self.root.after(0, upd_skip_count)
+
+            # Queue: CPU workers → GPU batcher
+            # maxsize = 3× batch_size agar CPU workers tidak terlalu jauh di depan GPU
+            prep_queue = _q.Queue(maxsize=siglip_batch_size * 3)
+
+            def cpu_preprocess(idx, vp):
+                """CPU worker: ekstrak frame + MediaPipe, taruh di queue."""
+                if self.cancel_batch:
+                    prep_queue.put({"type": "cancelled"})
                     return
-
+                rel_path = os.path.relpath(vp, self.root_folder)
                 def upd_status(i=idx, r=rel_path):
                     self.right_panel.lbl_batch_status.configure(
                         text=f"Batch {i+1}/{total}: {os.path.basename(r)}",
@@ -2027,85 +2045,108 @@ class VideoLabelerApp:
                         vp, self.root_folder, self.path_dir_cropped,
                         raw_cache_dir=self.path_dir_raw_cache, cfg=self.rules,
                     )
-                    if not imgs: return
+                    if not imgs:
+                        prep_queue.put({"type": "skip"})
+                        return
 
+                    flag_reason = None
                     if len(imgs) < 2:
+                        flag_reason = f"hanya {len(imgs)}/2 frame"
+                    elif no_face_count == len(imgs):
+                        flag_reason = f"semua {len(imgs)} frame gagal deteksi wajah"
+                    elif multi_face_count > mf_thr:
+                        flag_reason = f"{multi_face_count} frame multi-wajah"
+
+                    if flag_reason:
                         with self.save_lock:
                             self.flagged_data.add(rel_path)
                             save_flagged(self.path_csv_flagged, self.flagged_data)
                         self.root.after(0, self._update_flag_count)
-                        def upd_shortflag(r=rel_path, nf=len(imgs)):
+                        def upd_flag(r=rel_path, reason=flag_reason):
                             self.right_panel.lbl_batch_status.configure(
-                                text=f"Auto-flag: {os.path.basename(r)} (hanya {nf}/2 frame)",
+                                text=f"Auto-flag: {os.path.basename(r)} ({reason})",
                                 text_color="#ef4444",
                             )
-                        self.root.after(0, upd_shortflag)
+                        self.root.after(0, upd_flag)
+                        prep_queue.put({"type": "flagged"})
                         return
 
-                    if no_face_count == len(imgs):
-                        with self.save_lock:
-                            self.flagged_data.add(rel_path)
-                            save_flagged(self.path_csv_flagged, self.flagged_data)
-                        self.root.after(0, self._update_flag_count)
-                        def upd_autoflag(r=rel_path, nf=no_face_count, ni=len(imgs)):
-                            self.right_panel.lbl_batch_status.configure(
-                                text=f"Auto-flag: {os.path.basename(r)} (semua {ni} frame gagal)",
-                                text_color="#ef4444",
-                            )
-                        self.root.after(0, upd_autoflag)
-                        return
-
-                    mf_thr = int(os.getenv("MULTI_FACE_FRAMES_THRESHOLD", "1"))
-                    if multi_face_count > mf_thr:
-                        with self.save_lock:
-                            self.flagged_data.add(rel_path)
-                            save_flagged(self.path_csv_flagged, self.flagged_data)
-                        self.root.after(0, self._update_flag_count)
-                        def upd_multiface(r=rel_path, mfc=multi_face_count):
-                            self.right_panel.lbl_batch_status.configure(
-                                text=f"Auto-flag: {os.path.basename(r)} ({mfc} frame multi-wajah)",
-                                text_color="#ef4444",
-                            )
-                        self.root.after(0, upd_multiface)
-                        return
-
-                    siglip_cache_path = self._siglip_cache_path(rel_path)
-                    res = run_siglip_on_frames(imgs, prompts, ths,
-                                               landmark_results=landmark_results,
-                                               cfg=self.rules,
-                                               siglip_cache_path=siglip_cache_path,
-                                               rel_path=rel_path)
-
-                    with self.save_lock:
-                        self._apply_siglip_result(rel_path, res)
-
-                    current_rel = os.path.relpath(
-                        self.video_files[self.current_index], self.root_folder
-                    )
-                    if rel_path == current_rel:
-                        for i, lbl in enumerate(LABELS):
-                            fsc = list(res["per_label"][i]["frame_scores"])
-                            thr = res["per_label"][i].get("threshold")
-                            self.root.after(0, lambda l=lbl, s=fsc, t=thr:
-                                self.right_panel.update_ai_score_bar(l, s, t))
-                        self.root.after(0, self.refresh_frame_gallery)
-
-                    # Cleanup referensi frame agar tidak menumpuk di memori
-                    del imgs, landmark_results, res
-
-                    # Periodic save setiap 50 video — cegah kehilangan progress jika crash
-                    if idx % 50 == 49:
-                        with self.save_lock:
-                            save_frame_annotations(self.path_json_frames, self.frame_annotations)
-                            save_batch_history(self.path_json_batch_history, self.batch_history)
-
+                    prep_queue.put({
+                        "type":             "ready",
+                        "idx":              idx,
+                        "rel_path":         rel_path,
+                        "pil_images":       imgs,
+                        "landmark_results": landmark_results,
+                        "siglip_cache_path": self._siglip_cache_path(rel_path),
+                    })
                 except Exception as e:
-                    print(f"[Error] Failed to process {rel_path}: {e}")
+                    print(f"[Error] MediaPipe failed for {os.path.relpath(vp, self.root_folder)}: {e}")
+                    prep_queue.put({"type": "error"})
 
-            # Eksekusi semua video dengan Multi-threading
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(process_video, idx, vp) for idx, vp in enumerate(self.video_files)]
-                concurrent.futures.wait(futures)
+            # Submit CPU workers
+            with concurrent.futures.ThreadPoolExecutor(max_workers=preprocess_workers) as cpu_exec:
+                cpu_futures = [cpu_exec.submit(cpu_preprocess, idx, vp) for idx, vp in todo]
+
+                # GPU batching loop — berjalan di worker thread ini sambil CPU bekerja
+                gpu_batch    = []   # list of "ready" items
+                received     = 0    # item masuk ke queue (semua tipe)
+                n_processed  = 0    # video berhasil di-SigLIP
+
+                while received < n_todo:
+                    try:
+                        item = prep_queue.get(timeout=60.0)
+                    except _q.Empty:
+                        if all(f.done() for f in cpu_futures):
+                            break
+                        continue
+
+                    received += 1
+
+                    if self.cancel_batch:
+                        break
+
+                    if item["type"] == "ready":
+                        gpu_batch.append(item)
+
+                    # Flush batch ketika penuh ATAU ini item terakhir
+                    if gpu_batch and (len(gpu_batch) >= siglip_batch_size or received == n_todo):
+                        batch_input = [
+                            {
+                                "pil_images":        b["pil_images"],
+                                "landmark_results":  b["landmark_results"],
+                                "rel_path":          b["rel_path"],
+                                "siglip_cache_path": b["siglip_cache_path"],
+                            }
+                            for b in gpu_batch
+                        ]
+                        try:
+                            batch_results = run_siglip_batch(batch_input, prompts, ths, cfg=self.rules)
+                        except Exception as e:
+                            print(f"[Error] SigLIP batch failed: {e}")
+                            batch_results = []
+
+                        current_rel = os.path.relpath(
+                            self.video_files[self.current_index], self.root_folder
+                        )
+                        with self.save_lock:
+                            for b_item, res in zip(gpu_batch, batch_results):
+                                self._apply_siglip_result(b_item["rel_path"], res)
+                                n_processed += 1
+                                if b_item["rel_path"] == current_rel:
+                                    for i, lbl in enumerate(LABELS):
+                                        fsc = list(res["per_label"][i]["frame_scores"])
+                                        thr_i = res["per_label"][i].get("threshold")
+                                        self.root.after(0, lambda l=lbl, s=fsc, t=thr_i:
+                                            self.right_panel.update_ai_score_bar(l, s, t))
+                                    self.root.after(0, self.refresh_frame_gallery)
+
+                        # Periodic save setiap ~50 video
+                        if n_processed % 50 < siglip_batch_size:
+                            with self.save_lock:
+                                save_frame_annotations(self.path_json_frames, self.frame_annotations)
+                                save_batch_history(self.path_json_batch_history, self.batch_history)
+
+                        gpu_batch = []
 
             # Simpan semua data sekaligus setelah batch selesai (bukan per-video)
             with self.save_lock:
