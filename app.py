@@ -2202,11 +2202,14 @@ class VideoLabelerApp:
                                             self.right_panel.update_ai_score_bar(l, s, t))
                                     self.root.after(0, self.refresh_frame_gallery)
 
-                        # Periodic save setiap ~50 video
+                        # Periodic save + stats refresh setiap ~50 video
                         if n_processed % 50 < siglip_batch_size:
                             with self.save_lock:
                                 save_frame_annotations(self.path_json_frames, self.frame_annotations)
                                 save_batch_history(self.path_json_batch_history, self.batch_history)
+                            _bh_snap = dict(self.batch_history)
+                            self.root.after(0, lambda bh=_bh_snap:
+                                self.right_panel.update_statistics(bh))
 
                         gpu_batch = []
             finally:
@@ -2246,7 +2249,12 @@ class VideoLabelerApp:
                 self.right_panel.btn_proses_satu.configure(state="normal")
                 thrs = [v.get() for v in self.right_panel.threshold_vars]
                 update_batch_meta(self.path_json_batch_history, self.rules, thrs)
-            
+                # Sync manual_labels untuk video-video baru yang baru diproses batch
+                # (non-destructive: tidak timpa entri yang sudah ada / manual edits)
+                self._sync_manual_missing_from_ai()
+                self.right_panel.update_statistics(self.batch_history)
+                self.right_panel.update_manual_statistics(self.manual_labels)
+
             self.root.after(0, on_finish)
 
         threading.Thread(target=worker, daemon=True).start()
