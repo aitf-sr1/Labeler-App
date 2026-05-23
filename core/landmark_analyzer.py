@@ -511,9 +511,16 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # chin-resting: bisa bosan meski natap layar (tidak butuh gaze gate)
     chin_bore_th    = bcfg.get("chin_bore_th",    0.30)
     chin_bore_range = bcfg.get("chin_bore_range", 0.40)
-    chin_bore_max   = bcfg.get("chin_bore_max",   0.65)
+    chin_bore_max   = bcfg.get("chin_bore_max",   0.70)
+    # Jaw gate: menopang dagu (mulut tertutup) = boredom pasif.
+    # Mulut terbuka + tangan di dagu = bicara/aktif → chin TIDAK boost boredom.
+    _chin_jaw_dz  = bcfg.get("chin_jaw_closed_dz", 0.08)  # di bawah ini = mulut "tertutup"
+    _chin_jaw_th  = bcfg.get("chin_jaw_open_th",   0.18)  # di atas ini   = mulut "terbuka"
+    _jaw_open_for_bore = _clamp(
+        (g("jawOpen") - _chin_jaw_dz) / max(_chin_jaw_th - _chin_jaw_dz, 1e-6), 0, 1
+    )
     chin_bore_v = _clamp((r.hand_chin - chin_bore_th) / max(chin_bore_range, 1e-6), 0, 1)
-    bore = _clamp(max(bore, chin_bore_v * chin_bore_max), 0, 1)
+    bore = _clamp(max(bore, chin_bore_v * chin_bore_max * (1.0 - _jaw_open_for_bore)), 0, 1)
     # Tidak ada bore_fwd_gate pada bore final — sudah diterapkan di bore_gaze di awal
 
     # == 1: ENGAGEMENT =========================================================
@@ -568,10 +575,20 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     gaze_fwd_bonus = ecfg.get("gaze_fwd_bonus", 0.15)
     eng = _clamp(eng + gaze_fwd_v * gaze_fwd_bonus, 0, 1)
 
-    # Menopang dagu (chin-resting) mengurangi engagement — postur pasif/melamun, bukan aktif.
-    # Meskipun gaze masih ke depan, siswa yang menopang kepala di tangan tidak aktif terlibat.
+    # Menopang dagu: penalti engagement HANYA ketika mulut tertutup (postur pasif).
+    # Mulut terbuka + tangan di dagu = bicara sambil gestur → aktif/engaged.
     chin_eng_pen_w = ecfg.get("hand_chin_eng_pen", 0.5)
-    eng = _clamp(eng - r.hand_chin * chin_eng_pen_w, 0, 1)
+    _cjdz  = ecfg.get("chin_jaw_closed_dz",    0.08)
+    _cjth  = ecfg.get("chin_jaw_open_th",       0.18)
+    _jaw_open_for_eng = _clamp(
+        (g("jawOpen") - _cjdz) / max(_cjth - _cjdz, 1e-6), 0, 1
+    )
+    # Penalti berkurang proporsional saat jaw terbuka
+    _pen_reduce = ecfg.get("chin_jaw_open_pen_reduce", 0.80)
+    eng = _clamp(eng - r.hand_chin * chin_eng_pen_w * (1.0 - _jaw_open_for_eng * _pen_reduce), 0, 1)
+    # Tangan di dagu + mulut terbuka = bicara/aktif → boost kecil engagement
+    _chin_open_boost = ecfg.get("chin_mouth_open_boost", 0.20)
+    eng = _clamp(eng + r.hand_chin * _jaw_open_for_eng * _chin_open_boost, 0, 1)
 
     # Boredom dan engagement adalah near-mutually exclusive secara semantik.
     # Dead zone 0.30 — boredom > 0.30 mulai suppress engagement secara agresif.

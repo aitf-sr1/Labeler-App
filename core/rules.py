@@ -39,7 +39,9 @@ DEFAULT_RULES = {
         "smile_gaze_max": 15.0,      # gaze_dev > ini → smile suppress nonaktif (noleh sambil ketawa = bosan)
         "chin_bore_th":    0.30,     # hand_chin minimum sebelum boost boredom aktif (menopang dagu)
         "chin_bore_range": 0.40,     # range di atas th → saturasi di hand_chin=0.70
-        "chin_bore_max":   0.65,     # kontribusi boredom maksimal dari menopang dagu
+        "chin_bore_max":   0.70,     # kontribusi boredom maksimal dari menopang dagu (dinaikkan 0.65→0.70)
+        "chin_jaw_closed_dz": 0.08,  # jawOpen < ini = mulut "tertutup" → chin boost boredom penuh
+        "chin_jaw_open_th":   0.18,  # jawOpen > ini = mulut "terbuka" → chin TIDAK boost boredom (bicara/aktif)
         "yawn_bore_w": 0.75,         # bobot langsung yawn ke boredom. Menguap = bosan meski tatap layar.
         "yawn_strong_th": 0.50,      # jawOpen mentah minimum untuk bypass gaze gate (genuine yawn, bukan sekadar napas)
         "yawn_strong_range": 0.25,   # range di atas threshold; jawOpen < th tetap butuh gaze gate
@@ -69,7 +71,11 @@ DEFAULT_RULES = {
         "look_dn_eng_th": 0.20,      # lookDown > ini = mulai boost engagement (diturunkan dari 0.25 supaya lebih sensitif)
         "look_dn_eng_boost": 0.30,   # boost engagement dari lihat bawah (naik dari 0.20 — nunduk baca = engaged)
         "look_dn_eng_yaw_max": 20.0, # yaw > ini → look_dn boost nonaktif
-        "hand_chin_eng_pen": 0.50,   # menopang dagu → kurangi engagement (postur pasif, bukan aktif)
+        "hand_chin_eng_pen": 0.50,   # menopang dagu → kurangi engagement (postur pasif)
+        "chin_jaw_closed_dz":    0.08,  # jawOpen < ini = mulut tertutup → penalti penuh
+        "chin_jaw_open_th":      0.18,  # jawOpen > ini = mulut terbuka → penalti berkurang (bicara/aktif)
+        "chin_jaw_open_pen_reduce": 0.80, # fraksi pengurangan penalti chin saat jaw terbuka (0.80 = hanya 20% penalti tersisa)
+        "chin_mouth_open_boost": 0.20,  # boost engagement saat tangan di dagu + mulut terbuka (bicara = aktif)
     },
     "confusion": {
         "iris_up_dead_zone": 0.20,   # -iris_y < ini = tidak terhitung iris_up_v
@@ -124,8 +130,8 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        "siglip_w": [0.40, 0.30, 0.40, 0.50],   # per label [Bore, Eng, Conf, Frus] — landmark dominan
-        "land_w":   [0.60, 0.70, 0.60, 0.50],   # Eng/Conf: land 70/60% — landmark rules sudah dituning spesifik
+        "siglip_w": [0.25, 0.30, 0.40, 0.35],   # per label [Bore, Eng, Conf, Frus]
+        "land_w":   [0.75, 0.70, 0.60, 0.65],   # Bore↑0.75 Frus↑0.65: tangan/gaze sangat reliable; SigLIP lemah saat wajah terhalang tangan
         "restless_bonus_max": 0.0,   # disabled — heuristik tanpa basis definisi semantik
         "restless_std_min": 3.0,
         "restless_std_range": 7.0,
