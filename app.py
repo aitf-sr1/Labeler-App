@@ -2009,7 +2009,7 @@ class VideoLabelerApp:
             from core.inference import run_siglip_batch
             total             = len(self.video_files)
             already_done      = set(self.batch_history.keys())
-            preprocess_workers = int(os.getenv("PREPROCESS_WORKERS", "8"))
+            preprocess_workers = int(os.getenv("PREPROCESS_WORKERS", "4"))
             siglip_batch_size  = int(os.getenv("SIGLIP_BATCH_VIDEOS", "8"))
             mf_thr             = int(os.getenv("MULTI_FACE_FRAMES_THRESHOLD", "1"))
 
@@ -2048,15 +2048,18 @@ class VideoLabelerApp:
                     )
                 self.root.after(0, upd_skip_count)
 
-            # Queue tanpa maxsize — CPU workers tidak pernah blok walau GPU berhenti.
-            # Ini penting agar cancel tidak deadlock: GPU stop consume → CPU drain
-            # queue lalu selesai sendiri → ThreadPoolExecutor bisa shutdown.
-            prep_queue = _q.Queue()
+            # Queue dibatasi agar CPU workers tidak jauh mendahului GPU.
+            # Maxsize = preprocess_workers * 2 + siglip_batch_size cukup untuk menjaga
+            # GPU selalu ada pekerjaan tanpa RAM meledak dari PIL images yang menumpuk.
+            # Saat cancel: GPU consumer break lebih dulu, CPU workers yang masih
+            # berjalan akan timeout di put() dan kembali — tidak deadlock.
+            _queue_max = preprocess_workers * 2 + siglip_batch_size
+            prep_queue = _q.Queue(maxsize=_queue_max)
 
             def cpu_preprocess(idx, vp):
                 """CPU worker: ekstrak frame + MediaPipe, taruh di queue."""
                 if self.cancel_batch:
-                    prep_queue.put({"type": "cancelled"})
+                    # GPU consumer sudah break — tidak perlu put apapun.
                     return
                 rel_path = os.path.relpath(vp, self.root_folder)
                 def upd_status(i=idx, r=rel_path):
@@ -2075,7 +2078,10 @@ class VideoLabelerApp:
                         raw_cache_dir=self.path_dir_raw_cache, cfg=self.rules,
                     )
                     if not imgs:
-                        prep_queue.put({"type": "skip"})
+                        try:
+                            prep_queue.put({"type": "skip"}, timeout=5.0)
+                        except _q.Full:
+                            pass
                         return
 
                     flag_reason = None
@@ -2097,20 +2103,34 @@ class VideoLabelerApp:
                                 text_color="#ef4444",
                             )
                         self.root.after(0, upd_flag)
-                        prep_queue.put({"type": "flagged"})
+                        try:
+                            prep_queue.put({"type": "flagged"}, timeout=5.0)
+                        except _q.Full:
+                            pass
                         return
 
-                    prep_queue.put({
+                    item_ready = {
                         "type":             "ready",
                         "idx":              idx,
                         "rel_path":         rel_path,
                         "pil_images":       imgs,
                         "landmark_results": landmark_results,
                         "siglip_cache_path": self._siglip_cache_path(rel_path),
-                    })
+                    }
+                    # Loop put dengan timeout pendek agar cancel langsung responsif
+                    # (tidak perlu nunggu 10 detik bila GPU consumer sudah keluar)
+                    while not self.cancel_batch:
+                        try:
+                            prep_queue.put(item_ready, timeout=0.5)
+                            break
+                        except _q.Full:
+                            continue  # coba lagi setelah 0.5d, cek cancel di atas
                 except Exception as e:
                     print(f"[Error] MediaPipe failed for {os.path.relpath(vp, self.root_folder)}: {e}")
-                    prep_queue.put({"type": "error"})
+                    try:
+                        prep_queue.put({"type": "error"}, timeout=5.0)
+                    except _q.Full:
+                        pass
 
             # Submit CPU workers — tidak pakai context manager agar bisa shutdown(cancel_futures=True)
             cpu_exec = concurrent.futures.ThreadPoolExecutor(max_workers=preprocess_workers)

@@ -405,8 +405,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     _blink_pre  = (g("eyeBlinkLeft") + g("eyeBlinkRight")) / 2
     _squint_pre = (g("eyeSquintLeft") + g("eyeSquintRight")) / 2
     _blink_corr_pre = max(0.0, _blink_pre - _squint_pre * bcfg.get("squint_blink_correction", 0.5))
-    _iris_blink_th  = gcfg.get("iris_blink_suppress_th", 0.60)
-    _iris_y_factor  = max(0.0, 1.0 - _blink_corr_pre / max(_iris_blink_th, 1e-6))
+    _iris_blink_th   = gcfg.get("iris_blink_suppress_th", 0.60)
+    _iris_blink_zero = gcfg.get("iris_blink_zero_th", 0.0)  # 0 = disabled; > 0: zero iris_y jika blink_corr >= nilai ini
+    if _iris_blink_zero > 0 and _blink_corr_pre >= _iris_blink_zero:
+        # Mata sangat tertutup (misal: squint fokus) → iris_y tidak bisa dipercaya sama sekali
+        _iris_y_factor = 0.0
+    else:
+        _iris_y_factor = max(0.0, 1.0 - _blink_corr_pre / max(_iris_blink_th, 1e-6))
     iris_y_eff      = r.iris_y * _iris_y_factor   # scaled iris_y; = r.iris_y saat mata terbuka
 
     # ── Gaze deviation (shared basis) ─────────────────────────────────────────
@@ -504,6 +509,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     _eye_wide_pre = (g("eyeWideLeft") + g("eyeWideRight")) / 2
     bore = _clamp(bore - _eye_wide_pre * bcfg.get("eye_wide_suppress", 0.3), 0, 1)
     bore = _clamp(bore - squint_avg * bcfg.get("squint_suppress", 0.3), 0, 1)
+    # browInnerUp tinggi = waspada/fokus/khawatir — bukan ekspresi bosan.
+    # Suppress boredom proporsional ketika inner brows naik signifikan.
+    _biu        = g("browInnerUp")
+    _biu_th     = bcfg.get("brow_inner_suppress_th", 0.45)
+    _biu_max    = bcfg.get("brow_inner_suppress",    0.55)
+    _biu_sup    = _clamp((_biu - _biu_th) / max(1.0 - _biu_th, 1e-6), 0, 1)
+    bore = _clamp(bore - _biu_sup * _biu_max, 0, 1)
     smile_gaze_max = bcfg.get("smile_gaze_max", 15.0)
     facing_fwd_bore = _clamp(1.0 - gaze_dev_bore / max(smile_gaze_max, 1e-6), 0, 1)
     bore = _clamp(bore - teeth_signal * bcfg.get("smile_suppress", 0.40) * facing_fwd_bore, 0, 1)

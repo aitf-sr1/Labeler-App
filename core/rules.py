@@ -17,6 +17,7 @@ DEFAULT_RULES = {
         "v_dead_zone_up": 5.0,        # upward gaze_v dead zone — kecil karena tatapan ke atas = tidak fokus ke layar
         "roll_dz": 5.0,               # dead zone roll sebelum masuk gaze_dev — kepala miring (roll) ikut geser arah pandang dari layar
         "iris_blink_suppress_th": 0.60,  # blink_corrected di atas ini → iris_y mulai di-suppress (artifact mata menutup)
+        "iris_blink_zero_th":     0.0,   # 0 = disabled; > 0 → iris_y = 0 sepenuhnya jika blink_corr >= nilai ini (squint fokus ekstrem)
     },
     "boredom": {
         "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze. Nunduk dilindungi v_dead_zone=15, bukan dead_zone ini.
@@ -33,6 +34,8 @@ DEFAULT_RULES = {
         "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk ekspresi boredom aktif
         "eye_wide_suppress": 0.30,   # mata lebar → kurangi skor boredom (attentif ≠ bosan)
         "squint_suppress": 0.30,     # mata sipit → kurangi skor boredom (sipit = konsentrasi ≠ bosan)
+        "brow_inner_suppress_th": 0.45,  # browInnerUp > ini → mulai suppress boredom (alis naik dalam = waspada/fokus ≠ bosan)
+        "brow_inner_suppress":    0.55,  # max reduksi boredom dari browInnerUp tinggi
         "squint_blink_correction": 0.50,  # koreksi blink_avg dari kontribusi squint sebelum dihitung blink_v
         "teeth_gate_th": 0.20,       # gigi terlihat > ini = jawOpen BUKAN menguap (senyum/bicara)
         "smile_suppress": 0.40,      # senyum/gigi kelihatan → kurangi skor boredom
