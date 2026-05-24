@@ -48,6 +48,105 @@ def _get_label_weights(label_idx: int) -> tuple:
         return sw_def / (sw_def + lw_def), lw_def / (sw_def + lw_def)
 
 
+def _apply_dominance_gap(per_label_result: dict, n_labels: int, n_frames: int,
+                         thresholds: list, cfg: dict):
+    """
+    Single-label dominance bias — spec: "Most images should contain one dominant emotion only."
+
+    Per-frame: jika ≥2 label di atas threshold, suppress yang lebih lemah
+    jika gap dari label terkuat > dual_label_gap.
+    Mutual exclusive pairs (Bore↔Eng, Conf↔Frus) sudah ditangani di tempat lain.
+    """
+    gap = cfg["hybrid"].get("dual_label_gap", 0.12)
+    if gap <= 0:
+        return  # disabled
+
+    for f in range(n_frames):
+        active = []
+        for i in range(n_labels):
+            score = per_label_result[i]["frame_scores"][f]
+            if score >= thresholds[i]:
+                active.append((i, score))
+        if len(active) < 2:
+            continue
+        active.sort(key=lambda x: x[1], reverse=True)
+        top_score = active[0][1]
+        for label_idx, score in active[1:]:
+            if top_score - score > gap:
+                per_label_result[label_idx]["frame_preds"][f] = 0
+
+
+def _apply_strict_rules_bias(per_label_result: dict, n_labels: int, n_frames: int,
+                             landmark_results: list, cfg: dict):
+    """
+    Encode spec's 7 strict labeling rules sebagai SOFT BIAS pada hybrid scores.
+
+    Tidak hard-override, tapi menambah/kurangi skor hybrid berdasarkan landmark evidence.
+    Ini membantu hybrid scoring membuat keputusan yang lebih sesuai spec.
+
+    Rules yang di-encode:
+        Rule 1: forward gaze + upright + no cues → boost engagement
+        Rule 3: looking down + forward → boost engagement
+        Rule 4: gaze away + slouched → boost boredom
+        Rule 5: hand on face + focused → boost engagement+frustration
+        Rule 6: hand on face + disengaged → boost boredom+frustration
+        Rule 7: smiling + forward → boost engagement
+    """
+    if not landmark_results or len(landmark_results) != n_frames:
+        return
+
+    strength = cfg["hybrid"].get("strict_rules_strength", 0.20)
+    if strength <= 0:
+        return  # disabled
+
+    def _clamp(v, lo, hi):
+        return max(lo, min(hi, v))
+
+    for f in range(n_frames):
+        r = landmark_results[f]
+        if not r.face_found:
+            continue
+
+        g = lambda k: r.blendshapes.get(k, 0.0)
+        gaze_h = abs(r.yaw + r.iris_x * 35.0)
+        gaze_v_up = max(0.0, r.pitch - 5.0)
+        gaze_dev = (gaze_h ** 2 + gaze_v_up ** 2) ** 0.5
+        look_down_v = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
+        smile = max(g("mouthSmileLeft"), g("mouthSmileRight"))
+        hand_near = max(r.hand_forehead, r.hand_chin)
+
+        scores = [per_label_result[i]["frame_scores"][f] for i in range(n_labels)]
+
+        # Rule 1: forward gaze + upright → boost engagement
+        if gaze_dev < 8.0 and abs(r.yaw) < 20.0:
+            scores[1] = min(1.0, scores[1] + strength)
+
+        # Rule 3: looking down + forward yaw → boost engagement
+        if look_down_v > 0.25 and abs(r.yaw) < 20.0:
+            scores[1] = min(1.0, scores[1] + strength * 0.8)
+
+        # Rule 4: gaze away + large yaw → boost boredom
+        if gaze_dev > 15.0 or abs(r.yaw) > 25.0:
+            scores[0] = min(1.0, scores[0] + strength)
+
+        # Rule 5: hand on face + focused → boost engagement + frustration
+        if hand_near > 0.3 and gaze_dev < 12.0:
+            scores[1] = min(1.0, scores[1] + strength * 0.5)
+            scores[3] = min(1.0, scores[3] + strength)
+
+        # Rule 6: hand on face + disengaged → boost boredom + frustration
+        if hand_near > 0.3 and gaze_dev > 12.0:
+            scores[0] = min(1.0, scores[0] + strength * 0.5)
+            scores[3] = min(1.0, scores[3] + strength)
+
+        # Rule 7: smiling + forward → boost engagement
+        if smile > 0.20 and gaze_dev < 15.0:
+            scores[1] = min(1.0, scores[1] + strength)
+
+        for i in range(n_labels):
+            per_label_result[i]["frame_scores"][f] = round(scores[i], 4)
+
+
 def run_siglip_on_frames(
     pil_images:       list,
     prompt_groups:    list,
@@ -212,8 +311,8 @@ def run_siglip_on_frames(
         thr         = thresholds[i]
         frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
         vote_pos    = sum(frame_preds)
-        # Majority vote — konsisten dengan recalculate.py
-        prediction  = 1 if (n_frames > 0 and vote_pos >= max(1, (n_frames + 1) // 2)) else 0
+        # Prediction berdasarkan avg_score vs threshold — konsisten di semua path
+        prediction  = 1 if (n_frames > 0 and avg_score >= thr) else 0
 
         per_label_result[i] = {
             "prediction":   prediction,
@@ -231,12 +330,32 @@ def run_siglip_on_frames(
                 [round(land_scores_per_frame[f][i], 4) for f in range(n_frames)]
                 if land_scores_per_frame else None
             ),
+            "threshold":    thr,
         }
 
     # Cleanup GPU memory — cegah akumulasi tensor antar video dalam batch
     del inputs, logits_per_image, norm_by_label
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+    # ── Strict rules soft bias (spec's 7 deterministic rules) ─────────────
+    _apply_strict_rules_bias(per_label_result, n_labels, n_frames,
+                             landmark_results, cfg)
+
+    # ── Single-label dominance gap (spec: most images = 1 label) ─────────
+    _apply_dominance_gap(per_label_result, n_labels, n_frames, thresholds, cfg)
+
+    # Recompute predictions after adjustments
+    for i in range(n_labels):
+        r = per_label_result[i]
+        r["frame_preds"] = [1 if s >= thresholds[i] else 0 for s in r["frame_scores"]]
+        r["vote_pos"] = sum(r["frame_preds"])
+        r["vote_neg"] = n_frames - r["vote_pos"]
+        vf = (valid_frames if land_scores_per_frame else list(range(n_frames)))
+        r["avg_score"] = round(
+            sum(r["frame_scores"][f] for f in vf) / max(len(vf), 1), 4
+        )
+        r["prediction"] = 1 if (n_frames > 0 and r["avg_score"] >= thresholds[i]) else 0
 
     # Deteksi sampel tanpa label — semua emosi di bawah threshold
     has_any_label = any(
@@ -394,7 +513,8 @@ def run_siglip_batch(
             thr         = thresholds[i]
             frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
             vote_pos    = sum(frame_preds)
-            prediction  = 1 if (n_frames > 0 and vote_pos >= max(1, (n_frames + 1) // 2)) else 0
+            # Prediction berdasarkan avg_score vs threshold — konsisten di semua path
+            prediction  = 1 if (n_frames > 0 and avg_score >= thr) else 0
 
             per_label_result[i] = {
                 "prediction":   prediction,
@@ -411,7 +531,27 @@ def run_siglip_batch(
                     [round(land_scores_per_frame[f][i], 4) for f in range(n_frames)]
                     if land_scores_per_frame else None
                 ),
+                "threshold":    thr,
             }
+
+        # ── Strict rules soft bias (spec's 7 deterministic rules) ─────────
+        _apply_strict_rules_bias(per_label_result, n_labels, n_frames,
+                                 landmark_results, cfg)
+
+        # ── Single-label dominance gap (spec: most images = 1 label) ─────
+        _apply_dominance_gap(per_label_result, n_labels, n_frames, thresholds, cfg)
+
+        # Recompute predictions after adjustments
+        for i in range(n_labels):
+            r_lbl = per_label_result[i]
+            r_lbl["frame_preds"] = [1 if s >= thresholds[i] else 0 for s in r_lbl["frame_scores"]]
+            r_lbl["vote_pos"] = sum(r_lbl["frame_preds"])
+            r_lbl["vote_neg"] = n_frames - r_lbl["vote_pos"]
+            vf = valid_frames if land_scores_per_frame else list(range(n_frames))
+            r_lbl["avg_score"] = round(
+                sum(r_lbl["frame_scores"][f] for f in vf) / max(len(vf), 1), 4
+            )
+            r_lbl["prediction"] = 1 if (n_frames > 0 and r_lbl["avg_score"] >= thresholds[i]) else 0
 
         has_any_label = any(per_label_result[i]["prediction"] == 1 for i in range(n_labels))
         results.append({

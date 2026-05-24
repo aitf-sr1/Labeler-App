@@ -48,6 +48,8 @@ DEFAULT_RULES = {
         "yawn_bore_w": 0.75,         # bobot langsung yawn ke boredom. Menguap = bosan meski tatap layar.
         "yawn_strong_th": 0.50,      # jawOpen mentah minimum untuk bypass gaze gate (genuine yawn, bukan sekadar napas)
         "yawn_strong_range": 0.25,   # range di atas threshold; jawOpen < th tetap butuh gaze gate
+        "frus_bore_suppress_th": 0.40,  # frus > ini mulai suppress boredom (tegang ≠ bosan)
+        "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration
     },
     "engagement": {
         "tegak_dead_zone": 8.0,      # gaze_dev dead zone (°) — gaze_dev tidak include roll (roll ditangani roll_gate)
@@ -69,7 +71,7 @@ DEFAULT_RULES = {
         "gaze_fwd_bonus": 0.15,      # bonus engagement ketika gaze benar-benar ke depan (dalam dead zone)
         "bore_suppress_th": 0.45,    # bore < ini tidak suppress engagement (dead zone besar, abaikan noise)
         "bore_eng_suppress": 0.40,   # boredom landmark > bore_suppress_th → suppress engagement (dikurangi dari 0.5)
-        "fwd_eng_min": 0.55,         # minimum engagement saat hadap depan — floor mutlak, tidak bisa ditekan
+        "fwd_eng_min": 0.35,         # minimum engagement saat hadap depan — diturunkan 0.55→0.35 agar confusion bisa menang
         "fwd_eng_gaze_max": 10.0,    # gaze_dev_eng > ini → fwd_eng floor mulai turun ke 0
         "look_dn_eng_th": 0.20,      # lookDown > ini = mulai boost engagement (diturunkan dari 0.25 supaya lebih sensitif)
         "look_dn_eng_boost": 0.30,   # boost engagement dari lihat bawah (naik dari 0.20 — nunduk baca = engaged)
@@ -79,6 +81,8 @@ DEFAULT_RULES = {
         "chin_jaw_open_th":      0.18,  # jawOpen > ini = mulut terbuka → penalti berkurang (bicara/aktif)
         "chin_jaw_open_pen_reduce": 0.80, # fraksi pengurangan penalti chin saat jaw terbuka (0.80 = hanya 20% penalti tersisa)
         "chin_mouth_open_boost": 0.20,  # boost engagement saat tangan di dagu + mulut terbuka (bicara = aktif)
+        "conf_eng_suppress_th": 0.40,   # conf > ini mulai suppress engagement (orang bingung ≠ engaged)
+        "conf_eng_suppress":    0.55,   # max reduksi engagement oleh confusion — harus kalahkan floor 0.35
     },
     "confusion": {
         "iris_up_dead_zone": 0.20,   # -iris_y < ini = tidak terhitung iris_up_v
@@ -115,7 +119,7 @@ DEFAULT_RULES = {
         "look_dn_th": 0.40,          # lookDown > ini = mulai look_dn_v (lihat bawah = bisa confusion)
         "look_dn_range": 0.30,       # range look_dn_v di atas threshold
         "look_dn_yaw_max": 15.0,     # lihat bawah + yaw > ini = bukan confusion
-        "look_dn_boost": 0.35,       # boost langsung confusion saat lihat bawah + hadap depan
+        "look_dn_boost": 0.15,       # boost confusion saat lihat bawah — dikurangi dari 0.50 (spec Rule 3: nunduk = engagement)
     },
     "frustration": {
         "brow_dn_th": 0.40,          # browDown avg / ini = br_fr
@@ -133,8 +137,10 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        "siglip_w": [0.25, 0.30, 0.40, 0.35],   # per label [Bore, Eng, Conf, Frus]
-        "land_w":   [0.75, 0.70, 0.60, 0.65],   # Bore↑0.75 Frus↑0.65: tangan/gaze sangat reliable; SigLIP lemah saat wajah terhalang tangan
+        "siglip_w": [0.30, 0.35, 0.45, 0.30],   # per label [Bore, Eng, Conf, Frus] — dinaikkan setelah prompt body-level
+        "land_w":   [0.70, 0.65, 0.55, 0.70],   # Bore↑0.70 Frus↑0.70: tangan/gaze sangat reliable; SigLIP dipercaya lebih setelah prompt body-level
+        "dual_label_gap": 0.12,       # Min gap antara top vs secondary label untuk mempertahankan dual-label (spec: most images = 1 label)
+        "strict_rules_strength": 0.20, # Kekuatan soft bias dari strict labeling rules (0 = off, 0.20 = moderate)
         "restless_bonus_max": 0.0,   # disabled — heuristik tanpa basis definisi semantik
         "restless_std_min": 3.0,
         "restless_std_range": 7.0,

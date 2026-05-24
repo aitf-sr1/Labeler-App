@@ -387,7 +387,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         cfg = DEFAULT_RULES
 
     if not r.face_found:
-        return {0: 0.5, 1: 0.5, 2: 0.5, 3: 0.5}
+        return {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
 
     g = lambda k: r.blendshapes.get(k, 0.0)
 
@@ -706,11 +706,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     hand_near_head = max(r.hand_forehead, r.hand_chin)
     conf = _clamp(conf - hand_near_head, 0, 1)
 
-    # FLOOR MUTLAK: Lihat ke bawah + hadap depan = confusion minimum.
-    # Ditaruh SETELAH semua gate supaya tidak bisa ditekan oleh smile/attentive/hand.
-    # Siswa nunduk baca soal = pasti ada unsur confusion.
-    look_dn_boost = ccfg.get("look_dn_boost", 0.50)
-    conf = max(conf, look_dn_v * look_dn_boost)
+    # look_dn boosts confusion ONLY when other confusion signals are present.
+    # Spec Rule 3: looking down + typing/reading = engagement, NOT confusion.
+    # Tanpa gate ini, semua siswa nunduk baca otomatis kena confusion floor.
+    look_dn_boost = ccfg.get("look_dn_boost", 0.15)
+    if base_conf > 0.15:
+        conf = max(conf, look_dn_v * look_dn_boost * _clamp(base_conf / 0.30, 0, 1))
 
     # Boredom dan confusion saling eksklusif: sangat bosan = sudah "checked out",
     # tidak sedang aktif bingung memproses konten. Ketika boredom tinggi, sinyal confusion
@@ -759,6 +760,22 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # bukan alis bingung. Terapkan setelah frus selesai dihitung.
     frus_conf_suppress = ccfg.get("frus_conf_suppress", 0.5)
     conf = _clamp(conf - frus * frus_conf_suppress, 0, 1)
+
+    # ── Post-computation cross-suppression ────────────────────────────────────
+    # Confusion → Engagement: orang bingung yang menatap layar tidak sama dengan engaged.
+    # Floor fwd_eng_min (0.35) sengaja diturunkan agar suppression ini bisa mengalahkannya.
+    # Dihitung SETELAH semua skor final — ini mengoverride floor engagement saat conf tinggi.
+    conf_eng_sup_th = ecfg.get("conf_eng_suppress_th", 0.40)
+    conf_eng_sup    = ecfg.get("conf_eng_suppress",    0.55)
+    conf_sup_v = _clamp((conf - conf_eng_sup_th) / max(1.0 - conf_eng_sup_th, 1e-6), 0, 1)
+    eng = _clamp(eng - conf_sup_v * conf_eng_sup, 0, 1)
+
+    # Frustration → Boredom: ekspresi tegang frustrasi sering overlap dengan sinyal bosan
+    # (browDown, blink berat). Ketika frustrasi dominan, boredom ditekan.
+    frus_bore_sup_th = bcfg.get("frus_bore_suppress_th", 0.40)
+    frus_bore_sup    = bcfg.get("frus_bore_suppress",    0.45)
+    frus_sup_v = _clamp((frus - frus_bore_sup_th) / max(1.0 - frus_bore_sup_th, 1e-6), 0, 1)
+    bore = _clamp(bore - frus_sup_v * frus_bore_sup, 0, 1)
 
     # Debug log
     if _DBG_LAND:

@@ -156,7 +156,6 @@ def recalculate_batch(
             valid_preds = [p for j, p in enumerate(frame_preds) if j not in rejected_set]
             n_valid     = len(valid_preds)
             vote_pos    = sum(valid_preds)
-            prediction  = 1 if (n_valid > 0 and vote_pos >= max(1, (n_valid + 1) // 2)) else 0
 
             avg_score   = round(
                 sum(hybrid_scores[f] for f in valid_land_frames) / max(len(valid_land_frames), 1), 4
@@ -165,6 +164,8 @@ def recalculate_batch(
             land_avg    = round(
                 sum(land_scores[f][i] for f in valid_land_frames) / max(len(valid_land_frames), 1), 4
             )
+            # Prediction berdasarkan avg_score vs threshold — konsisten di semua path
+            prediction  = 1 if (n_valid > 0 and avg_score >= thr) else 0
 
             per_label_history[str(i)] = {
                 "prediction":   prediction,
@@ -180,8 +181,34 @@ def recalculate_batch(
             }
 
 
+        # ── Single-label dominance gap (spec: most images = 1 label) ─────────
+        dual_label_gap = rules["hybrid"].get("dual_label_gap", 0.12)
+        if dual_label_gap > 0:
+            for f_idx in range(n_frames):
+                active = []
+                for i in range(4):
+                    score = per_label_history[str(i)]["frame_scores"][f_idx]
+                    if score >= thresholds[i]:
+                        active.append((i, score))
+                if len(active) >= 2:
+                    active.sort(key=lambda x: x[1], reverse=True)
+                    top_score = active[0][1]
+                    for label_idx, score in active[1:]:
+                        if top_score - score > dual_label_gap:
+                            per_label_history[str(label_idx)]["frame_preds"][f_idx] = 0
+
+            # Recompute predictions after dominance gap
+            for i in range(4):
+                r_lbl = per_label_history[str(i)]
+                r_lbl["frame_preds"] = [1 if s >= thresholds[i] else 0 for s in r_lbl["frame_scores"]]
+                valid_preds = [p for j, p in enumerate(r_lbl["frame_preds"]) if j not in rejected_set]
+                r_lbl["vote_pos"] = sum(valid_preds)
+                r_lbl["vote_neg"] = len(valid_preds) - r_lbl["vote_pos"]
+                r_lbl["prediction"] = 1 if (len(valid_preds) > 0 and r_lbl["avg_score"] >= thresholds[i]) else 0
 
         # Enforce mutual exclusion pada prediksi FINAL
+        # Hanya pasangan yang secara semantik berlawanan langsung.
+        # Eng+Conf dan Bore+Frus tetap DIPERBOLEHKAN (rare, dijaga cross-suppression di scoring).
         from ui.constants import LABELS
         for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
             idx_a = str(LABELS.index(lbl_a))
@@ -200,7 +227,7 @@ def recalculate_batch(
                 new_fa_vid[str(f_idx)] = {}
             for li, lbl in enumerate(LABELS):
                 new_fa_vid[str(f_idx)][lbl] = per_label_history[str(li)]["frame_preds"][f_idx]
-            # Enforce mutual exclusion per frame
+            # Enforce mutual exclusion per frame (sinkron dengan level video di atas)
             for lbl_a, lbl_b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
                 idx_a = LABELS.index(lbl_a)
                 idx_b = LABELS.index(lbl_b)
