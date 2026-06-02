@@ -2,13 +2,15 @@
 
 This document contains **verbatim quotations** from the academic papers that form the scientific foundation of each method and design decision in this labeling application. No paraphrasing — every block-quoted sentence below is copied word-for-word from the cited source.
 
+> **Catatan kutipan:** Nomor referensi dalam tanda kurung siku seperti `[17]`, `[55]`, dan kutipan dalam teks seperti `(Carroll & Kay, 1988; ...)` dihilangkan mengikuti praktik standar pengutipan akademis. Penanda internal paper seperti `(Link 3)` atau `(Hypothesis 4)` juga dihilangkan. Selain itu, semua kata dan frasa dalam kalimat yang dikutip adalah verbatim dari sumber asli.
+
 ---
 
 ## 1. The Four Learning Emotions
 
 **Why these four emotions (Boredom, Engagement/Flow, Confusion, Frustration)?**
 
-> "confusion, frustration, boredom, and engagement/flow are the major affective states that students experience across diverse learning contexts, student populations, and methods to track emotions."
+> "One finding is that confusion, frustration, boredom, and engagement/flow are the major affective states that students experience across diverse learning contexts, student populations, and methods to track emotions."
 
 — D'Mello, S.K. & Graesser, A. (2012). *Dynamics of Affective States during Complex Learning.* Learning and Instruction, 22, 145–157. (p. 148)
 
@@ -44,7 +46,7 @@ This document contains **verbatim quotations** from the academic papers that for
 
 — Bartlett, M.S., Littlewort, G.C., Frank, M.G., Lainscsek, C., Fasel, I.R., & Movellan, J.R. (2006). *Automatic Recognition of Facial Actions in Spontaneous Expressions.* Journal of Multimedia, 1(6), 22–35. (p. 22)
 
-> "The Facial Action Coding System [FACS] is a comprehensive framework for objectively describing facial expression in terms of Action Units, which measure the intensity of over 40 distinct facial muscles. Manual FACS coding has previously been used to study student engagement and other emotions relevant to automated teaching."
+> "The Facial Action Coding System [17] is a comprehensive framework for objectively describing facial expression in terms of Action Units, which measure the intensity of over 40 distinct facial muscles. Manual FACS coding has previously been used to study student engagement and other emotions relevant to automated teaching."
 
 — Whitehill, J., Serpell, Z., Lin, Y-C., Foster, A., & Movellan, J.R. (2014). *The Faces of Engagement: Automatic Recognition of Student Engagement from Facial Expressions.* IEEE Transactions on Affective Computing. (§3.1.3)
 
@@ -150,7 +152,7 @@ This document contains **verbatim quotations** from the academic papers that for
 
 — D'Mello & Graesser (2012). (p. 149)
 
-> "consistent with forced-effort theories of boredom (Larson & Richards, 1991; Robinson, 1975), persistent frustration may transition into boredom, a crucial point at which the learner disengages from the learning process."
+> "Furthermore, consistent with forced-effort theories of boredom (Larson & Richards, 1991; Robinson, 1975), persistent frustration may transition into boredom, a crucial point at which the learner disengages from the learning process."
 
 — D'Mello & Graesser (2012). (p. 147)
 
@@ -164,7 +166,7 @@ This document contains **verbatim quotations** from the academic papers that for
 
 — Whitehill et al. (2014). (abstract)
 
-> "most of the information about the appearance of engagement is contained in the static pixels, not the motion per se."
+> "This accuracy is quite high and suggests that most of the information about the appearance of engagement is contained in the static pixels, not the motion per se."
 
 — Whitehill et al. (2014). (§2.4)
 
