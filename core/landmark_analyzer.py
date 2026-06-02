@@ -462,10 +462,6 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     #   Confusion membutuhkan attention ke konten — gaze jauh ke manapun mengurangi gate.
     gaze_dev      = (gaze_h_eff ** 2 + gaze_v_eff ** 2) ** 0.5
 
-    # ── Smile / teeth signal (shared): digunakan untuk smile_suppress (boredom) dan smile_boost (engagement)
-    teeth_smile = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-    teeth_signal = max((g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2, teeth_smile)
-
     # == 0: BOREDOM ============================================================
     bore_gaze_raw = _clamp((gaze_dev_bore - bcfg["gaze_dead_zone"]) / max(bcfg["gaze_range"], 1e-6), 0, 1)
 
@@ -498,23 +494,10 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         (blink_corrected - blink_direct_th) / max(bcfg["blink_range"], 1e-6), 0, 1
     ) * blink_direct_w
 
+    # Craig et al. (2008): AU43 = satu-satunya sinyal yang divalidasi untuk Boredom.
+    # Tidak ada paper yang memvalidasi suppressor (eye_wide, squint, smile, browInner) untuk boredom.
     base_bore = max(bore_gaze, sig_expr_gated, blink_direct)
     bore      = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr_gated) * bcfg["blend_b"], 0, 1)
-    _eye_wide_pre = (g("eyeWideLeft") + g("eyeWideRight")) / 2
-    bore = _clamp(bore - _eye_wide_pre * bcfg.get("eye_wide_suppress", 0.3), 0, 1)
-    bore = _clamp(bore - squint_avg * bcfg.get("squint_suppress", 0.3), 0, 1)
-    # browInnerUp tinggi = waspada/fokus/khawatir — bukan ekspresi bosan.
-    # Suppress boredom proporsional ketika inner brows naik signifikan.
-    _biu        = g("browInnerUp")
-    _biu_th     = bcfg.get("brow_inner_suppress_th", 0.45)
-    _biu_max    = bcfg.get("brow_inner_suppress",    0.55)
-    _biu_sup    = _clamp((_biu - _biu_th) / max(1.0 - _biu_th, 1e-6), 0, 1)
-    bore = _clamp(bore - _biu_sup * _biu_max, 0, 1)
-    smile_gaze_max = bcfg.get("smile_gaze_max", 15.0)
-    facing_fwd_bore = _clamp(1.0 - gaze_dev_bore / max(smile_gaze_max, 1e-6), 0, 1)
-    bore = _clamp(bore - teeth_signal * bcfg.get("smile_suppress", 0.40) * facing_fwd_bore, 0, 1)
-
-    # Tidak ada bore_fwd_gate pada bore final — sudah diterapkan di bore_gaze di awal
 
     # == 1: ENGAGEMENT =========================================================
     gate = _clamp(1 - max(0, gaze_dev_eng - ecfg["tegak_dead_zone"]) / max(ecfg["tegak_range"], 1e-6), 0, 1)
@@ -550,84 +533,36 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     eng = _clamp(eng - bore_suppress_v * bore_eng_suppress, 0, 1)
 
     # == 2: CONFUSION ==========================================================
-    iris_up_v  = _clamp((-iris_y_eff - ccfg["iris_up_dead_zone"]) / max(ccfg["iris_up_range"], 1e-6), 0, 1)
-    look_up_v  = _clamp(max(g("eyeLookUpLeft"), g("eyeLookUpRight")) / max(ccfg["look_up_threshold"], 1e-6), 0, 1)
-    # Lihat ke bawah (baca soal/layar) juga bisa confusion — gated oleh hadap depan
-    look_dn_th = ccfg.get("look_dn_th", 0.40)
-    look_dn_v  = _clamp((look_down_v - look_dn_th) / max(ccfg.get("look_dn_range", 0.30), 1e-6), 0, 1)
-    # Hanya aktif kalau hadap depan (yaw kecil) — lihat bawah sambil noleh = bukan confusion
-    look_dn_fwd_gate = _clamp(1.0 - abs(r.yaw) / max(ccfg.get("look_dn_yaw_max", 15.0), 1e-6), 0, 1)
-    look_dn_v *= look_dn_fwd_gate
+    # Craig et al. (2008) Table 2: AU4 (brow lowerer) 95%, AU7 (lid tightener) 78%,
+    # AU4+AU7 co-occurrence 73%, AU12 (questioning smile) 95% secondary.
+    # Grafsgaard et al. (2011): AU4 validated via HMM as primary confusion predictor.
+    # browInnerUp (AU2) is NOT in Craig 2008 for confusion — it is a frustration signal.
+    # iris/gaze direction, head pitch, look_dn are NOT validated in any paper for confusion.
 
-    pitch_cu   = _clamp((r.pitch - ccfg["pitch_start"]) / max(ccfg["pitch_range"], 1e-6), 0, 1)
-    brow_dn_v  = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(ccfg["brow_dn_th"], 1e-6), 0, 1)
-    brow_in_raw = g("browInnerUp")
+    # AU4 (brow lowerer): primary confusion signal
+    brow_dn_v = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(ccfg["brow_dn_th"], 1e-6), 0, 1)
 
-    # squint sebagai sinyal mata: sipit + alis naik dalam = thinking/confused
-    # Dijadikan co_signal khusus browInnerUp (iris/mata only, per kalibrasi)
-    squint_conf_th    = ccfg.get("squint_conf_th", 0.15)
-    squint_conf_range = ccfg.get("squint_conf_range", 0.25)
-    squint_as_co  = _clamp(squint_avg / max(squint_conf_th, 1e-6), 0, 1)
-    squint_conf_v = _clamp((squint_avg - squint_conf_th) / max(squint_conf_range, 1e-6), 0, 1)
-
-    co_signal  = max(iris_up_v, look_up_v, pitch_cu, look_dn_v)
-    brow_in_co = max(iris_up_v, look_up_v, squint_as_co)   # iris/mata only
-    brow_in_v  = _clamp(brow_in_raw / max(ccfg["brow_in_th"], 1e-6), 0, 1) * _clamp(brow_in_co / max(ccfg["brow_in_co_gate"], 1e-6), 0, 1)
-    # Craig et al. (2008): AU2 (browInnerUp) = PRIMARY frustration signal, NOT confusion.
-    # When AU1 (browOuterUp) is also active → AU1+AU2 co-occurrence = frustration pattern.
-    # Suppress browInnerUp contribution to confusion when the frustration brow-raise pattern is detected.
-    _bou_conf_check = _clamp((g("browOuterUpLeft") + g("browOuterUpRight")) / 2 / max(ccfg.get("biu_au1_check_th", 0.25), 1e-6), 0, 1)
-    brow_in_v = brow_in_v * _clamp(1.0 - _bou_conf_check * ccfg.get("biu_au1_suppress", 0.80), 0, 1)
-
-    # Craig et al. (2008): AU12 (mouthSmile/lip corner puller) = questioning smile, co-occurs 95% confusion
-    smile_raw  = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-
-    # Craig et al. (2008): AU4 (brow lowerer) + AU7 (lid tightener) co-occurrence = 73% confusion coverage.
-    # eyeSquint = lid tightener (AU7). When both browDown (AU4) and eyeSquint (AU7) fire together,
-    # it is a strong empirically-validated confusion indicator.
-    au7_th = ccfg.get("au7_th", 0.15)
-    au7_v  = _clamp(squint_avg / max(au7_th, 1e-6), 0, 1)
-    au4_au7_co = (brow_dn_v * au7_v) ** 0.5   # geometric mean — requires BOTH active
+    # AU7 (lid tightener = eyeSquint): validated only in co-occurrence with AU4
+    au7_th       = ccfg.get("au7_th", 0.15)
+    au7_v        = _clamp(squint_avg / max(au7_th, 1e-6), 0, 1)
+    au4_au7_co   = (brow_dn_v * au7_v) ** 0.5   # geometric mean — requires BOTH active simultaneously
     au4_au7_co_w = ccfg.get("au4_au7_co_w", 0.50)
-    au4_au7_sig = au4_au7_co * au4_au7_co_w
+    au4_au7_sig  = au4_au7_co * au4_au7_co_w
 
-    sig_brow_conf = max(brow_dn_v, brow_in_v, au4_au7_sig)
-    sig_mata_conf = max(iris_up_v, look_up_v, look_dn_v)  # tatap ke atas ATAU bawah = ciri confusion
+    # AU12 (mouthSmile = questioning smile): 95% coverage secondary — acts as gate, not positive signal
+    smile_raw = max(g("mouthSmileLeft"), g("mouthSmileRight"))
 
-    # Confusion membutuhkan CO-OCCURRENCE minimal 2 sinyal.
-    # Craig et al. (2008): AU4 (brow), AU7 (squint), mata signal — ketiga ini adalah sinyal yang divalidasi.
-    # max() tunggal terlalu permisif — rata-rata 2 sinyal terkuat mensyaratkan setidaknya 2 cue hadir bersamaan.
-    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, squint_conf_v], reverse=True)
-    base_conf = _conf_signals[0] * 0.6 + _conf_signals[1] * 0.4
-    conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
+    # base_conf: AU4 alone (95% coverage) OR AU4+AU7 together (73% coverage)
+    base_conf = max(brow_dn_v, au4_au7_sig)
+    conf = _clamp(base_conf * ccfg["blend_a"] + brow_dn_v * ccfg["blend_b"], 0, 1)
 
-    # Gaze gate: confusion masih membutuhkan attention ke konten (definisi semantik).
-    # Pakai gaze_dev_eng (tanpa komponen ke bawah) — lihat keyboard/kertas = berpikir = BUKAN distraksi.
-    # Sama dengan engagement: nunduk tidak mengurangi gate. Hanya gaze ke samping/atas yang mengurangi.
-    attentive_dead  = ccfg.get("attentive_dead",  8.0)
-    attentive_range = ccfg.get("attentive_range", 20.0)
-    attentive_floor = ccfg.get("attentive_floor", 0.3)
-    attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev_eng - attentive_dead) / max(attentive_range, 1e-6), attentive_floor, 1.0)
-    conf = _clamp(conf * attentive_gate, 0, 1)
-
-    # Smile gate: Craig et al. (2008) — AU12 (mouthSmile) co-occurs with confusion in 95% of episodes
-    # (the "uncertainty/questioning smile"). A gate floor prevents smile from zeroing out confusion entirely.
+    # Craig et al. (2008): AU12 co-occurs 95% — floor prevents smile from zeroing confusion entirely
     smile_gate_th    = ccfg.get("smile_conf_gate_th", 0.35)
-    smile_gate_floor = ccfg.get("smile_conf_gate_floor", 0.30)  # Craig2008: AU12 co-occurs → floor ≥ 0.30
+    smile_gate_floor = ccfg.get("smile_conf_gate_floor", 0.30)
     smile_gate = _clamp(1.0 - smile_raw / max(smile_gate_th, 1e-6), smile_gate_floor, 1.0)
     conf = _clamp(conf * smile_gate, 0, 1)
 
-    # look_dn boosts confusion ONLY when other confusion signals are present.
-    # Spec Rule 3: looking down + typing/reading = engagement, NOT confusion.
-    # Tanpa gate ini, semua siswa nunduk baca otomatis kena confusion floor.
-    look_dn_boost = ccfg.get("look_dn_boost", 0.15)
-    if base_conf > 0.15:
-        conf = max(conf, look_dn_v * look_dn_boost * _clamp(base_conf / 0.30, 0, 1))
-
-    # Boredom dan confusion saling eksklusif: sangat bosan = sudah "checked out",
-    # tidak sedang aktif bingung memproses konten. Ketika boredom tinggi, sinyal confusion
-    # seperti browInnerUp dan lookDn sering merupakan artefak ekspresi bosan/mengantuk,
-    # bukan kebingungan aktif. Ditaruh SETELAH look_dn_boost floor.
+    # D'Mello & Graesser (2012): "Confusion→Boredom occurred at chance" — boredom suppresses confusion
     bore_conf_suppress_val = ccfg.get("bore_conf_suppress_bore", 0.40)
     conf = _clamp(conf - bore * bore_conf_suppress_val, 0, 1)
 
@@ -684,15 +619,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # Debug log
     if _DBG_LAND:
         print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} roll={r.roll:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
-              f"lookDn={look_down_v:.2f} teeth={teeth_signal:.2f} | gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev:.1f}° | "
+              f"lookDn={look_down_v:.2f} | gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev:.1f}° | "
               f"rollGate={roll_gate:.2f} yawGate={yaw_gate:.2f} gate={gate:.2f} | "
               f"boreGaze={bore_gaze:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
         if conf > 0.5:
-            print(f"  [CONF] brow_dn(AU4)={brow_dn_v:.2f} au7={au7_v:.2f} au4_au7_co={au4_au7_co:.2f} "
-                  f"brow_in={brow_in_v:.2f} co={co_signal:.2f} squint={squint_conf_v:.2f} "
-                  f"iris_up={iris_up_v:.2f} look_up={look_up_v:.2f} "
-                  f"base={base_conf:.2f}")
+            print(f"  [CONF] brow_dn(AU4)={brow_dn_v:.2f} au7(AU7)={au7_v:.2f} au4_au7_co={au4_au7_co:.2f} "
+                  f"au4_au7_sig={au4_au7_sig:.2f} smile_raw={smile_raw:.2f} base={base_conf:.2f}")
         if frus > 0.5:
             print(f"  [FRUS] bou(AU1)={bou_fr:.2f} biu(AU2)={biu_fr:.2f} brow_raise_co={brow_raise_co:.2f} "
                   f"br(AU4)={br_fr:.2f} sig_wajah={sig_wajah_frus:.2f}")

@@ -29,13 +29,8 @@ DEFAULT_RULES = {
         "blend_a": 0.85,             # koefisien campuran utama
         "blend_b": 0.15,             # koefisien campuran sekunder
         "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk blink gated aktif
-        "eye_wide_suppress": 0.30,   # mata lebar → kurangi skor boredom (attentif ≠ bosan)
-        "squint_suppress": 0.30,     # mata sipit → kurangi skor boredom (sipit = konsentrasi ≠ bosan)
-        "brow_inner_suppress_th": 0.45,  # browInnerUp > ini → mulai suppress boredom (waspada/fokus ≠ bosan)
-        "brow_inner_suppress":    0.55,  # max reduksi boredom dari browInnerUp tinggi
-        "squint_blink_correction": 0.50,  # koreksi blink_avg dari kontribusi squint
-        "smile_suppress": 0.40,      # senyum → kurangi skor boredom
-        "smile_gaze_max": 15.0,      # gaze_dev > ini → smile suppress nonaktif
+        # Craig et al. (2008): tidak ada AU yang memvalidasi suppressor untuk boredom — hanya AU43
+        "squint_blink_correction": 0.50,  # koreksi teknis: squint sedikit menutup mata → koreksi AU43 reading
         "frus_bore_suppress_th": 0.40,  # frus > ini mulai suppress boredom (tegang ≠ bosan)
         "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration — D'Mello 2012: Frus→Bore significant
         # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze
@@ -65,37 +60,19 @@ DEFAULT_RULES = {
         "conf_eng_suppress":    0.35,
     },
     "confusion": {
-        "iris_up_dead_zone": 0.20,   # -iris_y < ini = tidak terhitung iris_up_v
-        "iris_up_range": 0.30,       # range iris_up_v di atas dead zone
-        "look_up_threshold": 0.40,   # eyeLookUp / ini = look_up_v
-        "look_dn_th": 0.30,          # lookDown > ini = mulai look_dn_v (diturunkan 0.40→0.30 supaya lebih sensitif)
-        "look_dn_range": 0.30,       # range look_dn_v di atas threshold
-        "look_dn_yaw_max": 15.0,     # lihat bawah + yaw > ini = bukan confusion (noleh sambil nunduk)
-        "pitch_start": 10.0,         # pitch > ini = mulai pitch_cu
-        "pitch_range": 15.0,         # range pitch_cu
-        "brow_dn_th": 0.35,          # browDown avg / ini = brow_dn_v (AU4 brow lowerer)
-        "brow_in_th": 0.30,          # browInnerUp / ini = brow_in_raw
-        "brow_in_co_gate": 0.25,     # co_signal / ini = gate browInnerUp
-        # Craig et al. (2008): AU12 (lip corner puller = mouthSmile) co-occurs with confusion 95% of episodes.
-        "smile_conf_gate_th": 0.35,  # mouthSmile >= ini → conf disupress (raised: AU12 can co-occur per Craig2008)
+        # Craig et al. (2008) Table 2: AU4 (brow lowerer) 95%, AU7 (lid tightener) 78%,
+        # AU4+AU7 co-occurrence 73%, AU12 (questioning smile) 95% secondary.
+        # Grafsgaard et al. (2011): AU4 validated via HMM as primary confusion predictor.
+        "brow_dn_th": 0.35,          # browDown avg / ini = brow_dn_v (AU4 brow lowerer, Craig2008 95%)
+        "au7_th": 0.15,              # eyeSquint avg min untuk AU7 (lid tightener) co-signal (Craig2008 78%)
+        "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 (Craig2008 73%)
+        # Craig et al. (2008): AU12 questioning smile co-occurs 95% — gate floor prevents zeroing confusion
+        "smile_conf_gate_th": 0.35,  # mouthSmile >= ini → mulai gate confusion
+        "smile_conf_gate_floor": 0.30,  # confusion tetap ≥30% meski senyum penuh (AU12 co-occurs)
         "blend_a": 0.85,
         "blend_b": 0.15,
-        "attentive_dead": 8.0,       # gaze_dev < ini = full attentive gate (1.0)
-        "attentive_range": 20.0,     # gaze_dev > dead+range → gate turun ke floor
-        "attentive_floor": 0.3,      # floor gate — bingung sebentar boleh lihat sekeliling
-        "squint_conf_th": 0.15,           # eyeSquint avg >= ini = mulai aktif sebagai co_signal browInnerUp dan sinyal confusion langsung
-        "squint_conf_range": 0.25,        # range squint_conf_v di atas threshold (saturasi di 0.40)
-        "bore_conf_suppress_bore": 0.40,  # boredom tinggi → conf ditekan (bosan = checked out, bukan aktif bingung)
-        "look_dn_boost": 0.15,       # boost confusion saat lihat bawah — dikurangi dari 0.50 (spec Rule 3: nunduk = engagement)
-        # Craig et al. (2008): AU4 (browDown) + AU7 (eyeSquint/lid tightener) co-occurrence = 73% confusion coverage
-        "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 sebagai sinyal confusion eksplisit
-        "au7_th": 0.15,              # eyeSquint avg min untuk dihitung sebagai AU7 (lid tightener) co-signal
-        # Craig et al. (2008): AU2 (browInnerUp) = frustration signal, bukan confusion.
-        # Suppress brow_in_v untuk confusion ketika AU1 (browOuterUp) juga aktif (= pola frustration).
-        "biu_au1_check_th": 0.25,    # browOuterUp threshold untuk mendeteksi pola frustration AU1+AU2
-        "biu_au1_suppress": 0.80,    # seberapa besar browInnerUp disuppress untuk confusion saat AU1 aktif
-        # Craig et al. (2008): AU12 (mouthSmile) co-occurs dengan confusion 95% episodes (questioning smile).
-        "smile_conf_gate_floor": 0.30,  # floor gate senyum — confusion tetap ≥30% meski senyum penuh
+        # D'Mello & Graesser (2012): "Confusion→Boredom occurred at chance" — boredom suppresses confusion
+        "bore_conf_suppress_bore": 0.40,
     },
     "frustration": {
         # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals (100% coverage)
