@@ -63,7 +63,10 @@ DEFAULT_RULES = {
         # Craig et al. (2008) Table 2: AU4 (brow lowerer) 95%, AU7 (lid tightener) 78%,
         # AU4+AU7 co-occurrence 73%, AU12 (questioning smile) 95% secondary.
         # Grafsgaard et al. (2011): AU4 validated via HMM as primary confusion predictor.
-        "brow_dn_th": 0.35,          # browDown avg / ini = brow_dn_v (AU4 brow lowerer, Craig2008 95%)
+        # NOTE: MediaPipe browDown (AU4) range di video natural: median=0.001, p90=0.033.
+        # Craig 2008 memvalidasi AU4 dari emote-aloud (peak expressions), bukan continuous video.
+        # Threshold dikalibrasi ke range MediaPipe nyata agar AU4 dapat dideteksi.
+        "brow_dn_th": 0.05,          # browDown avg / ini = brow_dn_v (AU4 brow lowerer, Craig2008 95%)
         "au7_th": 0.15,              # eyeSquint avg min untuk AU7 (lid tightener) co-signal (Craig2008 78%)
         "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 (Craig2008 73%)
         # Craig et al. (2008): AU12 questioning smile co-occurs 95% — gate floor prevents zeroing confusion
@@ -88,11 +91,13 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        # Whitehill et al.: engagement detection lebih akurat dengan holistic appearance daripada AU individual.
-        # SigLIP (vision-language model) lebih baik untuk Engagement → naikkan siglip_w 0.35→0.40.
-        # Bartlett (2006): AU-based detection reliable untuk Boredom/Frustration → pertahankan land_w tinggi.
-        "siglip_w": [0.30, 0.40, 0.45, 0.30],   # per label [Bore, Eng, Conf, Frus] — Eng: 0.35→0.40 (Whitehill)
-        "land_w":   [0.70, 0.60, 0.55, 0.70],   # Bore↑0.70 Frus↑0.70: tangan/gaze sangat reliable; Eng: 0.65→0.60
+        # Whitehill et al. (2014): "static pixels contain bulk of information" → SigLIP primary untuk holistic state.
+        # Confusion: MediaPipe browDown (AU4) jarang aktif di video natural → SigLIP lebih reliable.
+        # Boredom: AU43 (gaze+blink) terukur baik via landmark → land_w tinggi.
+        # Frustration: AU1+AU2 (browRaise) aktif di MediaPipe → land_w tinggi.
+        # Engagement: Whitehill 2014 explicitly prefers holistic appearance → siglip_w lebih tinggi.
+        "siglip_w": [0.30, 0.40, 0.65, 0.30],   # [Bore, Eng, Conf, Frus] — Conf↑0.65: browDown MediaPipe unreliable
+        "land_w":   [0.70, 0.60, 0.35, 0.70],   # Conf↓0.35: AU4 jarang aktif; Bore+Frus↑0.70: AU43+AU1/2 reliable
         "dual_label_gap": 0.12,       # Min gap antara top vs secondary label untuk mempertahankan dual-label (spec: most images = 1 label)
         "strict_rules_strength": 0.20, # Kekuatan soft bias dari strict labeling rules (0 = off, 0.20 = moderate)
         "restless_bonus_max": 0.0,   # disabled — heuristik tanpa basis definisi semantik
