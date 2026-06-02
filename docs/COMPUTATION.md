@@ -242,6 +242,8 @@ Wajah frustrasi:
 
 ## 5. Deteksi Tangan & Zonasi
 
+> **Catatan akademis:** Deteksi tangan **tidak** secara eksplisit divalidasi oleh paper FACS yang digunakan (Craig et al. 2008). D'Mello & Graesser (2010) memvalidasi kanal "gross body language" menggunakan *seat pressure pad* (lean/fidgeting), bukan posisi tangan. Hand signals di sini adalah **heuristik praktis** — interpretasi dari konsep body language ke sensor yang tersedia (kamera). Berdasarkan temuan D'Mello & Graesser (2010), kanal tubuh paling berguna untuk **Boredom** dan **Engagement**, tidak untuk Frustration; oleh karena itu `hand_weight` Frustration telah diturunkan (0.65→0.35) dan `chin_bore_max` Boredom hanya sebagai supplement kecil (0.35).
+
 Tangan dideteksi dari **full frame video asli** (sebelum crop wajah), lalu koordinatnya di-remap ke ruang crop 512×512.
 
 ### Remap Koordinat dari Full Frame ke Crop
@@ -1201,7 +1203,15 @@ Konsep `eyeBlinkLeft/Right` dari blendshapes serupa dengan Eye Aspect Ratio:
 
 Konteks teoritis untuk keempat label yang dipakai:
 
-- D'Mello, S.K. & Graesser, A. (2012). *Dynamics of Affective States during Complex Learning.* Learning and Instruction. — boredom, engagement, confusion, frustration dalam konteks belajar
+- D'Mello, S.K. & Graesser, A. (2012). *Dynamics of Affective States during Complex Learning.* Learning and Instruction. — boredom, engagement, confusion, frustration dalam konteks belajar; Confusion+Engagement dapat co-exist (productive struggle)
+- **D'Mello, S.K. & Graesser, A. (2010).** *Multimodal semi-automated affect detection from conversational cues, gross body language, and facial features.* User Modeling and User-Adapted Interaction, 20(2), 147–187.
+  - "Gross body language" = **Tekscan BPMS seat pressure pad** (lean forward/backward, fidgeting) — bukan kamera tangan
+  - Posture channel membantu: **Boredom** (fidgeting/seat changes) + **Engagement** (coverage = forward lean)
+  - Frustration: face alone precision=0.04; posture TIDAK membantu — butuh dialogue context
+  - Basis konseptual bahwa kanal non-wajah (tubuh/postur) membantu deteksi Boredom & Engagement
+- **D'Mello, S.K. et al. (2009).** *Automatic detection of learner's affect from conversational cues.* User Modeling and User-Adapted Interaction, 18(1–2), 45–80.
+  - Studi multimodal awal: conversational cues (dialog), prosody, gross body language + facial AUs
+  - Mendukung pendekatan multimodal; validasi bahwa boredom dan engagement memiliki sinyal tubuh
 - Pekrun, R. et al. (2002). *Academic Emotions in Students' Self-Regulated Learning and Achievement.* Educational Psychologist. — kerangka teori emosi akademik
 
 ### AU-to-Emotion Mapping — Validasi Empiris (Craig et al. 2008)

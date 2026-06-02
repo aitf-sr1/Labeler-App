@@ -528,8 +528,10 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     facing_fwd_bore = _clamp(1.0 - gaze_dev_bore / max(smile_gaze_max, 1e-6), 0, 1)
     bore = _clamp(bore - teeth_signal * bcfg.get("smile_suppress", 0.40) * facing_fwd_bore, 0, 1)
 
-    # chin-resting (hand_chin): TIDAK ada dalam paper (Craig 2008, D'Mello 2012, Bartlett, dll).
-    # Dipertahankan sebagai heuristik supplementary dengan bobot sangat rendah.
+    # chin-resting (hand_chin): TIDAK ada dalam paper manapun yang digunakan.
+    # D'Mello & Graesser (2010): "gross body language" = data seat pressure pad (lean/fidget),
+    # BUKAN posisi tangan. Postur fidgeting mendukung Boredom — chin_bore dipertahankan sebagai
+    # heuristik supplementary dengan bobot sangat rendah (max 0.35), bukan sinyal primer.
     # Craig et al. (2008) hanya memvalidasi AU43 (eyeBlink) sebagai sinyal primer Boredom.
     chin_bore_th    = bcfg.get("chin_bore_th",    0.30)
     chin_bore_range = bcfg.get("chin_bore_range", 0.40)
@@ -724,13 +726,16 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     smile_gate = _clamp(1.0 - smile_raw / max(smile_gate_th, 1e-6), smile_gate_floor, 1.0)
     conf = _clamp(conf * smile_gate, 0, 1)
 
-    # Hand suppression: D'Mello et al. (2014) menunjukkan chin-resting adalah sinyal CONFUSION aktif
-    # (postur "sedang berpikir" yang produktif). Hanya hand_forehead yang jelas cue Frustration
-    # (tangan di dahi/mata = distress gesture). hand_chin TIDAK suppress confusion.
+    # Hand suppression: hanya hand_forehead yang suppress confusion — gestur tangan ke dahi/mata
+    # adalah cue Frustration/distress, bukan Confusion. hand_chin TIDAK suppress confusion karena
+    # chin-resting bisa merupakan postur "sedang berpikir" (postur kognitif produktif).
+    # D'Mello & Graesser (2010): gross body language (postur/lean) membantu deteksi Boredom dan
+    # Engagement, bukan Confusion; tidak ada validasi untuk hand-to-face gestures secara spesifik.
     conf = _clamp(conf - r.hand_forehead, 0, 1)
 
     # CATATAN: chin-resting sebagai sinyal confusion adalah heuristik praktis — TIDAK ada dalam
-    # paper yang digunakan (Craig 2008, D'Mello 2012, Bartlett 1999/2006, Whitehill, DAiSEE).
+    # paper yang digunakan (Craig 2008, D'Mello & Graesser 2010/2012, Bartlett, Whitehill, DAiSEE).
+    # D'Mello & Graesser (2010) memvalidasi postur (seat pressure pad) bukan posisi tangan.
     # Dipertahankan sebagai minor supplement (max 0.10) hanya jika sinyal confusion facial sudah hadir.
     chin_conf_th  = ccfg.get("chin_conf_th", 0.30)
     chin_conf_max = ccfg.get("chin_conf_max", 0.10)  # diturunkan 0.20→0.10: bukan dari paper
@@ -790,12 +795,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     sig_legacy     = face_secondary * face_w                               # legacy signals
     sig_wajah_frus = _clamp(max(sig_brow_raise, sig_bou_alone, sig_legacy) - smile_pen * 1.5, 0, 1)
 
-    # CATATAN: Deteksi tangan (hand_forehead, hand_chin) TIDAK ada dalam paper yang digunakan
-    # (Craig 2008, D'Mello & Graesser 2012, Bartlett 1999/2006, Whitehill, DAiSEE).
-    # Craig et al. (2008) hanya memvalidasi FACS AUs (gerakan otot wajah).
-    # Hand signals adalah heuristik praktis di luar cakupan paper — dipertahankan sebagai
-    # supplementary signal dengan bobot lebih rendah, bukan primer.
-    # Sinyal wajah (AU1+AU2, AU4, dll.) adalah PRIMARY sesuai paper.
+    # CATATAN: Deteksi tangan (hand_forehead, hand_chin) TIDAK ada dalam paper yang digunakan.
+    # Craig et al. (2008): hanya FACS AUs wajah — tidak ada kanal tangan.
+    # D'Mello & Graesser (2010): kanal tubuh = seat pressure pad (lean/fidget), bukan tangan.
+    #   → Paper itu menunjukkan body language membantu Boredom & Engagement, BUKAN Frustration.
+    #   → Tangan-ke-wajah adalah interpretasi heuristik praktis, bukan validasi langsung.
+    # Hand signals dipertahankan sebagai supplementary (bobot 0.35), sinyal wajah AU1+AU2 = PRIMARY.
     hand_trigger_frus = max(r.hand_forehead, r.hand_chin)
     hand_w = fcfg.get("hand_weight", 0.35)  # diturunkan 0.65→0.35: tangan bukan di paper, bukan primer
     base_frus = _clamp(
