@@ -50,6 +50,9 @@ DEFAULT_RULES = {
         "yawn_strong_range": 0.25,   # range di atas threshold; jawOpen < th tetap butuh gaze gate
         "frus_bore_suppress_th": 0.40,  # frus > ini mulai suppress boredom (tegang ≠ bosan)
         "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration
+        # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze
+        "blink_direct_th": 0.45,    # eyeBlink_corrected > ini → kontribusi langsung ke boredom (AU43, tanpa gaze gate)
+        "blink_direct_w":  0.45,    # bobot kontribusi langsung blink ke boredom (Craig2008: AU43 primary signal)
     },
     "engagement": {
         "tegak_dead_zone": 8.0,      # gaze_dev dead zone (°) — gaze_dev tidak include roll (roll ditangani roll_gate)
@@ -93,11 +96,13 @@ DEFAULT_RULES = {
         "look_dn_yaw_max": 15.0,     # lihat bawah + yaw > ini = bukan confusion (noleh sambil nunduk)
         "pitch_start": 10.0,         # pitch > ini = mulai pitch_cu
         "pitch_range": 15.0,         # range pitch_cu
-        "brow_dn_th": 0.35,          # browDown avg / ini = brow_dn_v
+        "brow_dn_th": 0.35,          # browDown avg / ini = brow_dn_v (AU4 brow lowerer)
         "brow_in_th": 0.30,          # browInnerUp / ini = brow_in_raw
         "brow_in_co_gate": 0.25,     # co_signal / ini = gate browInnerUp
+        # Craig et al. (2008): AU12 (lip corner puller = mouthSmile) co-occurs with confusion 95% of episodes.
+        # Raised from 0.20 → 0.35 so mild/questioning smile does NOT suppress confusion signal.
         "smile_penalty_th": 0.15,    # mouthSmile > ini = mulai penalty jaw
-        "smile_conf_gate_th": 0.20,  # mouthSmile >= ini → conf disupress ke 0 (senyum ≠ bingung)
+        "smile_conf_gate_th": 0.35,  # mouthSmile >= ini → conf disupress (raised: AU12 can co-occur per Craig2008)
         "jaw_start": 0.05,           # jawOpen < ini = jaw_val_conf = 0
         "jaw_peak": 0.25,            # titik puncak jaw_val_conf = 1
         "jaw_end": 0.40,             # jawOpen > ini = jaw_val_conf = 0
@@ -120,13 +125,21 @@ DEFAULT_RULES = {
         "look_dn_range": 0.30,       # range look_dn_v di atas threshold
         "look_dn_yaw_max": 15.0,     # lihat bawah + yaw > ini = bukan confusion
         "look_dn_boost": 0.15,       # boost confusion saat lihat bawah — dikurangi dari 0.50 (spec Rule 3: nunduk = engagement)
+        # Craig et al. (2008): AU4 (browDown) + AU7 (eyeSquint/lid tightener) co-occurrence = 73% confusion coverage
+        "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 sebagai sinyal confusion eksplisit
+        "au7_th": 0.15,              # eyeSquint avg min untuk dihitung sebagai AU7 (lid tightener) co-signal
     },
     "frustration": {
-        "brow_dn_th": 0.40,          # browDown avg / ini = br_fr
-        "nose_sneer_th": 0.20,       # noseSneer / ini = ns_fr
-        "cheek_squint_th": 0.40,     # cheekSquint avg / ini = ck_fr
-        "mouth_press_th": 0.40,      # mouthPress avg / ini = lp_fr
-        "eye_squint_th": 0.40,       # eyeSquint avg / ini = ey_fr
+        # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals (100% coverage)
+        "brow_outer_up_th": 0.20,    # browOuterUp avg / ini = bou_fr (AU1, Craig2008 primary)
+        "brow_inner_up_th": 0.20,    # browInnerUp / ini = biu_fr (AU2, Craig2008 primary)
+        # AU1+AU2 co-occurrence weight: paper shows they always fire together in frustration
+        # Secondary/legacy signals below are kept but de-weighted relative to brow raises
+        "brow_dn_th": 0.40,          # browDown avg / ini = br_fr (AU4 — secondary for frustration)
+        "nose_sneer_th": 0.20,       # noseSneer / ini = ns_fr (AU9 — supplementary, not in Craig2008)
+        "cheek_squint_th": 0.40,     # cheekSquint avg / ini = ck_fr (AU6 — supplementary)
+        "mouth_press_th": 0.40,      # mouthPress avg / ini = lp_fr (supplementary)
+        "eye_squint_th": 0.40,       # eyeSquint avg / ini = ey_fr (supplementary)
         "jaw_start": 0.10,           # jawOpen < ini = kontribusi rahang = 0
         "jaw_range": 0.20,           # range jw_fr di atas jaw_start
         "mouth_frown_th": 0.25,      # mouthFrown avg / ini = mf_fr (sudut mulut turun = frustrasi)

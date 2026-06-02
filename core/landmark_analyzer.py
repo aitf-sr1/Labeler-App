@@ -504,7 +504,15 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     sig_expr       = max(blink_v, pitch_up_v) * bcfg["sig_expr_weight"]
     sig_expr_gated = sig_expr * expr_gate
 
-    base_bore = max(bore_gaze, sig_expr_gated, yawn_direct)
+    # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze deviation.
+    # Students show droopy/heavy eyelids when bored even while still facing screen.
+    blink_direct_th = bcfg.get("blink_direct_th", 0.45)
+    blink_direct_w  = bcfg.get("blink_direct_w", 0.45)
+    blink_direct = _clamp(
+        (blink_corrected - blink_direct_th) / max(bcfg["blink_range"], 1e-6), 0, 1
+    ) * blink_direct_w
+
+    base_bore = max(bore_gaze, sig_expr_gated, yawn_direct, blink_direct)
     bore      = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr_gated) * bcfg["blend_b"], 0, 1)
     _eye_wide_pre = (g("eyeWideLeft") + g("eyeWideRight")) / 2
     bore = _clamp(bore - _eye_wide_pre * bcfg.get("eye_wide_suppress", 0.3), 0, 1)
@@ -675,7 +683,16 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     mu_avg    = (g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2
     mu_conf_v = _clamp((mu_avg - ccfg.get("mu_conf_th", 0.40)) / max(ccfg.get("mu_conf_range", 0.30), 1e-6), 0, 1) * jaw_closed_gate
 
-    sig_brow_conf = max(brow_dn_v, brow_in_v)
+    # Craig et al. (2008): AU4 (brow lowerer) + AU7 (lid tightener) co-occurrence = 73% confusion coverage.
+    # eyeSquint = lid tightener (AU7). When both browDown (AU4) and eyeSquint (AU7) fire together,
+    # it is a strong empirically-validated confusion indicator.
+    au7_th = ccfg.get("au7_th", 0.15)
+    au7_v  = _clamp(squint_avg / max(au7_th, 1e-6), 0, 1)
+    au4_au7_co = (brow_dn_v * au7_v) ** 0.5   # geometric mean — requires BOTH active
+    au4_au7_co_w = ccfg.get("au4_au7_co_w", 0.50)
+    au4_au7_sig = au4_au7_co * au4_au7_co_w
+
+    sig_brow_conf = max(brow_dn_v, brow_in_v, au4_au7_sig)
     sig_mata_conf = max(iris_up_v, look_up_v, look_dn_v)  # tatap ke atas ATAU bawah = ciri confusion
 
     # Confusion membutuhkan CO-OCCURRENCE minimal 2 sinyal.
@@ -721,6 +738,18 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     conf = _clamp(conf - bore * bore_conf_suppress_val, 0, 1)
 
     # == 3: FRUSTRATION ========================================================
+    # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals,
+    # present in 100% of frustration episodes and mutually trigger each other.
+    bou_fr = _clamp(
+        (g("browOuterUpLeft") + g("browOuterUpRight")) / 2 / max(fcfg.get("brow_outer_up_th", 0.20), 1e-6), 0, 1
+    )  # AU1 outer brow raise
+    biu_fr = _clamp(
+        g("browInnerUp") / max(fcfg.get("brow_inner_up_th", 0.20), 1e-6), 0, 1
+    )  # AU2 inner brow raise
+    # AU1+AU2 co-occurrence (geometric mean): fires strongly only when both brow raises are active simultaneously
+    brow_raise_co = (bou_fr * biu_fr) ** 0.5
+
+    # Secondary/supplementary signals (legacy signals — not in Craig2008 Table 2 primary findings)
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(fcfg["brow_dn_th"], 1e-6), 0, 1)
     ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / max(fcfg["nose_sneer_th"], 1e-6), 0, 1)
     ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / max(fcfg["cheek_squint_th"], 1e-6), 0, 1)
@@ -733,10 +762,15 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     mf_fr = _clamp((g("mouthFrownLeft") + g("mouthFrownRight")) / 2 / max(fcfg.get("mouth_frown_th", 0.25), 1e-6), 0, 1)
 
     # Tangan adalah sinyal primer frustasi; ekspresi wajah hanya suplemen.
-    # Gunakan max() antar sinyal wajah (bukan sum) agar tidak saling inflate,
-    # lalu skala dengan face_weight sehingga kontribusi wajah maksimal terbatas.
-    face_peak = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr, mf_fr)
-    face_w    = fcfg.get("face_weight", 0.35)
+    # Craig2008 primary: brow_raise_co (AU1+AU2). Single raises at 0.70 scale. Legacy signals secondary.
+    face_secondary = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr, mf_fr)
+    face_peak = max(
+        brow_raise_co,          # AU1+AU2 co-occurrence (Craig2008 primary, 100% coverage)
+        bou_fr * 0.70,          # AU1 alone — partial signal
+        biu_fr * 0.70,          # AU2 alone — partial signal
+        face_secondary,         # legacy supplementary signals
+    )
+    face_w    = fcfg.get("face_weight", 0.45)
     sig_wajah_frus = _clamp(face_peak * face_w - smile_pen * 1.5, 0, 1)
 
     # Weighted-max fusion: tangan adalah cue penting tapi bukan single-cue dominant.
@@ -785,10 +819,15 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
               f"boreGaze={bore_gaze:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
         if conf > 0.5:
-            print(f"  [CONF] brow_dn={brow_dn_v:.2f} brow_in={brow_in_v:.2f} co={co_signal:.2f} "
+            print(f"  [CONF] brow_dn(AU4)={brow_dn_v:.2f} au7={au7_v:.2f} au4_au7_co={au4_au7_co:.2f} "
+                  f"brow_in={brow_in_v:.2f} co={co_signal:.2f} "
                   f"iris_up={iris_up_v:.2f} look_up={look_up_v:.2f} roll={roll_v:.2f} "
                   f"jaw={jaw_co:.2f} pucker={pucker_co:.2f} "
                   f"base={base_conf:.2f}")
+        if frus > 0.5:
+            print(f"  [FRUS] bou(AU1)={bou_fr:.2f} biu(AU2)={biu_fr:.2f} brow_raise_co={brow_raise_co:.2f} "
+                  f"ns={ns_fr:.2f} br={br_fr:.2f} ck={ck_fr:.2f} face_peak={face_peak:.2f} "
+                  f"hand={max(r.hand_forehead, r.hand_chin):.2f}")
 
     return {
         0: round(bore, 4),

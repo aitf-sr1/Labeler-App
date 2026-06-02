@@ -1204,6 +1204,26 @@ Konteks teoritis untuk keempat label yang dipakai:
 - D'Mello, S.K. & Graesser, A. (2012). *Dynamics of Affective States during Complex Learning.* Learning and Instruction. — boredom, engagement, confusion, frustration dalam konteks belajar
 - Pekrun, R. et al. (2002). *Academic Emotions in Students' Self-Regulated Learning and Achievement.* Educational Psychologist. — kerangka teori emosi akademik
 
+### AU-to-Emotion Mapping — Validasi Empiris (Craig et al. 2008)
+
+Pemetaan Action Unit ke emosi belajar secara empiris menggunakan **association rule mining** dari data FACS:
+
+- **Craig, S.D., D'Mello, S., Witherspoon, A., & Graesser, A. (2008).** *Emote aloud during learning with AutoTutor: Applying the Facial Action Coding System to cognitive–affective states during learning.* Cognition & Emotion, 22(5), 777–788.
+
+Temuan utama dari Table 2 (basis implementasi pada branch `paper/craig2008-au-mapping`):
+
+| Emosi | AU Utama | Coverage | Implementasi Blendshape |
+|---|---|---|---|
+| **Frustration** | AU1 (outer brow raise) + AU2 (inner brow raise) | 100% co-occur | `browOuterUpLeft/Right` + `browInnerUp` |
+| **Confusion** | AU4 (brow lowerer) + AU7 (lid tightener) | 73% co-occur | `browDownLeft/Right` + `eyeSquintLeft/Right` |
+| **Confusion** | AU12 (lip corner puller) | 95% co-occur | `mouthSmileLeft/Right` (bukan suppressor penuh) |
+| **Boredom** | AU43 (eye closure) | 40% (primary) | `eyeBlinkLeft/Right` (independen dari gaze) |
+
+**Catatan desain** (branch ini vs. implementasi sebelumnya):
+- Frustration: `browInnerUp` + `browOuterUp` ditambahkan sebagai sinyal **primer**; sebelumnya hanya `noseSneer` + `cheekSquint` (tidak ada di paper).
+- Confusion: AU4+AU7 co-occurrence (`browDown` × `eyeSquint`) ditambahkan sebagai sinyal eksplisit; `smile_conf_gate_th` dinaikkan 0.20→0.35 karena AU12 empirically co-occurs.
+- Boredom: `eyeBlink` (AU43) ditambahkan sebagai kontribusi **langsung** (`blink_direct`) tanpa memerlukan gaze gate.
+
 ### Gaze Deviation & Engagement Detection
 
 - Jaques, N. et al. (2016). *Predicting Students' Disengagement in MOOCs.* EDM 2016. — head pose sebagai proxy engagement
