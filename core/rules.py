@@ -31,6 +31,8 @@ DEFAULT_RULES = {
         "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk blink gated aktif
         # Craig et al. (2008): tidak ada AU yang memvalidasi suppressor untuk boredom — hanya AU43
         "squint_blink_correction": 0.50,  # koreksi teknis: squint sedikit menutup mata → koreksi AU43 reading
+        "fwd_yaw_th":    5.0,  # |yaw| < ini = hadap depan = gaze_bore dimatikan
+        "fwd_yaw_range": 4.0,  # range transisi sebelum bore_gaze penuh
         "frus_bore_suppress_th": 0.40,  # frus > ini mulai suppress boredom (tegang ≠ bosan)
         "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration — D'Mello 2012: Frus→Bore significant
         # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze
