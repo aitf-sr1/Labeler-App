@@ -113,7 +113,6 @@ def _apply_strict_rules_bias(per_label_result: dict, n_labels: int, n_frames: in
         gaze_dev = (gaze_h ** 2 + gaze_v_up ** 2) ** 0.5
         look_down_v = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
         smile = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-        hand_near = max(r.hand_forehead, r.hand_chin)
 
         scores = [per_label_result[i]["frame_scores"][f] for i in range(n_labels)]
 
@@ -128,16 +127,6 @@ def _apply_strict_rules_bias(per_label_result: dict, n_labels: int, n_frames: in
         # Rule 4: gaze away + large yaw → boost boredom
         if gaze_dev > 15.0 or abs(r.yaw) > 25.0:
             scores[0] = min(1.0, scores[0] + strength)
-
-        # Rule 5: hand on face + focused → boost engagement + frustration
-        if hand_near > 0.3 and gaze_dev < 12.0:
-            scores[1] = min(1.0, scores[1] + strength * 0.5)
-            scores[3] = min(1.0, scores[3] + strength)
-
-        # Rule 6: hand on face + disengaged → boost boredom + frustration
-        if hand_near > 0.3 and gaze_dev > 12.0:
-            scores[0] = min(1.0, scores[0] + strength * 0.5)
-            scores[3] = min(1.0, scores[3] + strength)
 
         # Rule 7: smiling + forward → boost engagement
         if smile > 0.20 and gaze_dev < 15.0:

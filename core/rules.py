@@ -20,38 +20,24 @@ DEFAULT_RULES = {
         "iris_blink_zero_th":     0.0,   # 0 = disabled; > 0 → iris_y = 0 sepenuhnya jika blink_corr >= nilai ini (squint fokus ekstrem)
     },
     "boredom": {
-        "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze. Nunduk dilindungi v_dead_zone=15, bukan dead_zone ini.
+        "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze
         "gaze_range": 10.0,          # range gaze di atas dead zone — jenuh di dev=18°
         "blink_dead_zone": 0.20,     # eyeBlink < ini = tidak dihitung
         "blink_range": 0.50,         # range blink di atas dead zone
-        "yawn_dead_zone": 0.20,      # jawOpen < ini = yawn_raw = 0. Mencegah mulut sedikit terbuka (istirahat/napas) dikuatkan expr_gate
-        "yawn_threshold": 0.55,      # jawOpen di atas dead zone / ini = yawn_raw → 1.0. Butuh bukaan nyata untuk yawn penuh.
-        "pitch_up_th": 20.0,         # pitch > ini = mulai pitch_up_v (kepala mendongak)
-        "pitch_up_range": 25.0,      # range pitch_up_v di atas threshold
-        "sig_expr_weight": 0.70,     # bobot max(blink, yawn, pitch_up)
+        # Craig et al. (2008): AU43 (eye closure) = primary boredom signal
+        "sig_expr_weight": 0.70,     # bobot blink (AU43) dalam expr path
         "blend_a": 0.85,             # koefisien campuran utama
         "blend_b": 0.15,             # koefisien campuran sekunder
-        "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk ekspresi boredom aktif
+        "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk blink gated aktif
         "eye_wide_suppress": 0.30,   # mata lebar → kurangi skor boredom (attentif ≠ bosan)
         "squint_suppress": 0.30,     # mata sipit → kurangi skor boredom (sipit = konsentrasi ≠ bosan)
-        "brow_inner_suppress_th": 0.45,  # browInnerUp > ini → mulai suppress boredom (alis naik dalam = waspada/fokus ≠ bosan)
+        "brow_inner_suppress_th": 0.45,  # browInnerUp > ini → mulai suppress boredom (waspada/fokus ≠ bosan)
         "brow_inner_suppress":    0.55,  # max reduksi boredom dari browInnerUp tinggi
-        "squint_blink_correction": 0.50,  # koreksi blink_avg dari kontribusi squint sebelum dihitung blink_v
-        "teeth_gate_th": 0.20,       # gigi terlihat > ini = jawOpen BUKAN menguap (senyum/bicara)
-        "smile_suppress": 0.40,      # senyum/gigi kelihatan → kurangi skor boredom
-        "smile_gaze_max": 15.0,      # gaze_dev > ini → smile suppress nonaktif (noleh sambil ketawa = bosan)
-        "chin_bore_th":    0.30,     # hand_chin minimum sebelum boost boredom aktif (menopang dagu)
-        "chin_bore_range": 0.40,     # range di atas th → saturasi di hand_chin=0.70
-        # CATATAN: hand_chin bukan dari paper (Craig 2008 dll). Diturunkan 0.70→0.35 sebagai supplementary.
-        # Craig et al. (2008) hanya memvalidasi AU43 (eyeBlink) sebagai sinyal primer Boredom.
-        "chin_bore_max":   0.35,     # diturunkan 0.70→0.35: hand signals bukan dari paper, bukan primer
-        "chin_jaw_closed_dz": 0.08,  # jawOpen < ini = mulut "tertutup" → chin boost boredom penuh
-        "chin_jaw_open_th":   0.18,  # jawOpen > ini = mulut "terbuka" → chin TIDAK boost boredom (bicara/aktif)
-        "yawn_bore_w": 0.75,         # bobot langsung yawn ke boredom. Menguap = bosan meski tatap layar.
-        "yawn_strong_th": 0.50,      # jawOpen mentah minimum untuk bypass gaze gate (genuine yawn, bukan sekadar napas)
-        "yawn_strong_range": 0.25,   # range di atas threshold; jawOpen < th tetap butuh gaze gate
+        "squint_blink_correction": 0.50,  # koreksi blink_avg dari kontribusi squint
+        "smile_suppress": 0.40,      # senyum → kurangi skor boredom
+        "smile_gaze_max": 15.0,      # gaze_dev > ini → smile suppress nonaktif
         "frus_bore_suppress_th": 0.40,  # frus > ini mulai suppress boredom (tegang ≠ bosan)
-        "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration
+        "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration — D'Mello 2012: Frus→Bore significant
         # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze
         "blink_direct_th": 0.45,    # eyeBlink_corrected > ini → kontribusi langsung ke boredom (AU43, tanpa gaze gate)
         "blink_direct_w":  0.45,    # bobot kontribusi langsung blink ke boredom (Craig2008: AU43 primary signal)
@@ -69,8 +55,6 @@ DEFAULT_RULES = {
         "eye_squint_boost": 0.15,    # eyeSquint → sedikit naikkan engagement (sipit = konsentrasi aktif)
         "smile_boost": 0.30,         # senyum/gigi kelihatan → naikkan skor engagement
         "smile_gaze_max": 15.0,      # gaze_dev > ini → smile boost nonaktif
-        "yawn_eng_th": 0.55,         # jawOpen >= ini mulai penalti engagement (threshold independen dari boredom)
-        "yawn_eng_pen_w": 0.35,      # besar penalti engagement dari yawn (0.35 = lebih gentle)
         "pitch_gate_th": 15.0,       # pitch > ini mulai suppress engagement (mendongak ke atas)
         "pitch_gate_range": 15.0,    # engagement nol di pitch >= th+range (default: 30°)
         "gaze_fwd_bonus": 0.15,      # bonus engagement ketika gaze benar-benar ke depan (dalam dead zone)
@@ -81,11 +65,6 @@ DEFAULT_RULES = {
         "look_dn_eng_th": 0.20,      # lookDown > ini = mulai boost engagement (diturunkan dari 0.25 supaya lebih sensitif)
         "look_dn_eng_boost": 0.30,   # boost engagement dari lihat bawah (naik dari 0.20 — nunduk baca = engaged)
         "look_dn_eng_yaw_max": 20.0, # yaw > ini → look_dn boost nonaktif
-        "hand_chin_eng_pen": 0.50,   # menopang dagu → kurangi engagement (postur pasif)
-        "chin_jaw_closed_dz":    0.08,  # jawOpen < ini = mulut tertutup → penalti penuh
-        "chin_jaw_open_th":      0.18,  # jawOpen > ini = mulut terbuka → penalti berkurang (bicara/aktif)
-        "chin_jaw_open_pen_reduce": 0.80, # fraksi pengurangan penalti chin saat jaw terbuka (0.80 = hanya 20% penalti tersisa)
-        "chin_mouth_open_boost": 0.20,  # boost engagement saat tangan di dagu + mulut terbuka (bicara = aktif)
         # D'Mello & Graesser (2012): Confusion dan Engagement dapat co-exist dalam "productive struggle".
         # Mahasiswa bingung tapi masih actively engaged dengan konten = valid state.
         # Turunkan suppression agar confusion tidak terlalu agresif membunuh engagement.
@@ -105,15 +84,7 @@ DEFAULT_RULES = {
         "brow_in_th": 0.30,          # browInnerUp / ini = brow_in_raw
         "brow_in_co_gate": 0.25,     # co_signal / ini = gate browInnerUp
         # Craig et al. (2008): AU12 (lip corner puller = mouthSmile) co-occurs with confusion 95% of episodes.
-        # Raised from 0.20 → 0.35 so mild/questioning smile does NOT suppress confusion signal.
-        "smile_penalty_th": 0.15,    # mouthSmile > ini = mulai penalty jaw
         "smile_conf_gate_th": 0.35,  # mouthSmile >= ini → conf disupress (raised: AU12 can co-occur per Craig2008)
-        "jaw_start": 0.05,           # jawOpen < ini = jaw_val_conf = 0
-        "jaw_peak": 0.25,            # titik puncak jaw_val_conf = 1
-        "jaw_end": 0.40,             # jawOpen > ini = jaw_val_conf = 0
-        "pucker_th": 0.30,           # mouthPucker / ini = pucker_co
-        "roll_dead_zone": 8.0,       # abs(roll) < ini = tidak terhitung roll_v
-        "roll_range": 15.0,          # range roll_v di atas dead zone
         "blend_a": 0.85,
         "blend_b": 0.15,
         "attentive_dead": 8.0,       # gaze_dev < ini = full attentive gate (1.0)
@@ -121,14 +92,7 @@ DEFAULT_RULES = {
         "attentive_floor": 0.3,      # floor gate — bingung sebentar boleh lihat sekeliling
         "squint_conf_th": 0.15,           # eyeSquint avg >= ini = mulai aktif sebagai co_signal browInnerUp dan sinyal confusion langsung
         "squint_conf_range": 0.25,        # range squint_conf_v di atas threshold (saturasi di 0.40)
-        "jaw_closed_th": 0.10,            # jawOpen < ini = jaw nyaris tertutup → aktifkan mouthUpperUp gate
-        "mu_conf_th": 0.40,               # mouthUpperUpAvg >= ini mulai jadi sinyal konfusi (ketegangan bibir atas)
-        "mu_conf_range": 0.30,            # range mu_conf_v di atas threshold (saturasi di 0.70)
         "bore_conf_suppress_bore": 0.40,  # boredom tinggi → conf ditekan (bosan = checked out, bukan aktif bingung)
-        "frus_conf_suppress": 0.5,   # frustrasi tinggi → conf ditekan (mutual exclusive)
-        "look_dn_th": 0.40,          # lookDown > ini = mulai look_dn_v (lihat bawah = bisa confusion)
-        "look_dn_range": 0.30,       # range look_dn_v di atas threshold
-        "look_dn_yaw_max": 15.0,     # lihat bawah + yaw > ini = bukan confusion
         "look_dn_boost": 0.15,       # boost confusion saat lihat bawah — dikurangi dari 0.50 (spec Rule 3: nunduk = engagement)
         # Craig et al. (2008): AU4 (browDown) + AU7 (eyeSquint/lid tightener) co-occurrence = 73% confusion coverage
         "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 sebagai sinyal confusion eksplisit
@@ -139,32 +103,16 @@ DEFAULT_RULES = {
         "biu_au1_suppress": 0.80,    # seberapa besar browInnerUp disuppress untuk confusion saat AU1 aktif
         # Craig et al. (2008): AU12 (mouthSmile) co-occurs dengan confusion 95% episodes (questioning smile).
         "smile_conf_gate_floor": 0.30,  # floor gate senyum — confusion tetap ≥30% meski senyum penuh
-        # CATATAN: chin-resting untuk confusion adalah heuristik praktis, TIDAK dari paper yang digunakan.
-        "chin_conf_th": 0.30,        # hand_chin > ini = potensi sinyal confusion (heuristik, bukan paper)
-        "chin_conf_max": 0.10,       # diturunkan 0.20→0.10: bukan dari paper, minor supplement saja
     },
     "frustration": {
         # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals (100% coverage)
         "brow_outer_up_th": 0.20,    # browOuterUp avg / ini = bou_fr (AU1, Craig2008 primary)
         "brow_inner_up_th": 0.20,    # browInnerUp / ini = biu_fr (AU2, Craig2008 primary)
-        # brow_raise_direct_w: Craig2008 AU1+AU2 mendapat face weight lebih tinggi dari legacy signals.
-        # Diperlukan agar AU1+AU2 yang kuat (0.80 each) dapat melewati threshold TANPA tangan.
-        "brow_raise_direct_w": 0.65, # direct weight untuk AU1+AU2 primary (lebih tinggi dari face_weight umum)
-        # AU1+AU2 co-occurrence weight: paper shows they always fire together in frustration
-        # Secondary/legacy signals below are kept but de-weighted relative to brow raises
-        "brow_dn_th": 0.40,          # browDown avg / ini = br_fr (AU4 — secondary for frustration)
-        "nose_sneer_th": 0.20,       # noseSneer / ini = ns_fr (AU9 — supplementary, not in Craig2008)
-        "cheek_squint_th": 0.40,     # cheekSquint avg / ini = ck_fr (AU6 — supplementary)
-        "mouth_press_th": 0.40,      # mouthPress avg / ini = lp_fr (supplementary)
-        "eye_squint_th": 0.40,       # eyeSquint avg / ini = ey_fr (supplementary)
-        "jaw_start": 0.10,           # jawOpen < ini = kontribusi rahang = 0
-        "jaw_range": 0.20,           # range jw_fr di atas jaw_start
-        "mouth_frown_th": 0.25,      # mouthFrown avg / ini = mf_fr (sudut mulut turun = frustrasi)
-        "face_weight": 0.45,         # skala legacy signals (AU9, AU6, dll.) — supplementary
-        # CATATAN: hand signals TIDAK ada dalam paper (Craig 2008, D'Mello 2012, Bartlett, dll).
-        # Craig et al. (2008) hanya memvalidasi FACS AUs — gerakan otot wajah, bukan posisi tangan.
-        # Diturunkan 0.65→0.35: face AU (paper-validated) = primary; tangan = supplementary heuristic.
-        "hand_weight": 0.35,         # diturunkan 0.65→0.35: hand signals bukan dari paper
+        # brow_raise_direct_w: Craig2008 AU1+AU2 mendapat face weight lebih tinggi dari secondary signals.
+        "brow_raise_direct_w": 0.65, # direct weight untuk AU1+AU2 primary (Craig2008: 100% coverage)
+        # Grafsgaard et al. (2013): AU4 (brow lowering) positively correlated with frustration
+        "brow_dn_th": 0.40,          # browDown avg / ini = br_fr (AU4 — secondary, Grafsgaard 2013)
+        "face_weight": 0.45,         # skala AU4 secondary signal
         "blend_a": 0.85,
         "blend_b": 0.15,
     },

@@ -462,14 +462,9 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     #   Confusion membutuhkan attention ke konten — gaze jauh ke manapun mengurangi gate.
     gaze_dev      = (gaze_h_eff ** 2 + gaze_v_eff ** 2) ** 0.5
 
-    # ── Teeth gate (shared): gigi terlihat = BUKAN menguap ────────────────────
-    # Menguap = mulut terbuka lebar, bibir menutupi gigi (bentuk O).
-    # Jika gigi kelihatan (bibir atas naik / senyum) → jawOpen bukan menguap.
-    teeth_upper = (g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2
+    # ── Smile / teeth signal (shared): digunakan untuk smile_suppress (boredom) dan smile_boost (engagement)
     teeth_smile = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-    teeth_signal = max(teeth_upper, teeth_smile)
-    teeth_gate_th = bcfg.get("teeth_gate_th", 0.20)
-    teeth_gate = _clamp(1.0 - teeth_signal / max(teeth_gate_th, 1e-6), 0, 1)
+    teeth_signal = max((g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2, teeth_smile)
 
     # == 0: BOREDOM ============================================================
     bore_gaze_raw = _clamp((gaze_dev_bore - bcfg["gaze_dead_zone"]) / max(bcfg["gaze_range"], 1e-6), 0, 1)
@@ -487,21 +482,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     squint_blink_correction = squint_avg * bcfg.get("squint_blink_correction", 0.5)
     blink_corrected = max(0.0, blink_avg - squint_blink_correction)
     blink_v    = _clamp((blink_corrected - bcfg["blink_dead_zone"]) / max(bcfg["blink_range"], 1e-6), 0, 1)
-    yawn_dz    = bcfg.get("yawn_dead_zone", 0.20)
-    _jaw_yawn  = max(0.0, g("jawOpen") - yawn_dz)
-    yawn_raw   = _clamp(_jaw_yawn / max(bcfg["yawn_threshold"] - yawn_dz, 1e-6), 0, 1) * teeth_gate if r.pitch < 15 else 0.0
-    pitch_up_v = _clamp((r.pitch - bcfg.get("pitch_up_th", 20.0)) / max(bcfg.get("pitch_up_range", 25.0), 1e-6), 0, 1)
-
-    # expr_gate dari bore_gaze yang sudah di-gate → blink/droopy tidak fire saat natap layar
+    # expr_gate dari bore_gaze yang sudah di-gate → blink tidak fire saat natap layar
     expr_gate = _clamp(bore_gaze / max(bcfg.get("expr_gaze_gate_th", 0.35), 1e-6), 0, 1)
 
-    # yawn_direct: bypass gaze gate kalau yawn kuat (menguap nyata = bosan meski natap layar)
-    jaw_open_raw      = g("jawOpen") * teeth_gate if r.pitch < 15 else 0.0
-    yawn_strong_th    = bcfg.get("yawn_strong_th", 0.50)
-    yawn_strong_range = bcfg.get("yawn_strong_range", 0.25)
-    yawn_gate_bypass  = _clamp((jaw_open_raw - yawn_strong_th) / max(yawn_strong_range, 1e-6), 0, 1)
-    yawn_direct = yawn_raw * bcfg.get("yawn_bore_w", 0.75) * max(yawn_gate_bypass, expr_gate)
-    sig_expr       = max(blink_v, pitch_up_v) * bcfg["sig_expr_weight"]
+    # Craig et al. (2008): AU43 (eye closure) adalah satu-satunya sinyal yang divalidasi untuk Boredom.
+    # Yawn (jawOpen) TIDAK divalidasi — tidak ada paper yang mengaitkan yawn dengan boredom di learning context.
+    sig_expr       = blink_v * bcfg["sig_expr_weight"]
     sig_expr_gated = sig_expr * expr_gate
 
     # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze deviation.
@@ -512,7 +498,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         (blink_corrected - blink_direct_th) / max(bcfg["blink_range"], 1e-6), 0, 1
     ) * blink_direct_w
 
-    base_bore = max(bore_gaze, sig_expr_gated, yawn_direct, blink_direct)
+    base_bore = max(bore_gaze, sig_expr_gated, blink_direct)
     bore      = _clamp(base_bore * bcfg["blend_a"] + (bore_gaze + sig_expr_gated) * bcfg["blend_b"], 0, 1)
     _eye_wide_pre = (g("eyeWideLeft") + g("eyeWideRight")) / 2
     bore = _clamp(bore - _eye_wide_pre * bcfg.get("eye_wide_suppress", 0.3), 0, 1)
@@ -528,21 +514,6 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     facing_fwd_bore = _clamp(1.0 - gaze_dev_bore / max(smile_gaze_max, 1e-6), 0, 1)
     bore = _clamp(bore - teeth_signal * bcfg.get("smile_suppress", 0.40) * facing_fwd_bore, 0, 1)
 
-    # chin-resting (hand_chin): TIDAK ada dalam paper manapun yang digunakan.
-    # D'Mello & Graesser (2010): "gross body language" = data seat pressure pad (lean/fidget),
-    # BUKAN posisi tangan. Postur fidgeting mendukung Boredom — chin_bore dipertahankan sebagai
-    # heuristik supplementary dengan bobot sangat rendah (max 0.35), bukan sinyal primer.
-    # Craig et al. (2008) hanya memvalidasi AU43 (eyeBlink) sebagai sinyal primer Boredom.
-    chin_bore_th    = bcfg.get("chin_bore_th",    0.30)
-    chin_bore_range = bcfg.get("chin_bore_range", 0.40)
-    chin_bore_max   = bcfg.get("chin_bore_max",   0.35)  # diturunkan 0.70→0.35: tangan bukan di paper
-    _chin_jaw_dz  = bcfg.get("chin_jaw_closed_dz", 0.08)
-    _chin_jaw_th  = bcfg.get("chin_jaw_open_th",   0.18)
-    _jaw_open_for_bore = _clamp(
-        (g("jawOpen") - _chin_jaw_dz) / max(_chin_jaw_th - _chin_jaw_dz, 1e-6), 0, 1
-    )
-    chin_bore_v = _clamp((r.hand_chin - chin_bore_th) / max(chin_bore_range, 1e-6), 0, 1)
-    bore = _clamp(max(bore, chin_bore_v * chin_bore_max * (1.0 - _jaw_open_for_bore)), 0, 1)
     # Tidak ada bore_fwd_gate pada bore final — sudah diterapkan di bore_gaze di awal
 
     # == 1: ENGAGEMENT =========================================================
@@ -567,16 +538,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     eye_wide_boost = ecfg.get("eye_wide_boost", 0.20)
     # Sipit (eyeSquint) = konsentrasi aktif — juga sinyal engagement, seperti eye_wide tapi lebih subtle
     eye_squint_boost = ecfg.get("eye_squint_boost", 0.15)
-    # Menguap = tidak engaged. Pakai jawOpen langsung (BUKAN yawn_raw yang sudah dinormalisasi
-    # oleh boredom yawn_threshold) agar threshold engagement independen dan lebih stabil.
-    jaw_open_v   = g("jawOpen") * teeth_gate if r.pitch < 15 else 0.0
-    yawn_eng_pen = _clamp(jaw_open_v / max(ecfg.get("yawn_eng_th", 0.55), 1e-6), 0, 1) * ecfg.get("yawn_eng_pen_w", 0.35)
     # Pitch gate: mendongak ke atas (pitch besar) = tidak fokus ke layar → engagement turun.
     # Dead zone 15° agar variasi postur duduk normal tidak kena penalti (pitch 5-12° = wajar).
     pitch_gate_th    = ecfg.get("pitch_gate_th", 15.0)
     pitch_gate_range = ecfg.get("pitch_gate_range", 15.0)
     pitch_gate = _clamp(1.0 - max(0.0, r.pitch - pitch_gate_th) / max(pitch_gate_range, 1e-6), 0.0, 1.0)
-    eng = _clamp(gate * yaw_gate * roll_gate * pitch_gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy - yawn_eng_pen + eye_wide * eye_wide_boost + squint_avg * eye_squint_boost), 0, 1)
+    eng = _clamp(gate * yaw_gate * roll_gate * pitch_gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy + eye_wide * eye_wide_boost + squint_avg * eye_squint_boost), 0, 1)
     # Senyum/gigi = sinyal engagement, tapi hanya kalau hadap depan (ketawa ke temen = bukan engaged)
     smile_gaze_max_eng = ecfg.get("smile_gaze_max", 15.0)
     facing_fwd_eng = _clamp(1.0 - gaze_dev_eng / max(smile_gaze_max_eng, 1e-6), 0, 1)
@@ -596,21 +563,6 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     gaze_fwd_v     = _clamp(1.0 - gaze_dev_eng / max(ecfg["tegak_dead_zone"], 1e-6), 0, 1)
     gaze_fwd_bonus = ecfg.get("gaze_fwd_bonus", 0.15)
     eng = _clamp(eng + gaze_fwd_v * gaze_fwd_bonus, 0, 1)
-
-    # Menopang dagu: penalti engagement HANYA ketika mulut tertutup (postur pasif).
-    # Mulut terbuka + tangan di dagu = bicara sambil gestur → aktif/engaged.
-    chin_eng_pen_w = ecfg.get("hand_chin_eng_pen", 0.5)
-    _cjdz  = ecfg.get("chin_jaw_closed_dz",    0.08)
-    _cjth  = ecfg.get("chin_jaw_open_th",       0.18)
-    _jaw_open_for_eng = _clamp(
-        (g("jawOpen") - _cjdz) / max(_cjth - _cjdz, 1e-6), 0, 1
-    )
-    # Penalti berkurang proporsional saat jaw terbuka
-    _pen_reduce = ecfg.get("chin_jaw_open_pen_reduce", 0.80)
-    eng = _clamp(eng - r.hand_chin * chin_eng_pen_w * (1.0 - _jaw_open_for_eng * _pen_reduce), 0, 1)
-    # Tangan di dagu + mulut terbuka = bicara/aktif → boost kecil engagement
-    _chin_open_boost = ecfg.get("chin_mouth_open_boost", 0.20)
-    eng = _clamp(eng + r.hand_chin * _jaw_open_for_eng * _chin_open_boost, 0, 1)
 
     # Boredom dan engagement adalah near-mutually exclusive secara semantik.
     # Dead zone 0.30 — boredom > 0.30 mulai suppress engagement secara agresif.
@@ -658,37 +610,8 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     _bou_conf_check = _clamp((g("browOuterUpLeft") + g("browOuterUpRight")) / 2 / max(ccfg.get("biu_au1_check_th", 0.25), 1e-6), 0, 1)
     brow_in_v = brow_in_v * _clamp(1.0 - _bou_conf_check * ccfg.get("biu_au1_suppress", 0.80), 0, 1)
 
-    # Kepala miring ke samping (roll) — bukan muterin kepala (yaw) seperti boredom.
-    # Siswa bingung sering miringin kepala sedikit. Dead zone supaya noise tidak trigger.
-    roll_v = _clamp((abs(r.roll) - ccfg.get("roll_dead_zone", 8.0)) / max(ccfg.get("roll_range", 15.0), 1e-6), 0, 1)
-
+    # Craig et al. (2008): AU12 (mouthSmile/lip corner puller) = questioning smile, co-occurs 95% confusion
     smile_raw  = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-    smile_pen  = max(0.0, smile_raw - ccfg["smile_penalty_th"])
-
-    jo = g("jawOpen")
-    jaw_rise = max(ccfg["jaw_peak"] - ccfg["jaw_start"], 1e-6)
-    jaw_fall = max(ccfg["jaw_end"]  - ccfg["jaw_peak"],  1e-6)
-    if jo <= ccfg["jaw_start"]:
-        jaw_val_conf = 0.0
-    elif jo <= ccfg["jaw_peak"]:
-        jaw_val_conf = (jo - ccfg["jaw_start"]) / jaw_rise
-    elif jo <= ccfg["jaw_end"]:
-        jaw_val_conf = 1.0 - (jo - ccfg["jaw_peak"]) / jaw_fall
-    else:
-        jaw_val_conf = 0.0
-
-    # Teeth gate: mulut terbuka + gigi kelihatan = bukan bingung, lebih ke bicara/senyum
-    jaw_val_conf *= teeth_gate
-    jaw_co = _clamp(jaw_val_conf - smile_pen * 1.5, 0, 1)
-
-    pucker_co  = _clamp(g("mouthPucker") / max(ccfg["pucker_th"], 1e-6), 0, 1)
-
-    # Ketegangan bibir atas dengan rahang tertutup: bibir menegang saat fokus/konsentrasi berat.
-    # "mouthUpperUp" tinggi + jawOpen rendah + tanpa senyum = lippress saat bingung/konsentrasi,
-    # bukan ekspresi bicara atau tertawa. Hanya aktif kalau jaw nyaris tertutup.
-    jaw_closed_gate = _clamp(1.0 - jo / max(ccfg.get("jaw_closed_th", 0.10), 1e-6), 0, 1)
-    mu_avg    = (g("mouthUpperUpLeft") + g("mouthUpperUpRight")) / 2
-    mu_conf_v = _clamp((mu_avg - ccfg.get("mu_conf_th", 0.40)) / max(ccfg.get("mu_conf_range", 0.30), 1e-6), 0, 1) * jaw_closed_gate
 
     # Craig et al. (2008): AU4 (brow lowerer) + AU7 (lid tightener) co-occurrence = 73% confusion coverage.
     # eyeSquint = lid tightener (AU7). When both browDown (AU4) and eyeSquint (AU7) fire together,
@@ -703,10 +626,9 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     sig_mata_conf = max(iris_up_v, look_up_v, look_dn_v)  # tatap ke atas ATAU bawah = ciri confusion
 
     # Confusion membutuhkan CO-OCCURRENCE minimal 2 sinyal.
-    # max() tunggal terlalu permisif — roll sedikit SAJA atau jaw sedikit SAJA
-    # seharusnya tidak cukup. Rata-rata 2 sinyal terkuat mensyaratkan
-    # setidaknya 2 cue hadir bersamaan untuk skor tinggi.
-    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, roll_v, squint_conf_v, mu_conf_v], reverse=True)
+    # Craig et al. (2008): AU4 (brow), AU7 (squint), mata signal — ketiga ini adalah sinyal yang divalidasi.
+    # max() tunggal terlalu permisif — rata-rata 2 sinyal terkuat mensyaratkan setidaknya 2 cue hadir bersamaan.
+    _conf_signals = sorted([sig_brow_conf, sig_mata_conf, squint_conf_v], reverse=True)
     base_conf = _conf_signals[0] * 0.6 + _conf_signals[1] * 0.4
     conf = _clamp(base_conf * ccfg["blend_a"] + (sig_mata_conf + sig_brow_conf) * ccfg["blend_b"], 0, 1)
 
@@ -725,23 +647,6 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     smile_gate_floor = ccfg.get("smile_conf_gate_floor", 0.30)  # Craig2008: AU12 co-occurs → floor ≥ 0.30
     smile_gate = _clamp(1.0 - smile_raw / max(smile_gate_th, 1e-6), smile_gate_floor, 1.0)
     conf = _clamp(conf * smile_gate, 0, 1)
-
-    # Hand suppression: hanya hand_forehead yang suppress confusion — gestur tangan ke dahi/mata
-    # adalah cue Frustration/distress, bukan Confusion. hand_chin TIDAK suppress confusion karena
-    # chin-resting bisa merupakan postur "sedang berpikir" (postur kognitif produktif).
-    # D'Mello & Graesser (2010): gross body language (postur/lean) membantu deteksi Boredom dan
-    # Engagement, bukan Confusion; tidak ada validasi untuk hand-to-face gestures secara spesifik.
-    conf = _clamp(conf - r.hand_forehead, 0, 1)
-
-    # CATATAN: chin-resting sebagai sinyal confusion adalah heuristik praktis — TIDAK ada dalam
-    # paper yang digunakan (Craig 2008, D'Mello & Graesser 2010/2012, Bartlett, Whitehill, DAiSEE).
-    # D'Mello & Graesser (2010) memvalidasi postur (seat pressure pad) bukan posisi tangan.
-    # Dipertahankan sebagai minor supplement (max 0.10) hanya jika sinyal confusion facial sudah hadir.
-    chin_conf_th  = ccfg.get("chin_conf_th", 0.30)
-    chin_conf_max = ccfg.get("chin_conf_max", 0.10)  # diturunkan 0.20→0.10: bukan dari paper
-    chin_conf_v   = _clamp((r.hand_chin - chin_conf_th) / max(0.40, 1e-6), 0, 1)
-    chin_conf_boost = chin_conf_v * chin_conf_max * _clamp(base_conf / 0.25, 0, 1)
-    conf = _clamp(conf + chin_conf_boost, 0, 1)
 
     # look_dn boosts confusion ONLY when other confusion signals are present.
     # Spec Rule 3: looking down + typing/reading = engagement, NOT confusion.
@@ -769,55 +674,27 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # AU1+AU2 co-occurrence (geometric mean): fires strongly only when both brow raises are active simultaneously
     brow_raise_co = (bou_fr * biu_fr) ** 0.5
 
-    # Secondary/supplementary signals (legacy signals — not in Craig2008 Table 2 primary findings)
+    # Grafsgaard et al. (2013): AU4 (brow lowering) positively correlated with frustration
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(fcfg["brow_dn_th"], 1e-6), 0, 1)
-    ns_fr = _clamp(max(g("noseSneerLeft"), g("noseSneerRight")) / max(fcfg["nose_sneer_th"], 1e-6), 0, 1)
-    ck_fr = _clamp((g("cheekSquintLeft") + g("cheekSquintRight")) / 2 / max(fcfg["cheek_squint_th"], 1e-6), 0, 1)
-    lp_fr = _clamp((g("mouthPressLeft") + g("mouthPressRight")) / 2 / max(fcfg["mouth_press_th"], 1e-6), 0, 1)
-    ey_fr = _clamp((g("eyeSquintLeft") + g("eyeSquintRight")) / 2 / max(fcfg["eye_squint_th"], 1e-6), 0, 1)
-
-    jaw_val_frus = max(0.0, jo - fcfg["jaw_start"])
-    jw_fr = _clamp((jaw_val_frus - smile_pen * 1.5) / max(fcfg["jaw_range"], 1e-6), 0, 1)
-    # Sudut mulut turun (frown) = ekspresi kecewa/frustasi yang sering terlewat
-    mf_fr = _clamp((g("mouthFrownLeft") + g("mouthFrownRight")) / 2 / max(fcfg.get("mouth_frown_th", 0.25), 1e-6), 0, 1)
 
     # Tangan adalah sinyal primer frustasi; ekspresi wajah hanya suplemen.
     # Craig et al. (2008): AU1+AU2 co-occurrence = 100% coverage — harus cukup kuat TANPA tangan.
     # Two-tier face weighting:
     #   brow_raise_co (AU1+AU2 primary) → pakai brow_raise_direct_w yang lebih tinggi
     #   face_secondary (AU9, AU6, dll.)  → pakai face_weight umum yang lebih rendah
-    face_secondary = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr, mf_fr)
-    brow_raise_direct_w = fcfg.get("brow_raise_direct_w", 0.65)  # Craig2008: AU1+AU2 primary, lebih tinggi dari legacy
-    face_w              = fcfg.get("face_weight", 0.45)           # untuk legacy signals
+    # Craig et al. (2008): AU1+AU2 primary; Grafsgaard et al. (2013): AU4 secondary
+    face_secondary = br_fr  # AU4 (browDown), validated by Grafsgaard et al. (2013)
+    brow_raise_direct_w = fcfg.get("brow_raise_direct_w", 0.65)  # Craig2008: AU1+AU2 primary
+    face_w              = fcfg.get("face_weight", 0.45)           # untuk AU4 secondary
 
     sig_brow_raise = brow_raise_co * brow_raise_direct_w                   # AU1+AU2 co-occurrence, primary
     sig_bou_alone  = max(bou_fr * 0.70, biu_fr * 0.70) * brow_raise_direct_w  # single brow raise, partial
-    sig_legacy     = face_secondary * face_w                               # legacy signals
-    sig_wajah_frus = _clamp(max(sig_brow_raise, sig_bou_alone, sig_legacy) - smile_pen * 1.5, 0, 1)
+    sig_legacy     = face_secondary * face_w                               # AU4 secondary
+    sig_wajah_frus = _clamp(max(sig_brow_raise, sig_bou_alone, sig_legacy), 0, 1)
 
-    # CATATAN: Deteksi tangan (hand_forehead, hand_chin) TIDAK ada dalam paper yang digunakan.
-    # Craig et al. (2008): hanya FACS AUs wajah — tidak ada kanal tangan.
-    # D'Mello & Graesser (2010): kanal tubuh = seat pressure pad (lean/fidget), bukan tangan.
-    #   → Paper itu menunjukkan body language membantu Boredom & Engagement, BUKAN Frustration.
-    #   → Tangan-ke-wajah adalah interpretasi heuristik praktis, bukan validasi langsung.
-    # Hand signals dipertahankan sebagai supplementary (bobot 0.35), sinyal wajah AU1+AU2 = PRIMARY.
-    hand_trigger_frus = max(r.hand_forehead, r.hand_chin)
-    hand_w = fcfg.get("hand_weight", 0.35)  # diturunkan 0.65→0.35: tangan bukan di paper, bukan primer
-    base_frus = _clamp(
-        max(
-            sig_wajah_frus * (1.0 - hand_w) + hand_trigger_frus * hand_w,
-            sig_wajah_frus,          # face AU = primary (paper-validated)
-            hand_trigger_frus * hand_w,  # hand = supplementary, capped by hand_w
-        ),
-        0, 1,
-    )
-    frus = _clamp(base_frus * fcfg["blend_a"] + (ck_fr + jw_fr) * fcfg["blend_b"], 0, 1)
-
-    # Frustration suppression pada Confusion: kedua emosi tidak boleh tinggi bersamaan.
-    # Sinyal alis (browDown) dipakai di keduanya — ketika frustrasi tinggi, itu alis tegang
-    # bukan alis bingung. Terapkan setelah frus selesai dihitung.
-    frus_conf_suppress = ccfg.get("frus_conf_suppress", 0.5)
-    conf = _clamp(conf - frus * frus_conf_suppress, 0, 1)
+    base_frus = sig_wajah_frus
+    # Grafsgaard et al. (2013): AU4 blend component adds validated secondary frustration signal
+    frus = _clamp(base_frus * fcfg["blend_a"] + br_fr * fcfg["blend_b"], 0, 1)
 
     # ── Post-computation cross-suppression ────────────────────────────────────
     # Confusion → Engagement: orang bingung yang menatap layar tidak sama dengan engaged.
@@ -838,20 +715,18 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # Debug log
     if _DBG_LAND:
         print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} roll={r.roll:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
-              f"lookDn={look_down_v:.2f} teeth={teeth_signal:.2f}(gate={teeth_gate:.2f}) | gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev:.1f}° | "
+              f"lookDn={look_down_v:.2f} teeth={teeth_signal:.2f} | gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev:.1f}° | "
               f"rollGate={roll_gate:.2f} yawGate={yaw_gate:.2f} gate={gate:.2f} | "
               f"boreGaze={bore_gaze:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
         if conf > 0.5:
             print(f"  [CONF] brow_dn(AU4)={brow_dn_v:.2f} au7={au7_v:.2f} au4_au7_co={au4_au7_co:.2f} "
-                  f"brow_in={brow_in_v:.2f} co={co_signal:.2f} "
-                  f"iris_up={iris_up_v:.2f} look_up={look_up_v:.2f} roll={roll_v:.2f} "
-                  f"jaw={jaw_co:.2f} pucker={pucker_co:.2f} "
+                  f"brow_in={brow_in_v:.2f} co={co_signal:.2f} squint={squint_conf_v:.2f} "
+                  f"iris_up={iris_up_v:.2f} look_up={look_up_v:.2f} "
                   f"base={base_conf:.2f}")
         if frus > 0.5:
             print(f"  [FRUS] bou(AU1)={bou_fr:.2f} biu(AU2)={biu_fr:.2f} brow_raise_co={brow_raise_co:.2f} "
-                  f"ns={ns_fr:.2f} br={br_fr:.2f} ck={ck_fr:.2f} face_peak={face_peak:.2f} "
-                  f"hand={max(r.hand_forehead, r.hand_chin):.2f}")
+                  f"br(AU4)={br_fr:.2f} sig_wajah={sig_wajah_frus:.2f}")
 
     return {
         0: round(bore, 4),
