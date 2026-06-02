@@ -466,8 +466,8 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     bore_gaze_raw = _clamp((gaze_dev_bore - bcfg["gaze_dead_zone"]) / max(bcfg["gaze_range"], 1e-6), 0, 1)
 
     # MUTLAK: hadap depan = gaze tidak menyimpang → komponen bore_gaze di-nol-kan.
-    # Tapi ekspresi (yawn, blink) dan chin-resting TETAP valid.
-    # Range kecil (4°) agar transisi cepat: di gaze_h=9° boredom sudah hampir penuh.
+    # AU43 (blink_direct) tetap aktif independen dari gaze gate (Craig 2008: primary signal).
+    # Range kecil (4°) agar transisi cepat: di gaze_h=9° bore_gaze sudah hampir penuh.
     bore_fwd_th    = bcfg.get("fwd_yaw_th", 5.0)    # turun dari 8° ke 5°
     bore_fwd_range = bcfg.get("fwd_yaw_range", 4.0)  # turun dari 8° ke 4°
     bore_fwd_gate  = _clamp((gaze_h_eff - bore_fwd_th) / max(bore_fwd_range, 1e-6), 0, 1)
@@ -567,26 +567,26 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     conf = _clamp(conf - bore * bore_conf_suppress_val, 0, 1)
 
     # == 3: FRUSTRATION ========================================================
-    # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals,
+    # Craig et al. (2008): AU1 (inner brow raise) + AU2 (outer brow raise) = PRIMARY frustration signals,
     # present in 100% of frustration episodes and mutually trigger each other.
+    # Standard FACS (Ekman & Friesen 1978, confirmed by Grafsgaard 2013): AU1=inner, AU2=outer.
     bou_fr = _clamp(
         (g("browOuterUpLeft") + g("browOuterUpRight")) / 2 / max(fcfg.get("brow_outer_up_th", 0.20), 1e-6), 0, 1
-    )  # AU1 outer brow raise
+    )  # AU2 outer brow raise (browOuterUp)
     biu_fr = _clamp(
         g("browInnerUp") / max(fcfg.get("brow_inner_up_th", 0.20), 1e-6), 0, 1
-    )  # AU2 inner brow raise
+    )  # AU1 inner brow raise (browInnerUp)
     # AU1+AU2 co-occurrence (geometric mean): fires strongly only when both brow raises are active simultaneously
     brow_raise_co = (bou_fr * biu_fr) ** 0.5
 
     # Grafsgaard et al. (2013): AU4 (brow lowering) positively correlated with frustration
     br_fr = _clamp((g("browDownLeft") + g("browDownRight")) / 2 / max(fcfg["brow_dn_th"], 1e-6), 0, 1)
 
-    # Tangan adalah sinyal primer frustasi; ekspresi wajah hanya suplemen.
-    # Craig et al. (2008): AU1+AU2 co-occurrence = 100% coverage — harus cukup kuat TANPA tangan.
-    # Two-tier face weighting:
-    #   brow_raise_co (AU1+AU2 primary) → pakai brow_raise_direct_w yang lebih tinggi
-    #   face_secondary (AU9, AU6, dll.)  → pakai face_weight umum yang lebih rendah
-    # Craig et al. (2008): AU1+AU2 primary; Grafsgaard et al. (2013): AU4 secondary
+    # Craig et al. (2008): AU1+AU2 co-occurrence = 100% coverage (primary)
+    # Grafsgaard et al. (2013): AU4 (brow lowering) positively correlated with frustration (secondary)
+    # Two-tier weighting:
+    #   brow_raise_co (AU1+AU2 primary) → brow_raise_direct_w lebih tinggi (100% coverage)
+    #   face_secondary (AU4)             → face_weight lebih rendah (secondary signal)
     face_secondary = br_fr  # AU4 (browDown), validated by Grafsgaard et al. (2013)
     brow_raise_direct_w = fcfg.get("brow_raise_direct_w", 0.65)  # Craig2008: AU1+AU2 primary
     face_w              = fcfg.get("face_weight", 0.45)           # untuk AU4 secondary

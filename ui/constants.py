@@ -62,7 +62,7 @@ DEFAULT_PROMPT_GROUPS = [
         "a student displaying raised worried eyebrows with a tense strained expression stuck on a problem\n"
         "a student with elevated brows and tense facial muscles showing visible struggle with a problem\n"
         "a student with raised brows and slight dimpling at the mouth corners showing cognitive overload\n"
-        "a student with a tense furrowed worried brow expression when unable to resolve a difficulty",
+        "a student with both inner and outer brows raised high and a tense strained face unable to resolve a problem",
         "",
     ),
 ]

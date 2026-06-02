@@ -26,8 +26,8 @@ Namun Whitehill et al. (2014) menemukan bahwa untuk **Engagement**, penampilan w
 **Kode:** `rules.py → hybrid → siglip_w / land_w`
 
 ```python
-"siglip_w": [0.30, 0.40, 0.45, 0.30],  # [Bore, Eng, Conf, Frus]
-"land_w":   [0.70, 0.60, 0.55, 0.70],
+"siglip_w": [0.30, 0.40, 0.65, 0.30],  # [Bore, Eng, Conf, Frus]
+"land_w":   [0.70, 0.60, 0.35, 0.70],
 ```
 
 ### Engagement — SigLIP 40%, Landmark 60%
@@ -36,22 +36,28 @@ Namun Whitehill et al. (2014) menemukan bahwa untuk **Engagement**, penampilan w
 
 > "Furthermore, we found that engagement labels of 10-second video clips can be reliably predicted from the average labels of their constituent frames (Pearson r = 0.85), suggesting that static expressions contain the bulk of the information about engagement used by observers." *(abstract)*
 
-Craig et al. (2008) tidak menemukan AU primer untuk Engagement — berbeda dengan Confusion dan Frustration yang punya AU spesifik dengan coverage tinggi. Oleh karena itu, bobot SigLIP lebih tinggi (0.40 vs. 0.30 emosi lain) karena tidak ada sinyal AU tunggal yang dominan.
+Craig et al. (2008) tidak menemukan AU primer untuk Engagement. Bobot SigLIP lebih tinggi (0.40 vs. 0.30 emosi lain) karena tidak ada sinyal AU tunggal yang dominan.
 
 ### Frustration — SigLIP 30%, Landmark 70%
 
 **Alasan:** Craig et al. (2008) menemukan AU yang sangat spesifik untuk Frustration dengan coverage 100%:
 > "It appears that AUs 1, 2, and 14 were primarily associated with frustration, but a strong association was found for a link between AUs 1 and 2 occurring together." *(p. 784)*
 
-Karena ada sinyal AU yang sangat kuat dan empirically validated (coverage 100%), landmark scoring lebih diandalkan → bobot landmark lebih tinggi (0.70).
+MediaPipe `browInnerUp` (AU1) dan `browOuterUp` (AU2) aktif secara reliable di video natural (median 0.45 dan 0.20+). Landmark scoring sangat reliable → bobot landmark tinggi (0.70).
 
-### Confusion — SigLIP 45%, Landmark 55%
+### Confusion — SigLIP 65%, Landmark 35%
 
-**Alasan:** Confusion memiliki AU yang divalidasi (AU4+AU7 co-occur 73%, AU4 coverage 95%), tetapi ada ambiguitas lebih tinggi — AU yang sama (browDown, squint) juga muncul di Frustration. SigLIP membantu memisahkan konteks visual yang sulit dipisahkan oleh AU saja. Bobot SigLIP tertinggi (0.45) di antara semua emosi.
+**Alasan:** Dua faktor:
+
+1. Craig et al. (2008) memvalidasi AU4 (brow lowerer) dengan coverage 95%, tetapi MediaPipe `browDown` hampir tidak pernah aktif di video continuous alami (median=0.001, p90=0.033). Craig 2008 menggunakan *emote-aloud procedure* — ekspresi puncak saat seseorang secara sadar melaporkan kebingungan. Di video continuous, ekspresi ini muncul sangat subtle dan MediaPipe tidak mendeteksinya dengan reliable.
+
+2. Whitehill et al. (2014): *"static pixels contain the bulk of the information"* — SigLIP lebih cocok mendeteksi ekspresi subtle dari penampilan holistic.
+
+Oleh karena itu SigLIP weight dinaikkan ke 0.65 (tertinggi) untuk Confusion agar model visual dapat mengkompensasi keterbatasan AU4 dari MediaPipe.
 
 ### Boredom — SigLIP 30%, Landmark 70%
 
-**Alasan:** Craig et al. (2008) memvalidasi AU43 (eye closure) sebagai sinyal Boredom. Selain itu, gaze deviation (head pose + iris) adalah sinyal kuat untuk ketidakfokusan. Kedua sinyal ini dapat diukur langsung oleh landmark detector → bobot landmark tinggi (0.70).
+**Alasan:** AU43 (eye closure) dan gaze deviation terukur reliable oleh MediaPipe → landmark weight tinggi (0.70).
 
 ---
 
@@ -78,20 +84,13 @@ Karena AU1+AU2 adalah sinyal primer dengan coverage 100% (Craig 2008), sedangkan
 
 ---
 
-## 4. Mengapa `hand_weight = 0.35` (Bukan 0.65) untuk Frustration?
+## 4. Mengapa Tidak Ada Hand Signals untuk Frustration/Boredom/Confusion?
 
-**Kode:** `rules.py → frustration → hand_weight: 0.35`
+**Alasan:** Tidak ada paper dalam referensi yang memvalidasi posisi tangan (hand-to-face gesture) sebagai sinyal emosi belajar melalui kamera wajah.
 
-**Alasan:** Tidak ada paper dalam referensi yang memvalidasi posisi tangan (hand-to-face gesture) sebagai sinyal frustration.
+Craig et al. (2008) hanya menggunakan FACS — gerakan otot wajah, bukan tubuh atau tangan. D'Mello et al. (2009) menyebut "gross body language" tapi merujuk pada **seat pressure pad** (sensor tekanan kursi), bukan posisi tangan.
 
-Craig et al. (2008) hanya menggunakan FACS — gerakan otot wajah, bukan tubuh atau tangan. Tidak ada deteksi tangan dalam studi mereka.
-
-D'Mello, Craig, Fike & Graesser (2009) menyebut:
-> "The new versions of AutoTutor detect learners' boredom, confusion, and frustration by monitoring conversational cues, gross body language, and facial features." *(abstract)*
-
-"Gross body language" di sini merujuk pada data **seat pressure pad** (lean/fidget dari sensor tekanan kursi), bukan posisi tangan yang ditangkap kamera.
-
-**Kesimpulan:** Hand signals adalah heuristik praktis tanpa dasar paper langsung. Dipertahankan sebagai supplementary (0.35), sinyal AU wajah tetap primer (0.65+ dari face contribution).
+**Konsekuensi desain:** Semua hand signals (hand_weight, chin_bore, chin_conf) telah dihapus. Hanya sinyal AU wajah yang divalidasi paper yang dipertahankan.
 
 ---
 
@@ -136,15 +135,13 @@ AU12 muncul pada 95% episode Confusion — ini adalah "questioning smile" (senyu
 
 ---
 
-## 7. Mengapa BrowInnerUp Suppresses Confusion?
+## 7. Mengapa BrowInnerUp (AU1) Tidak Dipakai untuk Confusion?
 
-**Kode:** `brow_in_v = brow_in_v * clamp(1.0 - bou_check * biu_au1_suppress, 0, 1)`
+**Alasan:** Craig et al. (2008) Table 2 **tidak** mencantumkan AU1 (inner brow raise) atau AU2 (outer brow raise) sebagai sinyal confusion. AU1 dan AU2 adalah sinyal **frustration** (100% coverage):
 
-**Alasan:** Craig et al. (2008) menunjukkan bahwa inner brow raise bersama outer brow raise adalah sinyal **Frustration**, bukan Confusion:
+> "It appears that AUs 1, 2, and 14 were primarily associated with frustration" *(p. 784)*
 
-> "It appears that AUs 1, 2, and 14 were primarily associated with frustration, but a strong association was found for a link between AUs 1 and 2 occurring together." *(p. 784)*
-
-Jika browInnerUp aktif **bersama** browOuterUp yang tinggi, pola itu adalah pola frustration (AU1+AU2 co-occurrence). Dalam konteks itu, browInnerUp bukan sinyal confusion — ia harus di-suppress dari confusion scoring. `biu_au1_suppress = 0.80` memastikan 80% dari browInnerUp contribution ke confusion dihilangkan ketika pola frustration terdeteksi.
+Confusion hanya divalidasi dengan AU4 (brow lowerer 95%), AU7 (lid tightener 78%), AU4+AU7 co-occurrence (73%), dan AU12 secondary (95%). BrowInnerUp **tidak dipakai sama sekali** untuk confusion scoring.
 
 ---
 
@@ -184,15 +181,9 @@ Sebelumnya `conf_eng_suppress = 0.55` terlalu agresif — confusion hampir selal
 
 ---
 
-## 10. Mengapa `chin_bore_max = 0.35` (Bukan 0.70) untuk Boredom?
+## 10. Mengapa Tidak Ada Chin-Resting untuk Boredom?
 
-**Kode:** `rules.py → boredom → chin_bore_max: 0.35`
-
-**Alasan:** Tidak ada paper yang memvalidasi chin-resting sebagai sinyal boredom melalui kamera.
-
-Craig et al. (2008) hanya memvalidasi AU43 (eye closure) untuk Boredom. D'Mello & Graesser (2010) memvalidasi "gross body language" tapi melalui **seat pressure pad** (Tekscan BPMS), bukan posisi tangan.
-
-Menopang dagu (hand_chin) adalah heuristik praktis — dipertahankan karena secara intuisi sinyal postur pasif, tetapi dengan bobot sangat rendah (max 0.35 vs. sebelumnya 0.70) karena tidak ada validasi empiris langsung.
+**Alasan:** Tidak ada paper yang memvalidasi chin-resting sebagai sinyal boredom melalui kamera. Craig et al. (2008) hanya memvalidasi AU43 (eye closure) untuk Boredom. Chin-resting telah dihapus sepenuhnya.
 
 ---
 
@@ -238,14 +229,20 @@ Prompt SigLIP dirancang untuk menangkap level "high/very high" dari setiap emosi
 
 ## Ringkasan: Kode vs. Paper
 
-| Fitur | Paper Basis | Implementasi |
-|---|---|---|
-| AU1+AU2 Frustration (100%) | Craig et al. (2008) Table 2 | `brow_raise_co` geometric mean + `brow_raise_direct_w=0.65` |
-| AU4+AU7 Confusion (73%) | Craig et al. (2008) Table 2 | `au4_au7_co` + `au4_au7_co_w=0.50` |
-| AU12 Confusion (95%) gate floor | Craig et al. (2008) Table 2 | `smile_conf_gate_floor=0.30` |
-| AU43 Boredom (40%) independent | Craig et al. (2008) Table 2 | `blink_direct_w=0.45`, no gaze gate |
-| BrowInnerUp suppress confusion | Craig et al. (2008): AU2=frustration | `biu_au1_suppress=0.80` |
-| Engagement holistic appearance | Whitehill et al. (2014) | `siglip_w=0.40` untuk Engagement |
-| Conf+Eng co-exist (productive) | D'Mello & Graesser (2012) | `conf_eng_suppress=0.35`, `th=0.50` |
-| Hand signals bukan primer | Tidak ada paper | `hand_weight=0.35`, `chin_bore_max=0.35` |
-| 4 emosi (bukan 6 basic) | DAiSEE (2016), D'Mello et al. (2009) | Label 0=Bore, 1=Eng, 2=Conf, 3=Frus |
+| Sinyal | Paper Basis | Coverage | Implementasi |
+|---|---|---|---|
+| AU1 (inner) + AU2 (outer) Frustration | Craig 2008 Table 2 | 100% | `brow_raise_co` geometric mean + `brow_raise_direct_w=0.65` |
+| AU4 (brow lowerer) Frustration secondary | Grafsgaard 2013 | positif korelasi | `br_fr * face_weight=0.45` |
+| AU4 (brow lowerer) Confusion | Craig 2008 Table 2 + Grafsgaard 2011 | 95% | `brow_dn_v`, `brow_dn_th=0.05` (kalibrasi MediaPipe) |
+| AU7 (lid tightener) Confusion | Craig 2008 Table 2 | 78% | `au7_v`, co-occurrence saja |
+| AU4+AU7 co-occurrence Confusion | Craig 2008 Table 2 | 73% | `au4_au7_co` geometric mean + `au4_au7_co_w=0.50` |
+| AU12 (questioning smile) Confusion gate | Craig 2008 Table 2 | 95% secondary | `smile_conf_gate_floor=0.30` |
+| AU43 (eye closure) Boredom | Craig 2008 Table 2 | 40% secondary | `blink_direct_w=0.45`, independen dari gaze gate |
+| Gaze deviation Boredom/Engagement | Whitehill 2014 §2.2 | level 1: "looking away" | `gaze_dev_bore`, `gaze_dev_eng` |
+| Eye openness Engagement | Whitehill 2014 §2.2 | level 1-2 descriptions | `blink_heavy_th=0.50`, `eye_wide_boost=0.20` |
+| Frustration → Boredom suppress | D'Mello 2012 Table 1 | signifikan | `frus_bore_suppress=0.45` |
+| Confusion → Boredom at chance | D'Mello 2012 Table 1 | tidak signifikan | `bore_conf_suppress_bore=0.40` |
+| Conf+Eng co-exist (productive) | D'Mello 2012 Hyp. 2 | signifikan | `conf_eng_suppress=0.35`, `th=0.50` |
+| SigLIP tinggi untuk Confusion | Whitehill 2014 + MediaPipe gap | - | `siglip_w[2]=0.65` |
+| 4 emosi (bukan 6 basic) | DAiSEE 2016, D'Mello 2009 | - | Label 0=Bore, 1=Eng, 2=Conf, 3=Frus |
+| Hand/chin signals: DIHAPUS | Tidak ada paper | - | Tidak diimplementasikan |
