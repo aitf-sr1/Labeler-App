@@ -84,8 +84,11 @@ DEFAULT_RULES = {
         "chin_jaw_open_th":      0.18,  # jawOpen > ini = mulut terbuka → penalti berkurang (bicara/aktif)
         "chin_jaw_open_pen_reduce": 0.80, # fraksi pengurangan penalti chin saat jaw terbuka (0.80 = hanya 20% penalti tersisa)
         "chin_mouth_open_boost": 0.20,  # boost engagement saat tangan di dagu + mulut terbuka (bicara = aktif)
-        "conf_eng_suppress_th": 0.40,   # conf > ini mulai suppress engagement (orang bingung ≠ engaged)
-        "conf_eng_suppress":    0.55,   # max reduksi engagement oleh confusion — harus kalahkan floor 0.35
+        # D'Mello & Graesser (2012): Confusion dan Engagement dapat co-exist dalam "productive struggle".
+        # Mahasiswa bingung tapi masih actively engaged dengan konten = valid state.
+        # Turunkan suppression agar confusion tidak terlalu agresif membunuh engagement.
+        "conf_eng_suppress_th": 0.50,   # raised 0.40→0.50: D'Mello2012 productive struggle = conf+eng co-occur
+        "conf_eng_suppress":    0.35,   # reduced 0.55→0.35: confusion tidak harus membunuh engagement
     },
     "confusion": {
         "iris_up_dead_zone": 0.20,   # -iris_y < ini = tidak terhitung iris_up_v
@@ -128,11 +131,23 @@ DEFAULT_RULES = {
         # Craig et al. (2008): AU4 (browDown) + AU7 (eyeSquint/lid tightener) co-occurrence = 73% confusion coverage
         "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 sebagai sinyal confusion eksplisit
         "au7_th": 0.15,              # eyeSquint avg min untuk dihitung sebagai AU7 (lid tightener) co-signal
+        # Craig et al. (2008): AU2 (browInnerUp) = frustration signal, bukan confusion.
+        # Suppress brow_in_v untuk confusion ketika AU1 (browOuterUp) juga aktif (= pola frustration).
+        "biu_au1_check_th": 0.25,    # browOuterUp threshold untuk mendeteksi pola frustration AU1+AU2
+        "biu_au1_suppress": 0.80,    # seberapa besar browInnerUp disuppress untuk confusion saat AU1 aktif
+        # Craig et al. (2008): AU12 (mouthSmile) co-occurs dengan confusion 95% episodes (questioning smile).
+        "smile_conf_gate_floor": 0.30,  # floor gate senyum — confusion tetap ≥30% meski senyum penuh
+        # D'Mello et al. (2014): chin-resting = sinyal confusion aktif (postur "sedang berpikir").
+        "chin_conf_th": 0.30,        # hand_chin > ini = potensi sinyal confusion produktif
+        "chin_conf_max": 0.20,       # boost maksimal ke confusion dari chin-resting + confusion signals
     },
     "frustration": {
         # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals (100% coverage)
         "brow_outer_up_th": 0.20,    # browOuterUp avg / ini = bou_fr (AU1, Craig2008 primary)
         "brow_inner_up_th": 0.20,    # browInnerUp / ini = biu_fr (AU2, Craig2008 primary)
+        # brow_raise_direct_w: Craig2008 AU1+AU2 mendapat face weight lebih tinggi dari legacy signals.
+        # Diperlukan agar AU1+AU2 yang kuat (0.80 each) dapat melewati threshold TANPA tangan.
+        "brow_raise_direct_w": 0.65, # direct weight untuk AU1+AU2 primary (lebih tinggi dari face_weight umum)
         # AU1+AU2 co-occurrence weight: paper shows they always fire together in frustration
         # Secondary/legacy signals below are kept but de-weighted relative to brow raises
         "brow_dn_th": 0.40,          # browDown avg / ini = br_fr (AU4 — secondary for frustration)
@@ -150,8 +165,11 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        "siglip_w": [0.30, 0.35, 0.45, 0.30],   # per label [Bore, Eng, Conf, Frus] — dinaikkan setelah prompt body-level
-        "land_w":   [0.70, 0.65, 0.55, 0.70],   # Bore↑0.70 Frus↑0.70: tangan/gaze sangat reliable; SigLIP dipercaya lebih setelah prompt body-level
+        # Whitehill et al.: engagement detection lebih akurat dengan holistic appearance daripada AU individual.
+        # SigLIP (vision-language model) lebih baik untuk Engagement → naikkan siglip_w 0.35→0.40.
+        # Bartlett (2006): AU-based detection reliable untuk Boredom/Frustration → pertahankan land_w tinggi.
+        "siglip_w": [0.30, 0.40, 0.45, 0.30],   # per label [Bore, Eng, Conf, Frus] — Eng: 0.35→0.40 (Whitehill)
+        "land_w":   [0.70, 0.60, 0.55, 0.70],   # Bore↑0.70 Frus↑0.70: tangan/gaze sangat reliable; Eng: 0.65→0.60
         "dual_label_gap": 0.12,       # Min gap antara top vs secondary label untuk mempertahankan dual-label (spec: most images = 1 label)
         "strict_rules_strength": 0.20, # Kekuatan soft bias dari strict labeling rules (0 = off, 0.20 = moderate)
         "restless_bonus_max": 0.0,   # disabled — heuristik tanpa basis definisi semantik

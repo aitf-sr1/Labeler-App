@@ -650,6 +650,11 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     co_signal  = max(iris_up_v, look_up_v, pitch_cu, look_dn_v)
     brow_in_co = max(iris_up_v, look_up_v, squint_as_co)   # iris/mata only
     brow_in_v  = _clamp(brow_in_raw / max(ccfg["brow_in_th"], 1e-6), 0, 1) * _clamp(brow_in_co / max(ccfg["brow_in_co_gate"], 1e-6), 0, 1)
+    # Craig et al. (2008): AU2 (browInnerUp) = PRIMARY frustration signal, NOT confusion.
+    # When AU1 (browOuterUp) is also active → AU1+AU2 co-occurrence = frustration pattern.
+    # Suppress browInnerUp contribution to confusion when the frustration brow-raise pattern is detected.
+    _bou_conf_check = _clamp((g("browOuterUpLeft") + g("browOuterUpRight")) / 2 / max(ccfg.get("biu_au1_check_th", 0.25), 1e-6), 0, 1)
+    brow_in_v = brow_in_v * _clamp(1.0 - _bou_conf_check * ccfg.get("biu_au1_suppress", 0.80), 0, 1)
 
     # Kepala miring ke samping (roll) — bukan muterin kepala (yaw) seperti boredom.
     # Siswa bingung sering miringin kepala sedikit. Dead zone supaya noise tidak trigger.
@@ -712,16 +717,26 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     attentive_gate  = _clamp(1.0 - max(0.0, gaze_dev_eng - attentive_dead) / max(attentive_range, 1e-6), attentive_floor, 1.0)
     conf = _clamp(conf * attentive_gate, 0, 1)
 
-    # Smile gate: senyum dan bingung adalah mutual exclusive secara semantik.
-    # Senyum sedang (>= smile_conf_gate_th) → conf turun proporsional ke 0.
-    smile_gate_th = ccfg.get("smile_conf_gate_th", 0.20)
-    smile_gate    = _clamp(1.0 - smile_raw / max(smile_gate_th, 1e-6), 0.0, 1.0)
+    # Smile gate: Craig et al. (2008) — AU12 (mouthSmile) co-occurs with confusion in 95% of episodes
+    # (the "uncertainty/questioning smile"). A gate floor prevents smile from zeroing out confusion entirely.
+    smile_gate_th    = ccfg.get("smile_conf_gate_th", 0.35)
+    smile_gate_floor = ccfg.get("smile_conf_gate_floor", 0.30)  # Craig2008: AU12 co-occurs → floor ≥ 0.30
+    smile_gate = _clamp(1.0 - smile_raw / max(smile_gate_th, 1e-6), smile_gate_floor, 1.0)
     conf = _clamp(conf * smile_gate, 0, 1)
 
-    # Hand suppression: kehadiran tangan dekat kepala (zona manapun) = cue Frustrasi, BUKAN Confusion.
-    # Tangan terdeteksi → confusion ditekan additive supaya tidak fire bersama Frustration.
-    hand_near_head = max(r.hand_forehead, r.hand_chin)
-    conf = _clamp(conf - hand_near_head, 0, 1)
+    # Hand suppression: D'Mello et al. (2014) menunjukkan chin-resting adalah sinyal CONFUSION aktif
+    # (postur "sedang berpikir" yang produktif). Hanya hand_forehead yang jelas cue Frustration
+    # (tangan di dahi/mata = distress gesture). hand_chin TIDAK suppress confusion.
+    conf = _clamp(conf - r.hand_forehead, 0, 1)
+
+    # D'Mello et al. (2014): chin-resting (hand_chin) = sinyal confusion produktif.
+    # Boost confusion dari hand_chin saat sinyal confusion lain juga hadir (browDown, iris, dll).
+    # Gated oleh base_conf agar hand_chin saja tidak cukup memicu confusion.
+    chin_conf_th  = ccfg.get("chin_conf_th", 0.30)
+    chin_conf_max = ccfg.get("chin_conf_max", 0.20)
+    chin_conf_v   = _clamp((r.hand_chin - chin_conf_th) / max(0.40, 1e-6), 0, 1)
+    chin_conf_boost = chin_conf_v * chin_conf_max * _clamp(base_conf / 0.25, 0, 1)
+    conf = _clamp(conf + chin_conf_boost, 0, 1)
 
     # look_dn boosts confusion ONLY when other confusion signals are present.
     # Spec Rule 3: looking down + typing/reading = engagement, NOT confusion.
@@ -762,16 +777,18 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     mf_fr = _clamp((g("mouthFrownLeft") + g("mouthFrownRight")) / 2 / max(fcfg.get("mouth_frown_th", 0.25), 1e-6), 0, 1)
 
     # Tangan adalah sinyal primer frustasi; ekspresi wajah hanya suplemen.
-    # Craig2008 primary: brow_raise_co (AU1+AU2). Single raises at 0.70 scale. Legacy signals secondary.
+    # Craig et al. (2008): AU1+AU2 co-occurrence = 100% coverage — harus cukup kuat TANPA tangan.
+    # Two-tier face weighting:
+    #   brow_raise_co (AU1+AU2 primary) → pakai brow_raise_direct_w yang lebih tinggi
+    #   face_secondary (AU9, AU6, dll.)  → pakai face_weight umum yang lebih rendah
     face_secondary = max(ns_fr, br_fr, lp_fr, ey_fr, ck_fr, mf_fr)
-    face_peak = max(
-        brow_raise_co,          # AU1+AU2 co-occurrence (Craig2008 primary, 100% coverage)
-        bou_fr * 0.70,          # AU1 alone — partial signal
-        biu_fr * 0.70,          # AU2 alone — partial signal
-        face_secondary,         # legacy supplementary signals
-    )
-    face_w    = fcfg.get("face_weight", 0.45)
-    sig_wajah_frus = _clamp(face_peak * face_w - smile_pen * 1.5, 0, 1)
+    brow_raise_direct_w = fcfg.get("brow_raise_direct_w", 0.65)  # Craig2008: AU1+AU2 primary, lebih tinggi dari legacy
+    face_w              = fcfg.get("face_weight", 0.45)           # untuk legacy signals
+
+    sig_brow_raise = brow_raise_co * brow_raise_direct_w                   # AU1+AU2 co-occurrence, primary
+    sig_bou_alone  = max(bou_fr * 0.70, biu_fr * 0.70) * brow_raise_direct_w  # single brow raise, partial
+    sig_legacy     = face_secondary * face_w                               # legacy signals
+    sig_wajah_frus = _clamp(max(sig_brow_raise, sig_bou_alone, sig_legacy) - smile_pen * 1.5, 0, 1)
 
     # Weighted-max fusion: tangan adalah cue penting tapi bukan single-cue dominant.
     # max(weighted_avg, hand_alone, face_alone): single cue kuat tetap valid, kombinasi
