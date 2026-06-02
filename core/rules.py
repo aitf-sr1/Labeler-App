@@ -43,33 +43,26 @@ DEFAULT_RULES = {
         "blink_direct_w":  0.45,    # bobot kontribusi langsung blink ke boredom (Craig2008: AU43 primary signal)
     },
     "engagement": {
-        "tegak_dead_zone": 8.0,      # gaze_dev dead zone (°) — gaze_dev tidak include roll (roll ditangani roll_gate)
-        "tegak_range": 14.0,         # range setelah dead zone — gate=0 di gaze_dev≥22°
+        # Whitehill et al. (2014): engagement = forward gaze + eye openness (holistic appearance)
+        # Level 1: "looking away from computer, eyes completely closed" = NOT engaged
+        # Level 2: "eyes barely open, clearly not 'into' the task" = NOT engaged
+        "tegak_dead_zone": 8.0,      # gaze_dev dead zone (°)
+        "tegak_range": 14.0,         # range setelah dead zone
         "yaw_gate_th": 22.0,         # abs(yaw) mulai suppress engagement (°)
         "yaw_gate_range": 12.0,      # engagement nol di abs(yaw) ≥ 34°
-        "roll_gate_th": 15.0,        # abs(roll) mulai suppress engagement (°) — naikkan dari 10° ke 15° (baca buku/layar miring itu alami)
-        "roll_gate_range": 10.0,     # engagement nol di abs(roll) ≥ 25° — lebih toleran dari sebelumnya (16°)
-        "blink_heavy_th": 0.50,      # eyeBlink > ini = droopy parah
+        "roll_gate_th": 15.0,        # abs(roll) mulai suppress engagement (°)
+        "roll_gate_range": 10.0,     # engagement nol di abs(roll) ≥ 25°
+        "blink_heavy_th": 0.50,      # AU43 eye closure (Whitehill level 1-2): threshold droopy eyes
         "blink_heavy_min": 0.30,     # engagement minimum jika droopy penuh
-        "eye_wide_boost": 0.20,      # eyeWide → naikkan skor engagement (mata terbuka = fokus)
-        "eye_squint_boost": 0.15,    # eyeSquint → sedikit naikkan engagement (sipit = konsentrasi aktif)
-        "smile_boost": 0.30,         # senyum/gigi kelihatan → naikkan skor engagement
-        "smile_gaze_max": 15.0,      # gaze_dev > ini → smile boost nonaktif
-        "pitch_gate_th": 15.0,       # pitch > ini mulai suppress engagement (mendongak ke atas)
-        "pitch_gate_range": 15.0,    # engagement nol di pitch >= th+range (default: 30°)
-        "gaze_fwd_bonus": 0.15,      # bonus engagement ketika gaze benar-benar ke depan (dalam dead zone)
-        "bore_suppress_th": 0.45,    # bore < ini tidak suppress engagement (dead zone besar, abaikan noise)
-        "bore_eng_suppress": 0.40,   # boredom landmark > bore_suppress_th → suppress engagement (dikurangi dari 0.5)
-        "fwd_eng_min": 0.35,         # minimum engagement saat hadap depan — diturunkan 0.55→0.35 agar confusion bisa menang
-        "fwd_eng_gaze_max": 10.0,    # gaze_dev_eng > ini → fwd_eng floor mulai turun ke 0
-        "look_dn_eng_th": 0.20,      # lookDown > ini = mulai boost engagement (diturunkan dari 0.25 supaya lebih sensitif)
-        "look_dn_eng_boost": 0.30,   # boost engagement dari lihat bawah (naik dari 0.20 — nunduk baca = engaged)
-        "look_dn_eng_yaw_max": 20.0, # yaw > ini → look_dn boost nonaktif
-        # D'Mello & Graesser (2012): Confusion dan Engagement dapat co-exist dalam "productive struggle".
-        # Mahasiswa bingung tapi masih actively engaged dengan konten = valid state.
-        # Turunkan suppression agar confusion tidak terlalu agresif membunuh engagement.
-        "conf_eng_suppress_th": 0.50,   # raised 0.40→0.50: D'Mello2012 productive struggle = conf+eng co-occur
-        "conf_eng_suppress":    0.35,   # reduced 0.55→0.35: confusion tidak harus membunuh engagement
+        "eye_wide_boost": 0.20,      # inverse of "eyes barely open" (Whitehill level 2)
+        "pitch_gate_th": 15.0,       # pitch > ini mulai suppress (Whitehill: "looking away from computer")
+        "pitch_gate_range": 15.0,    # engagement nol di pitch >= th+range
+        # D'Mello & Graesser (2012): Boredom dan Engagement near-mutually exclusive
+        "bore_suppress_th": 0.45,
+        "bore_eng_suppress": 0.40,
+        # D'Mello & Graesser (2012): "Confusion → Engagement/Flow transition significant" (productive struggle)
+        "conf_eng_suppress_th": 0.50,
+        "conf_eng_suppress":    0.35,
     },
     "confusion": {
         "iris_up_dead_zone": 0.20,   # -iris_y < ini = tidak terhitung iris_up_v

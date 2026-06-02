@@ -530,55 +530,24 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     roll_gate_range = ecfg.get("roll_gate_range", 5.0)  # nol di th+range (default: 15°)
     roll_gate = _clamp(1.0 - max(0.0, abs(r.roll) - roll_gate_th) / max(roll_gate_range, 1e-6), 0.0, 1.0)
 
-    # Sama seperti boredom: pakai rata-rata dan koreksi squint agar sipit tidak dianggap merem
+    # Whitehill et al. (2014): level 1 "eyes completely closed", level 2 "eyes barely open" → anti-engagement
+    # AU43 (eye closure) = primary anti-engagement cue per Whitehill level descriptions
     blink_heavy_raw = max(0.0, blink_corrected - ecfg["blink_heavy_th"]) / max(ecfg["blink_heavy_th"], 1e-6)
     blink_heavy = blink_heavy_raw
-    # Mata terbuka lebar (eyeWide) = sinyal attentif/fokus — kompensasi blink ringan
+    # eyeWide = inverse of "eyes barely open" (Whitehill level 2) — mild positive signal
     eye_wide    = (g("eyeWideLeft") + g("eyeWideRight")) / 2
     eye_wide_boost = ecfg.get("eye_wide_boost", 0.20)
-    # Sipit (eyeSquint) = konsentrasi aktif — juga sinyal engagement, seperti eye_wide tapi lebih subtle
-    eye_squint_boost = ecfg.get("eye_squint_boost", 0.15)
-    # Pitch gate: mendongak ke atas (pitch besar) = tidak fokus ke layar → engagement turun.
-    # Dead zone 15° agar variasi postur duduk normal tidak kena penalti (pitch 5-12° = wajar).
+    # Pitch gate: mendongak ke atas = tidak fokus ke layar (Whitehill: "looking away from computer")
     pitch_gate_th    = ecfg.get("pitch_gate_th", 15.0)
     pitch_gate_range = ecfg.get("pitch_gate_range", 15.0)
     pitch_gate = _clamp(1.0 - max(0.0, r.pitch - pitch_gate_th) / max(pitch_gate_range, 1e-6), 0.0, 1.0)
-    eng = _clamp(gate * yaw_gate * roll_gate * pitch_gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy + eye_wide * eye_wide_boost + squint_avg * eye_squint_boost), 0, 1)
-    # Senyum/gigi = sinyal engagement, tapi hanya kalau hadap depan (ketawa ke temen = bukan engaged)
-    smile_gaze_max_eng = ecfg.get("smile_gaze_max", 15.0)
-    facing_fwd_eng = _clamp(1.0 - gaze_dev_eng / max(smile_gaze_max_eng, 1e-6), 0, 1)
-    eng = _clamp(eng + teeth_signal * ecfg.get("smile_boost", 0.30) * facing_fwd_eng, 0, 1)
+    eng = _clamp(gate * yaw_gate * roll_gate * pitch_gate * max(ecfg["blink_heavy_min"], 1.0 - blink_heavy + eye_wide * eye_wide_boost), 0, 1)
 
-    # Lihat ke bawah + hadap depan = baca/ngetik = boost engagement langsung.
-    # Gated oleh yaw (noleh sambil nunduk = bukan engaged ke konten).
-    look_dn_eng_th    = ecfg.get("look_dn_eng_th", 0.25)
-    look_dn_eng_boost = ecfg.get("look_dn_eng_boost", 0.20)
-    look_dn_eng_yaw_max = ecfg.get("look_dn_eng_yaw_max", 20.0)
-    look_dn_eng_gate  = _clamp(1.0 - abs(r.yaw) / max(look_dn_eng_yaw_max, 1e-6), 0, 1)
-    look_dn_eng_v     = _clamp((look_down_v - look_dn_eng_th) / max(0.3, 1e-6), 0, 1)
-    eng = _clamp(eng + look_dn_eng_v * look_dn_eng_boost * look_dn_eng_gate, 0, 1)
-
-    # Gaze tepat ke depan (dalam dead zone) = sinyal kuat engagement.
-    # Formula selama ini hanya menghindari penalti, tidak ada bonus aktif saat benar-benar natap layar.
-    gaze_fwd_v     = _clamp(1.0 - gaze_dev_eng / max(ecfg["tegak_dead_zone"], 1e-6), 0, 1)
-    gaze_fwd_bonus = ecfg.get("gaze_fwd_bonus", 0.15)
-    eng = _clamp(eng + gaze_fwd_v * gaze_fwd_bonus, 0, 1)
-
-    # Boredom dan engagement adalah near-mutually exclusive secara semantik.
-    # Dead zone 0.30 — boredom > 0.30 mulai suppress engagement secara agresif.
-    bore_suppress_th  = ecfg.get("bore_suppress_th", 0.30)
+    # D'Mello & Graesser (2012): Boredom dan Engagement near-mutually exclusive
+    bore_suppress_th  = ecfg.get("bore_suppress_th", 0.45)
     bore_suppress_v   = _clamp((bore - bore_suppress_th) / max(1.0 - bore_suppress_th, 1e-6), 0, 1)
-    bore_eng_suppress = ecfg.get("bore_eng_suppress", 0.70)
+    bore_eng_suppress = ecfg.get("bore_eng_suppress", 0.40)
     eng = _clamp(eng - bore_suppress_v * bore_eng_suppress, 0, 1)
-
-    # FLOOR hadap depan — tapi HANYA ketika boredom rendah.
-    # Kalau boredom sudah tinggi (bore > 0.30), floor tidak berlaku:
-    # siswa yang bosan tapi masih natap layar tidak boleh dipaksa jadi engaged.
-    fwd_eng_min     = ecfg.get("fwd_eng_min", 0.55)
-    fwd_eng_gaze_th = ecfg.get("fwd_eng_gaze_max", 10.0)
-    fwd_eng_gate    = _clamp(1.0 - gaze_dev_eng / max(fwd_eng_gaze_th, 1e-6), 0, 1)
-    bore_floor_cancel = _clamp(bore / max(ecfg.get("bore_floor_cancel_th", 0.30), 1e-6), 0, 1)
-    eng = max(eng, fwd_eng_min * fwd_eng_gate * (1.0 - bore_floor_cancel))
 
     # == 2: CONFUSION ==========================================================
     iris_up_v  = _clamp((-iris_y_eff - ccfg["iris_up_dead_zone"]) / max(ccfg["iris_up_range"], 1e-6), 0, 1)
