@@ -528,14 +528,14 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     facing_fwd_bore = _clamp(1.0 - gaze_dev_bore / max(smile_gaze_max, 1e-6), 0, 1)
     bore = _clamp(bore - teeth_signal * bcfg.get("smile_suppress", 0.40) * facing_fwd_bore, 0, 1)
 
-    # chin-resting: bisa bosan meski natap layar (tidak butuh gaze gate)
+    # chin-resting (hand_chin): TIDAK ada dalam paper (Craig 2008, D'Mello 2012, Bartlett, dll).
+    # Dipertahankan sebagai heuristik supplementary dengan bobot sangat rendah.
+    # Craig et al. (2008) hanya memvalidasi AU43 (eyeBlink) sebagai sinyal primer Boredom.
     chin_bore_th    = bcfg.get("chin_bore_th",    0.30)
     chin_bore_range = bcfg.get("chin_bore_range", 0.40)
-    chin_bore_max   = bcfg.get("chin_bore_max",   0.70)
-    # Jaw gate: menopang dagu (mulut tertutup) = boredom pasif.
-    # Mulut terbuka + tangan di dagu = bicara/aktif → chin TIDAK boost boredom.
-    _chin_jaw_dz  = bcfg.get("chin_jaw_closed_dz", 0.08)  # di bawah ini = mulut "tertutup"
-    _chin_jaw_th  = bcfg.get("chin_jaw_open_th",   0.18)  # di atas ini   = mulut "terbuka"
+    chin_bore_max   = bcfg.get("chin_bore_max",   0.35)  # diturunkan 0.70→0.35: tangan bukan di paper
+    _chin_jaw_dz  = bcfg.get("chin_jaw_closed_dz", 0.08)
+    _chin_jaw_th  = bcfg.get("chin_jaw_open_th",   0.18)
     _jaw_open_for_bore = _clamp(
         (g("jawOpen") - _chin_jaw_dz) / max(_chin_jaw_th - _chin_jaw_dz, 1e-6), 0, 1
     )
@@ -729,11 +729,11 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # (tangan di dahi/mata = distress gesture). hand_chin TIDAK suppress confusion.
     conf = _clamp(conf - r.hand_forehead, 0, 1)
 
-    # D'Mello et al. (2014): chin-resting (hand_chin) = sinyal confusion produktif.
-    # Boost confusion dari hand_chin saat sinyal confusion lain juga hadir (browDown, iris, dll).
-    # Gated oleh base_conf agar hand_chin saja tidak cukup memicu confusion.
+    # CATATAN: chin-resting sebagai sinyal confusion adalah heuristik praktis — TIDAK ada dalam
+    # paper yang digunakan (Craig 2008, D'Mello 2012, Bartlett 1999/2006, Whitehill, DAiSEE).
+    # Dipertahankan sebagai minor supplement (max 0.10) hanya jika sinyal confusion facial sudah hadir.
     chin_conf_th  = ccfg.get("chin_conf_th", 0.30)
-    chin_conf_max = ccfg.get("chin_conf_max", 0.20)
+    chin_conf_max = ccfg.get("chin_conf_max", 0.10)  # diturunkan 0.20→0.10: bukan dari paper
     chin_conf_v   = _clamp((r.hand_chin - chin_conf_th) / max(0.40, 1e-6), 0, 1)
     chin_conf_boost = chin_conf_v * chin_conf_max * _clamp(base_conf / 0.25, 0, 1)
     conf = _clamp(conf + chin_conf_boost, 0, 1)
@@ -790,17 +790,19 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     sig_legacy     = face_secondary * face_w                               # legacy signals
     sig_wajah_frus = _clamp(max(sig_brow_raise, sig_bou_alone, sig_legacy) - smile_pen * 1.5, 0, 1)
 
-    # Weighted-max fusion: tangan adalah cue penting tapi bukan single-cue dominant.
-    # max(weighted_avg, hand_alone, face_alone): single cue kuat tetap valid, kombinasi
-    # tidak saturasi aditif, signal lemah tunggal tidak meledakkan score.
-    # Tangan di zona MANAPUN dekat kepala = cue Frustrasi (dahi, mata, pipi, dagu, menutup wajah).
+    # CATATAN: Deteksi tangan (hand_forehead, hand_chin) TIDAK ada dalam paper yang digunakan
+    # (Craig 2008, D'Mello & Graesser 2012, Bartlett 1999/2006, Whitehill, DAiSEE).
+    # Craig et al. (2008) hanya memvalidasi FACS AUs (gerakan otot wajah).
+    # Hand signals adalah heuristik praktis di luar cakupan paper — dipertahankan sebagai
+    # supplementary signal dengan bobot lebih rendah, bukan primer.
+    # Sinyal wajah (AU1+AU2, AU4, dll.) adalah PRIMARY sesuai paper.
     hand_trigger_frus = max(r.hand_forehead, r.hand_chin)
-    hand_w = fcfg.get("hand_weight", 0.65)
+    hand_w = fcfg.get("hand_weight", 0.35)  # diturunkan 0.65→0.35: tangan bukan di paper, bukan primer
     base_frus = _clamp(
         max(
-            hand_trigger_frus * hand_w + sig_wajah_frus * (1.0 - hand_w),
-            hand_trigger_frus,
-            sig_wajah_frus,
+            sig_wajah_frus * (1.0 - hand_w) + hand_trigger_frus * hand_w,
+            sig_wajah_frus,          # face AU = primary (paper-validated)
+            hand_trigger_frus * hand_w,  # hand = supplementary, capped by hand_w
         ),
         0, 1,
     )

@@ -42,7 +42,9 @@ DEFAULT_RULES = {
         "smile_gaze_max": 15.0,      # gaze_dev > ini → smile suppress nonaktif (noleh sambil ketawa = bosan)
         "chin_bore_th":    0.30,     # hand_chin minimum sebelum boost boredom aktif (menopang dagu)
         "chin_bore_range": 0.40,     # range di atas th → saturasi di hand_chin=0.70
-        "chin_bore_max":   0.70,     # kontribusi boredom maksimal dari menopang dagu (dinaikkan 0.65→0.70)
+        # CATATAN: hand_chin bukan dari paper (Craig 2008 dll). Diturunkan 0.70→0.35 sebagai supplementary.
+        # Craig et al. (2008) hanya memvalidasi AU43 (eyeBlink) sebagai sinyal primer Boredom.
+        "chin_bore_max":   0.35,     # diturunkan 0.70→0.35: hand signals bukan dari paper, bukan primer
         "chin_jaw_closed_dz": 0.08,  # jawOpen < ini = mulut "tertutup" → chin boost boredom penuh
         "chin_jaw_open_th":   0.18,  # jawOpen > ini = mulut "terbuka" → chin TIDAK boost boredom (bicara/aktif)
         "yawn_bore_w": 0.75,         # bobot langsung yawn ke boredom. Menguap = bosan meski tatap layar.
@@ -137,9 +139,9 @@ DEFAULT_RULES = {
         "biu_au1_suppress": 0.80,    # seberapa besar browInnerUp disuppress untuk confusion saat AU1 aktif
         # Craig et al. (2008): AU12 (mouthSmile) co-occurs dengan confusion 95% episodes (questioning smile).
         "smile_conf_gate_floor": 0.30,  # floor gate senyum — confusion tetap ≥30% meski senyum penuh
-        # D'Mello et al. (2014): chin-resting = sinyal confusion aktif (postur "sedang berpikir").
-        "chin_conf_th": 0.30,        # hand_chin > ini = potensi sinyal confusion produktif
-        "chin_conf_max": 0.20,       # boost maksimal ke confusion dari chin-resting + confusion signals
+        # CATATAN: chin-resting untuk confusion adalah heuristik praktis, TIDAK dari paper yang digunakan.
+        "chin_conf_th": 0.30,        # hand_chin > ini = potensi sinyal confusion (heuristik, bukan paper)
+        "chin_conf_max": 0.10,       # diturunkan 0.20→0.10: bukan dari paper, minor supplement saja
     },
     "frustration": {
         # Craig et al. (2008): AU1 (outer brow raise) + AU2 (inner brow raise) = PRIMARY frustration signals (100% coverage)
@@ -158,8 +160,11 @@ DEFAULT_RULES = {
         "jaw_start": 0.10,           # jawOpen < ini = kontribusi rahang = 0
         "jaw_range": 0.20,           # range jw_fr di atas jaw_start
         "mouth_frown_th": 0.25,      # mouthFrown avg / ini = mf_fr (sudut mulut turun = frustrasi)
-        "face_weight": 0.45,         # skala max sinyal wajah — dinaikkan 0.35→0.45 agar frustrasi tanpa tangan terdeteksi
-        "hand_weight": 0.65,         # weighted-max: hand × 0.65 + face × 0.45, lalu max(weighted, hand, face)
+        "face_weight": 0.45,         # skala legacy signals (AU9, AU6, dll.) — supplementary
+        # CATATAN: hand signals TIDAK ada dalam paper (Craig 2008, D'Mello 2012, Bartlett, dll).
+        # Craig et al. (2008) hanya memvalidasi FACS AUs — gerakan otot wajah, bukan posisi tangan.
+        # Diturunkan 0.65→0.35: face AU (paper-validated) = primary; tangan = supplementary heuristic.
+        "hand_weight": 0.35,         # diturunkan 0.65→0.35: hand signals bukan dari paper
         "blend_a": 0.85,
         "blend_b": 0.15,
     },
