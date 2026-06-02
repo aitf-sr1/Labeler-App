@@ -83,8 +83,11 @@ DEFAULT_RULES = {
         # Craig et al. (2008): AU1 (inner brow raise) + AU2 (outer brow raise) = PRIMARY frustration signals (100% coverage)
         # Note: Craig 2008 Table 2 uses non-standard numbering; Grafsgaard 2013 confirms standard FACS: AU1=inner, AU2=outer.
         # MediaPipe: browInnerUp = AU1 (inner), browOuterUpLeft/Right = AU2 (outer)
-        "brow_outer_up_th": 0.20,    # browOuterUp avg / ini = bou_fr (AU2 outer brow raise, Craig2008 primary)
-        "brow_inner_up_th": 0.20,    # browInnerUp / ini = biu_fr (AU1 inner brow raise, Craig2008 primary)
+        # KALIBRASI: browInnerUp/browOuterUp median alami = 0.43-0.47 di video natural.
+        # Threshold harus DI ATAS baseline resting state untuk mendeteksi brow raise yang benar-benar elevated.
+        # Data: browInnerUp p75=0.712, browOuterUp p75=0.723 → threshold 0.75 = hanya top 25% yang fire.
+        "brow_outer_up_th": 0.75,    # browOuterUp avg / ini = bou_fr (AU2 outer, Craig2008 primary; dikalibrasi ke p75 natural)
+        "brow_inner_up_th": 0.75,    # browInnerUp / ini = biu_fr (AU1 inner, Craig2008 primary; dikalibrasi ke p75 natural)
         # brow_raise_direct_w: Craig2008 AU1+AU2 mendapat face weight lebih tinggi dari secondary signals.
         "brow_raise_direct_w": 0.65, # direct weight untuk AU1+AU2 primary (Craig2008: 100% coverage)
         # Grafsgaard et al. (2013): AU4 (brow lowering) positively correlated with frustration

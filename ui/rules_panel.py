@@ -93,10 +93,12 @@ _SLIDER_DEFS = [
     ("confusion", "bore_conf_suppress_bore", "Bore->Conf Suppress", 0.0, 0.8,
      "D'Mello 2012: Confusion→Boredom terjadi at chance. Boredom tinggi menekan confusion."),
     # FRUSTRATION — Craig et al. (2008): AU1+AU2 primary (100%), AU4 secondary (Grafsgaard 2013)
-    ("frustration", "brow_outer_up_th", "BrowOuterUp Th (AU1)", 0.05, 0.5,
-     "Craig2008: AU1 (outer brow raise) = primary frustration signal, 100% coverage."),
-    ("frustration", "brow_inner_up_th", "BrowInnerUp Th (AU2)", 0.05, 0.5,
-     "Craig2008: AU2 (inner brow raise) = primary frustration signal, 100% coverage."),
+    ("frustration", "brow_outer_up_th", "BrowOuterUp Th (AU2)", 0.10, 1.0,
+     "Craig2008: AU2 (outer brow raise) = primary frustration signal, 100% coverage. "
+     "browOuterUp median alami=0.47 → threshold 0.75 = hanya top 25% yang fire (kalibrasi MediaPipe)."),
+    ("frustration", "brow_inner_up_th", "BrowInnerUp Th (AU1)", 0.10, 1.0,
+     "Craig2008: AU1 (inner brow raise) = primary frustration signal, 100% coverage. "
+     "browInnerUp median alami=0.43 → threshold 0.75 = hanya top 25% yang fire (kalibrasi MediaPipe)."),
     ("frustration", "brow_raise_direct_w", "AU1+AU2 Direct W",  0.3,  1.0,
      "Craig2008: AU1+AU2 co-occurrence = 100% coverage. Bobot langsung untuk sinyal primer."),
     ("frustration", "brow_dn_th",      "BrowDown Th (AU4)",   0.01, 0.6,
