@@ -153,6 +153,49 @@ class RightPanel:
         )
         self.batch_name_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), pady=6)
 
+        # ── Kalibrasi netral per-ORANG (Bosch 2023 + FACS) ────────────────────
+        cal_frame = ctk.CTkFrame(infer_card, fg_color=("#d8dce6", "#222232"), corner_radius=8)
+        cal_frame.pack(fill="x", padx=10, pady=(0, 10))
+        self.lbl_neutral_status = ctk.CTkLabel(
+            cal_frame, text="Kalibrasi: buka folder dulu",
+            font=("Poppins", 9), text_color="gray", anchor="w",
+        )
+        self.lbl_neutral_status.pack(fill="x", padx=8, pady=(6, 2))
+
+        # Checkbox: pakai baseline DEFAULT (populasi) — bawaan TIDAK tercentang.
+        # Tercentang → tombol proses tidak butuh frame netral (pakai anchor populasi DEFAULT_PYFEAT_CALIB).
+        self.use_default_baseline_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            cal_frame, text="Pakai baseline default (populasi)",
+            variable=self.use_default_baseline_var,
+            command=self.app._on_default_toggle,
+            font=("Poppins", 9), text_color="gray",
+            checkbox_width=14, checkbox_height=14,
+        ).pack(fill="x", padx=8, pady=(0, 4))
+        self.btn_mark_neutral = ctk.CTkButton(
+            cal_frame, text="Tandai Frame Netral Orang Ini",
+            command=self.app._mark_neutral_current,
+            fg_color="#0ea5e9", hover_color="#0284c7",
+            font=("Poppins", 10), height=28, corner_radius=6,
+        )
+        self.btn_mark_neutral.pack(fill="x", padx=8, pady=(0, 4))
+
+        # Navigasi antar-ORANG (loncat ke video pertama orang berikutnya/sebelumnya)
+        nav_row = ctk.CTkFrame(cal_frame, fg_color="transparent")
+        nav_row.pack(fill="x", padx=8, pady=(0, 8))
+        self.btn_prev_person = ctk.CTkButton(
+            nav_row, text="◀ Orang Sebelumnya", command=self.app._prev_person,
+            fg_color="#475569", hover_color="#334155",
+            font=("Poppins", 9), height=26, corner_radius=6,
+        )
+        self.btn_prev_person.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.btn_next_person = ctk.CTkButton(
+            nav_row, text="Orang Berikutnya ▶", command=self.app._next_person,
+            fg_color="#0d9488", hover_color="#0f766e",
+            font=("Poppins", 9), height=26, corner_radius=6,
+        )
+        self.btn_next_person.pack(side="left", fill="x", expand=True)
+
         # ── Label & Dataset ───────────────────────────────────────────────────
         self._section_label(parent, "LABEL & DATASET")
         dataset_card = ctk.CTkFrame(parent, fg_color=("#e8eaef", "#1c1c2a"), corner_radius=10)

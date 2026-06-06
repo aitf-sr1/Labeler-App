@@ -33,6 +33,7 @@ class LeftPanel:
         self.frame_canvases     = []
         self.frame_dot_canvases = []  # strip dot di sebelah kanan masing-masing frame
         self.frame_image_refs   = []  # Referensi ImageTk agar tidak di-GC
+        self._neutral_frame_idx = -1  # index frame acuan netral (untuk marker ★), -1 = tak ada
         self._emotion_tab_btns  = {}
         self._current_frame_annotations: dict = {}  # referensi ke frame_annotations video aktif
         self.rules_content      = None  # set by init_rules_content()
@@ -385,7 +386,7 @@ class LeftPanel:
                 cv_widget.configure(highlightbackground="#333")
                 continue
 
-            img    = pil_images[i].resize((360, 360))
+            img    = pil_images[i].resize((360, 360), Image.LANCZOS)
             tk_img = ImageTk.PhotoImage(img)
             self.frame_image_refs.append(tk_img)
             cv_widget.delete("all")
@@ -404,6 +405,15 @@ class LeftPanel:
             else:
                 status = frame_data.get(active_label, 0)
                 cv_widget.configure(highlightbackground=active_color if status == 1 else "#333")
+
+            # Marker '★ NETRAL' bila frame ini adalah acuan kalibrasi netral orang tsb
+            if i == getattr(self, "_neutral_frame_idx", -1):
+                cv_widget.configure(highlightbackground="#22d3ee")  # cyan border
+                cv_widget.create_rectangle(0, 0, 360, 26, fill="#0e7490", outline="")
+                cv_widget.create_text(
+                    180, 13, text="★ FRAME NETRAL (acuan kalibrasi)", fill="#ecfeff",
+                    font=("Poppins", 11, "bold"), anchor="center",
+                )
 
             self._draw_frame_dots(self.frame_dot_canvases[i], frame_data)
 

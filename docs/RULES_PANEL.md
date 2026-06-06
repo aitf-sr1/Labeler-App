@@ -234,13 +234,9 @@ Parameter gaze digunakan bersama oleh Boredom dan Engagement.
 |---|---|---|---|
 | **SigLIP Empirical Bias** (`empirical_bias`) | 3.5 | 1.0–6.0 | Ditambahkan ke logit SigLIP sebelum sigmoid. Logit zero-shot biasanya negatif (-3 sampai -6). Bias +3.5 menggeser ke area sigmoid yang sensitif (0.2–0.9). **Naikkan** jika semua skor SigLIP terlalu rendah. **Turunkan** jika terlalu tinggi. |
 
-#### Restless Bonus (Boredom Temporal)
+#### ~~Restless Bonus (Boredom Temporal)~~ — DIHAPUS
 
-| Parameter | Default | Range | Penjelasan |
-|---|---|---|---|
-| **Restless Bonus Max** (`restless_bonus_max`) | 0.15 | 0–0.3 | Bonus maksimum yang ditambahkan ke skor Boredom jika kepala tolah-toleh antar frame. |
-| **Restless Std Min** (`restless_std_min`) | 3.0° | 1–8 | Std dev yaw antar frame harus melebihi nilai ini agar bonus mulai. |
-| **Restless Std Range** (`restless_std_range`) | 7.0° | 3–15 | Range std dev setelah Std Min untuk mencapai bonus maksimum. |
+Parameter `restless_bonus_max` / `restless_std_min` / `restless_std_range` **sudah dihapus** dari kode: menambah skor Boredom dari gerakan kepala antar-frame **tidak punya dasar paper** (Craig 2008 hanya memvalidasi AU43 untuk Boredom). Tidak ada lagi slider ini di Rules Editor.
 
 #### Bobot Per Label
 
@@ -248,10 +244,10 @@ Setiap label memiliki dua bobot yang dijumlahkan dan dinormalisasi:
 
 | Label | SigLIP default | Landmark default | Rekomendasi |
 |---|---|---|---|
-| **Boredom** | 0.50 | 0.50 | Seimbang — Landmark kuat untuk yaw/iris, SigLIP untuk ekspresi lelah |
-| **Engagement** | 0.50 | 0.50 | Seimbang — gate logic Landmark presisi, SigLIP mendukung visual |
-| **Confusion** | **0.60** | **0.40** | SigLIP lebih baik untuk ekspresi berpikir halus; Landmark mudah false positive |
-| **Frustration** | 0.50 | 0.50 | Seimbang — Landmark untuk gestur tangan, SigLIP untuk aura stres |
+| **Boredom** | 0.25 | 0.75 | Landmark dominan — gaze (geometrik) + AU43; SigLIP kecil (tired/vacant) |
+| **Engagement** | 0.50 | 0.50 | **HOLISTIK** — tak ada AU tunggal dominan (Whitehill 2014) → SigLIP tertinggi |
+| **Confusion** | 0.35 | 0.65 | AU4+AU7 (MediaPipe, stretch agresif) primer + SigLIP jaring pengaman |
+| **Frustration** | 0.30 | 0.70 | AU1+2 (brow_raise 0.70) + AU4/AU14 (face_weight 0.65) + SigLIP gestalt stres |
 
 Bobot **tidak harus berjumlah 1.0** — sistem otomatis menormalisasi. Contoh: SigLIP=3, Landmark=1 → `α = 0.75, β = 0.25`.
 

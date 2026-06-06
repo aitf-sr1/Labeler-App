@@ -20,7 +20,7 @@ Dokumen ini menjelaskan **dari angka mentah MediaPipe hingga prediksi akhir**, l
 10. [Scoring FRUSTRATION — Langkah demi Langkah](#10-scoring-frustration--langkah-demi-langkah)
 11. [SigLIP Scoring — Dari Teks + Gambar ke Angka](#11-siglip-scoring--dari-teks--gambar-ke-angka)
 12. [Hybrid Combine — Gabungkan SigLIP dan Landmark](#12-hybrid-combine--gabungkan-siglip-dan-landmark)
-13. [Temporal Restlessness Bonus (Boredom)](#13-temporal-restlessness-bonus-boredom)
+13. [Temporal Restlessness Bonus (Boredom) — DIHAPUS](#13-temporal-restlessness-bonus-boredom--dihapus)
 14. [Threshold → Voting → Prediksi Akhir](#14-threshold--voting--prediksi-akhir)
 15. [Membaca Debug Log](#15-membaca-debug-log)
 16. [Contoh Lengkap Satu Frame](#16-contoh-lengkap-satu-frame)
@@ -66,8 +66,8 @@ LandmarkResult:
     "cheekSquintRight":0.1100,
     ...
   }
-  hand_forehead  = 0.0000   # tidak ada tangan di zona atas wajah
-  hand_chin      = 0.0000   # tidak ada tangan di zona bawah
+  hand_one       = 0.0000   # tidak ada tepat-1 tangan di wajah
+  hand_two       = 0.0000   # tidak ada >=2 tangan di wajah
 ```
 
 Semua ini tersimpan juga di `raw_cache/{safe_name}.json` untuk keperluan recalculate.
@@ -201,20 +201,18 @@ MediaPipe FaceLandmarker menghasilkan **52 blendshape coefficient** yang masing-
 
 ### Blendshapes yang Dipakai dalam Scoring
 
-| Nama Blendshape | Arti Fisik | Dipakai untuk |
-|---|---|---|
-| `browDownLeft` / `Right` | Alis kiri/kanan turun (mengernyit) | Confusion, Frustration |
-| `browInnerUp` | Alis bagian tengah naik (pola "∧") | Confusion |
-| `eyeBlinkLeft` / `Right` | Kelopak mata menutup | Boredom (mata ngantuk) |
-| `eyeLookDownLeft` / `Right` | Bola mata bergerak ke bawah | Boredom (fallback gaze_v) |
-| `eyeLookUpLeft` / `Right` | Bola mata bergerak ke atas | Confusion |
-| `eyeSquintLeft` / `Right` | Mata menyipit (otot tegang, bukan mengantuk) | Frustration |
-| `jawOpen` | Rahang turun (mulut terbuka) | Boredom (menguap), Confusion (mangap), Frustration |
-| `mouthSmileLeft` / `Right` | Sudut bibir naik (senyum) | Penalti Confusion |
-| `mouthPucker` | Bibir maju/mengerut | Confusion |
-| `mouthPressLeft` / `Right` | Bibir ditekan keras | Frustration |
-| `noseSneerLeft` / `Right` | Hidung berkerut (ekspresi jijik/marah) | Frustration (sinyal terkuat) |
-| `cheekSquintLeft` / `Right` | Pipi menegang ke atas | Frustration |
+| Nama Blendshape | Arti Fisik | AU FACS | Dipakai untuk |
+|---|---|---|---|
+| `browDownLeft` / `Right` | Alis turun (mengernyit) | **AU4** Brow Lowerer | Confusion (primary), Frustration (secondary) |
+| `browInnerUp` | Alis bagian dalam naik | **AU1** Inner Brow Raiser | Frustration (primary) |
+| `browOuterUpLeft` / `Right` | Alis bagian luar naik | **AU2** Outer Brow Raiser | Frustration (primary) |
+| `eyeSquintLeft` / `Right` | Kelopak menegang/menyipit | **AU7** Lid Tightener | Confusion (standalone 78% + co-occur AU4) |
+| `mouthSmileLeft` / `Right` | Sudut bibir naik (senyum) | **AU12** Lip Corner Puller | Confusion (gate, bukan sinyal positif) |
+| `eyeBlinkLeft` / `Right` | Kelopak mata menutup | **AU43** Eyes Closed | Boredom (mata ngantuk) |
+| `mouthDimpleLeft` / `Right` | Lesung pipit (sudut bibir tertarik) | **AU14** Dimpler | (disebut Craig, belum dipakai aktif) |
+| `eyeLookDownLeft` / `Right` | Bola mata ke bawah | — | Boredom (fallback gaze_v) |
+
+> **⚠️ Koreksi pemetaan:** versi lama tabel ini menukar AU (browInnerUp→Confusion, eyeSquint→Frustration) dan mencantumkan `noseSneer`/`cheekSquint`/`mouthPress`/`jawOpen`/`mouthPucker` sebagai sinyal emosi. Sinyal-sinyal itu **tidak ada di Craig 2008** dan sudah **dihapus** (lihat DESIGN_RATIONALE §3). Semua nilai di atas kini dikonversi ke **intensitas AU baseline-normalized** lewat `core/action_units.py`.
 
 ### Blendshapes yang Tidak Dipakai (ada di output tapi diabaikan)
 
@@ -242,7 +240,7 @@ Wajah frustrasi:
 
 ## 5. Deteksi Tangan & Zonasi
 
-> **Catatan akademis:** Deteksi tangan **tidak** secara eksplisit divalidasi oleh paper FACS yang digunakan (Craig et al. 2008). D'Mello & Graesser (2010) memvalidasi kanal "gross body language" menggunakan *seat pressure pad* (lean/fidgeting), bukan posisi tangan. Hand signals di sini adalah **heuristik praktis** — interpretasi dari konsep body language ke sensor yang tersedia (kamera). Berdasarkan temuan D'Mello & Graesser (2010), kanal tubuh paling berguna untuk **Boredom** dan **Engagement**, tidak untuk Frustration; oleh karena itu `hand_weight` Frustration telah diturunkan (0.65→0.35) dan `chin_bore_max` Boredom hanya sebagai supplement kecil (0.35).
+> **Catatan akademis:** Grafsgaard et al. (2013b) memvalidasi peran tangan di wajah secara spesifik untuk membedakan state afektif: *one-hand-to-face* (1 tangan) berkorelasi dengan *thoughtful state* (Confusion produktif), sedangkan *two-hands-to-face* (2 tangan) berkorelasi negatif dengan pembelajaran dan mengindikasikan *struggle* (Frustration). Sistem menghitung jumlah tangan yang terdeteksi di wajah untuk memicu metrik ini.
 
 Tangan dideteksi dari **full frame video asli** (sebelum crop wajah), lalu koordinatnya di-remap ke ruang crop 512×512.
 
@@ -261,45 +259,47 @@ Konversi ke koordinat relatif dalam crop wajah (0.0–1.0):
   → koordinat dalam crop: (0.60, 0.50) = bagian tengah-kanan crop wajah
 ```
 
-### Zonasi Tangan dalam Crop 512×512
+### Perhitungan Jumlah Tangan (Grafsgaard 2013b)
+
+Sistem menggunakan MediaPipe HandLandmarker untuk mendeteksi jumlah tangan yang ada di dalam bingkai (wajah/crop).
 
 ```
-Frame crop 512×512 dibagi vertikal:
+Jika terdeteksi 1 tangan:
+  → hand_one = 1.0  (paper: "thoughtful / less negative affect" → TIDAK dipakai scoring; BUKAN Confusion)
+  → hand_two = 0.0
 
-  y = 0.00  ┌─────────────────────┐
-            │  ZONA ATAS (0–0.25) │ ← tangan di sini: menggaruk kepala
-  y = 0.25  ├─────────────────────┤    → hand_chin (Confusion)
-            │  ZONA TENGAH        │ ← tangan di sini: menutupi/menopang wajah
-  y = 0.55  ├─────────────────────┤    → hand_mid_bot (Frustration)
-            │  ZONA BAWAH         │ ← tangan di sini: menopang dagu/leher
-  y = 1.20  └─────────────────────┘    → hand_mid_bot (Frustration)
+Jika terdeteksi 2 tangan (atau lebih):
+  → hand_one = 0.0
+  → hand_two = 1.0  (paper: two-hands ↔ self-efficacy rendah → cue LEMAH Frustration, hand_frus_w=0.30)
 ```
 
-### Cara Menghitung Skor Tangan
+> **Catatan pemetaan (penting):** Grafsgaard 2013b menyebut one-hand-to-face = *"thoughtful state / less negative affect"* (mengarah Engagement/berpikir, BUKAN Confusion) dan two-hands ↔ *self-efficacy rendah*. Maka **hand_one TIDAK dipakai untuk Confusion** (itu force-fit), dan **hand_two hanya cue LEMAH Frustration** (tidak memicu sendiri). Lihat DESIGN_RATIONALE §4 & ACADEMIC_BASIS §8.6.
+
+### Cara Menghitung Skor Tangan (count-based)
+
+Skor tangan **bukan** berbasis zona dahi/dagu lagi, melainkan **jumlah tangan** di area wajah (sesuai pemetaan Grafsgaard 2013b: 1-tangan vs 2-tangan punya makna afektif berbeda).
 
 ```python
-# Contoh: 1 tangan dengan 21 titik, semua terdeteksi
-pts = [(0.51, 0.08), (0.53, 0.11), ..., (0.48, 0.22)]  # 21 titik
+# core/landmark_analyzer.py — detect_hands_from_full_frame()
+# 1. Deteksi tangan di FULL frame, remap titiknya ke ruang crop wajah (0..1)
+# 2. in_crop = jumlah titik tangan yang jatuh di dalam [-0.2, 1.2] (dekat wajah)
+in_crop  = 21        # contoh: 1 tangan penuh dekat wajah
 
-pts_top     = jumlah titik dengan y antara -0.20 dan 0.25 = 8 titik
-pts_mid     = jumlah titik dengan y antara  0.25 dan 0.55 = 10 titik
-pts_bot     = jumlah titik dengan y antara  0.55 dan 1.20 = 3 titik
-centered    = jumlah titik dengan x antara  0.05 dan 0.95 = 20 titik (>5, lolos filter)
-
-hand_top     = clamp(8 / 5, 0, 1)          = clamp(1.60, 0, 1) = 1.0
-hand_mid_bot = clamp((10 + 3) / 5, 0, 1)   = clamp(2.60, 0, 1) = 1.0
+if in_crop < 3:                          # filter keamanan
+    hand_one = hand_two = 0.0            # tangan lewat sekilas di pinggir → diabaikan
+else:
+    n_hands  = len(res.hand_landmarks)   # contoh: 1
+    hand_one = 1.0 if n_hands == 1 else 0.0   # → 1.0
+    hand_two = 1.0 if n_hands >= 2 else 0.0   # → 0.0
 ```
-
-Threshold `/5` artinya: **5 titik tangan di suatu zona sudah cukup untuk skor 1.0**. Skala linear dari 0 (tidak ada titik) ke 1.0 (≥5 titik).
 
 Penyimpanan di LandmarkResult:
 ```python
-# Penamaan "terbalik" — ini historis, konsisten di seluruh kode:
-lr.hand_forehead = hand_mid_bot   # zona TENGAH/BAWAH → Frustration trigger
-lr.hand_chin     = hand_top       # zona ATAS → Confusion trigger
+lr.hand_one = 1.0  # tepat 1 tangan (TIDAK dipakai scoring — "thoughtful", ambigu)
+lr.hand_two = 0.0  # < 2 tangan  (jika ≥2 → 1.0, cue LEMAH Frustration via hand_frus_w=0.30)
 ```
 
-Filter keamanan: jika `centered < 5` (terlalu sedikit titik yang ada di dalam frame crop), semua skor tangan di-reset ke 0 untuk menghindari false detection dari tangan yang lewat sekilas di pinggir frame.
+Filter keamanan: jika titik tangan yang jatuh dekat wajah terlalu sedikit (`in_crop < 3`), semua skor tangan di-reset ke 0 untuk menghindari false detection dari tangan yang lewat sekilas di pinggir frame.
 
 ---
 
@@ -404,15 +404,16 @@ Karena gaze_v_eff = 0, deviasi murni dari komponen horizontal.
 
 ```python
 gaze_dead_zone = 5.0
-gaze_range     = 20.0
+gaze_range     = 8.0
 
 bore_gaze = clamp((gaze_dev - gaze_dead_zone) / gaze_range, 0, 1)
-          = clamp((19.65 - 5.0) / 20.0, 0, 1)
-          = clamp(14.65 / 20.0, 0, 1)
-          = clamp(0.733, 0, 1)
-          = 0.733
+          = clamp((19.65 - 5.0) / 8.0, 0, 1)
+          = clamp(14.65 / 8.0, 0, 1)
+          = clamp(1.831, 0, 1)
+          = 1.000
 
-→ Gaze jauh (19.65°), bore_gaze 0.73
+→ Gaze jauh (19.65°), bore_gaze saturasi ke 1.00
+  (boredom diperketat: gaze_range 8.0 → deviasi >13° langsung jenuh ke 1.0)
 ```
 
 ### Langkah 2: Sinyal Ekspresi Pendukung
@@ -430,12 +431,8 @@ blink_v = clamp((0.09 - 0.20) / 0.50, 0, 1)
         = 0.0   ← mata tidak mengantuk (0.09 < dead zone 0.20)
 
 # Menguap (jawOpen)
-yawn_threshold = 0.35
-jawOpen = 0.06
-
-yawn_v = clamp(0.06 / 0.35, 0, 1) if pitch < 15 else 0.0
-       = clamp(0.171, 0, 1)    # pitch = -3.5 < 15, aktif
-       = 0.171   ← mulut sedikit terbuka, sedikit berkontribusi
+# (Dihapus dari perhitungan karena Craig 2008 tidak menemukan asosiasi signifikan
+# antara gerakan mulut dan boredom, hanya AU43 eye closure yang divalidasi).
 
 # Pitch mendongak (pitch_up_v untuk nilai >20°)
 pitch_up_v = clamp((pitch - 20) / 25, 0, 1)
@@ -444,10 +441,9 @@ pitch_up_v = clamp((pitch - 20) / 25, 0, 1)
            = 0.0   ← kepala tidak mendongak
 
 sig_expr_weight = 0.70
-sig_expr = max(blink_v, yawn_v, pitch_up_v) × sig_expr_weight
-         = max(0.0, 0.171, 0.0) × 0.70
-         = 0.171 × 0.70
-         = 0.120
+sig_expr = max(blink_v, pitch_up_v) × sig_expr_weight
+         = max(0.0, 0.0) × 0.70
+         = 0.0
 ```
 
 ### Langkah 3: Blend Final
@@ -457,16 +453,16 @@ blend_a = 0.85
 blend_b = 0.15
 
 base_bore = max(bore_gaze, sig_expr)
-          = max(0.733, 0.120)
-          = 0.733
+          = max(1.000, 0.0)
+          = 1.000
 
 bore = clamp(base_bore × blend_a + (bore_gaze + sig_expr) × blend_b, 0, 1)
-     = clamp(0.733 × 0.85 + (0.733 + 0.120) × 0.15, 0, 1)
-     = clamp(0.623 + 0.853 × 0.15, 0, 1)
-     = clamp(0.623 + 0.128, 0, 1)
-     = 0.751
+     = clamp(1.000 × 0.85 + (1.000 + 0.0) × 0.15, 0, 1)
+     = clamp(0.850 + 1.000 × 0.15, 0, 1)
+     = clamp(0.850 + 0.150, 0, 1)
+     = 1.000
 
-→ BOREDOM = 0.751 (tinggi — kepala menoleh jauh)
+→ BOREDOM = 1.00 (tinggi — kepala menoleh jauh 19.65°, di atas ambang saturasi)
 ```
 
 ---
@@ -518,6 +514,8 @@ eng  = 1.0 × max(0.30, 1.0) = 1.0 × 1.0 = 1.0
 
 ## 9. Scoring CONFUSION — Langkah demi Langkah
 
+> **⚠️ METODE DIPERBARUI — contoh numerik di bawah memakai metode LAMA.** Sejak revisi `core/action_units.py`, browDown/eyeSquint **tidak lagi** langsung dibagi `brow_dn_th`/`au7_th`. Sebagai gantinya tiap AU di-**baseline-normalize**: `intensity = clamp((raw − neutral)/(active − neutral), 0, 1)`, lalu `brow_dn_v = au["AU4"]`, `au7_v = au["AU7"]`. Confusion juga kini memakai **AU7 standalone** (`au7_alone_w=0.78`, Craig 78%) karena browDown nyaris mati di MediaPipe. Langkah konseptual yang **TETAP**: AU4 primary, AU4+AU7 co-occurrence, AU12 gate. Yang sudah **DIHAPUS** (tidak ada di kode sekarang): **hand→Confusion** (Step 5 `base_conf` versi lama memakai `hand_one` — sekarang TIDAK; Grafsgaard 2013b: 1-tangan = "thoughtful", bukan Confusion) dan **boredom-suppress / Step 6 "Suppression Tangan"** (tak berdasar — D'Mello: Conf↔Bore "at chance", Conf↔Eng justru co-occur). Lihat DESIGN_RATIONALE §4, §15 & `core/rules.py["action_units"]`.
+
 **Input baru (contoh siswa bingung):**
 ```
 iris_y       = -0.22   (pupil ke atas)
@@ -525,12 +523,9 @@ pitch        = +7.00°  (kepala sedikit mendongak — berpikir)
 browDownLeft = 0.38, browDownRight = 0.35
 browInnerUp  = 0.42
 eyeLookUpLeft = 0.28, eyeLookUpRight = 0.31
-jawOpen      = 0.18
 mouthSmile   = 0.05, 0.06
-mouthPucker  = 0.25
 gaze_h_eff   = 5.0°   (kepala relatif lurus)
-hand_chin    = 0.0
-hand_forehead = 0.0
+hand_one     = 0.0
 ```
 
 ### Langkah 1: Sinyal Mata ke Atas
@@ -591,32 +586,15 @@ brow_in_v   = clamp(0.42 / 0.30, 0, 1) × clamp(co_signal / 0.25, 0, 1)
             = 1.0   ← browInnerUp kuat DAN ada co_signal kuat dari lookUp
 ```
 
-### Langkah 4: Sinyal Mulut
+### Langkah 4: Sinyal Mulut (Hanya Gate)
 
 ```python
-jawOpen = 0.18
-
-# Bell curve: 0 di bawah jaw_start, naik ke 1 di jaw_peak, turun ke 0 di jaw_end
-jaw_start = 0.05, jaw_peak = 0.25, jaw_end = 0.40
-
-0.05 < 0.18 <= 0.25 → path naik:
-jaw_val_conf = (0.18 - 0.05) / (0.25 - 0.05)
-             = 0.13 / 0.20
-             = 0.65
-
 smile_raw = max(0.05, 0.06) = 0.06
 smile_pen = max(0, 0.06 - smile_penalty_th)
           = max(0, 0.06 - 0.15)
           = 0.0   (senyum di bawah threshold penalti)
 
-jaw_co = clamp(0.65 - 0.0 × 1.5, 0, 1) = 0.65
-
-# mouthPucker (langsung, tanpa gate)
-pucker_th = 0.30
-
 sig_brow_conf = max(brow_dn_v, brow_in_v) = max(1.0, 1.0) = 1.0
-
-pucker_co = clamp(0.25 / 0.30, 0, 1) = clamp(0.833, 0, 1) = 0.833
 ```
 
 ### Langkah 5: base_conf dan blend
@@ -624,8 +602,10 @@ pucker_co = clamp(0.25 / 0.30, 0, 1) = clamp(0.833, 0, 1) = 0.833
 ```python
 sig_mata_conf = max(iris_up_v, look_up_v) = max(0.233, 0.886) = 0.886
 
-base_conf = max(sig_brow_conf, sig_mata_conf, jaw_co, pucker_co, hand_chin)
-          = max(1.0, 0.886, 0.65, 0.833, 0.0)
+# CATATAN: versi lama menambahkan hand_one ke max() ini — SUDAH DIHAPUS
+# (1-tangan = "thoughtful", bukan Confusion — Grafsgaard 2013b).
+base_conf = max(sig_brow_conf, sig_mata_conf)
+          = max(1.0, 0.886)
           = 1.0
 
 conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
@@ -636,14 +616,12 @@ conf = clamp(base_conf × 0.85 + (pitch_cu + sig_brow_conf) × 0.15, 0, 1)
      = 1.0
 ```
 
-### Langkah 6: Suppression Tangan
+### Langkah 6: (DIHAPUS) — tidak ada suppression untuk Confusion
 
 ```python
-# Suppression dari tangan (tangan di zona tengah wajah membatalkan Confusion)
-suppression = hand_forehead if hand_chin < 0.5 else 0.0
-            = 0.0   (tidak ada tangan)
-
-conf = clamp(1.0 - 0.0, 0, 1) = 1.0
+# Versi lama: "tangan 2 membatalkan Confusion" + suppress dari boredom.
+# SUDAH DIHAPUS — tak berdasar (D'Mello: Conf↔Bore "at chance", Conf↔Eng co-occur;
+# tangan tidak dipetakan ke Confusion). Confusion kini berdiri sendiri (multi-label).
 
 → CONFUSION = 1.000 (sangat tinggi — banyak sinyal kuat)
 ```
@@ -651,6 +629,8 @@ conf = clamp(1.0 - 0.0, 0, 1) = 1.0
 ---
 
 ## 10. Scoring FRUSTRATION — Langkah demi Langkah
+
+> **⚠️ METODE DIPERBARUI — contoh di bawah memakai sinyal LAMA yang sudah dihapus.** `noseSneer` & `cheekSquint` **tidak lagi dipakai** (tidak ada di Craig 2008 — lihat DESIGN_RATIONALE §3). Frustration kini = AU1 (`browInnerUp`) + AU2 (`browOuterUp`) **baseline-normalized** via `core/action_units.py`: `biu_fr = au["AU1"]`, `bou_fr = au["AU2"]`, co-occurrence `(AU1·AU2)^0.5`, + AU4 (`browDown`) sekunder (Grafsgaard 2013). Karena baseline browInnerUp/Up MediaPipe ~0.46 kini dipetakan ke intensitas 0, frustration **tidak lagi over-fire** di wajah netral.
 
 **Input contoh (ekspresi frustrasi):**
 ```
@@ -661,7 +641,7 @@ mouthPressLeft = 0.48, mouthPressRight = 0.45
 eyeSquintLeft = 0.44, eyeSquintRight = 0.41
 jawOpen      = 0.08
 mouthSmile   = 0.02
-hand_forehead = 0.0
+hand_two     = 0.0
 ```
 
 ### Langkah 1: Sinyal Individual
@@ -730,8 +710,10 @@ sig_wajah_frus = clamp(1.0 - 0.0 × 1.5, 0, 1) = 1.0
 ```python
 blend_a = 0.85, blend_b = 0.15
 
-base_frus = clamp(sig_wajah_frus + hand_forehead, 0, 1)
-          = clamp(1.0 + 0.0, 0, 1)
+# Versi sekarang: hand_two masuk via max() bersama sinyal AU (sig_hand_frus = hand_two*0.20),
+# BUKAN ditambahkan ke sig_wajah_frus. Di contoh ini hand_two=0 → tidak berpengaruh.
+base_frus = clamp(max(sig_wajah_frus, hand_two * 0.20), 0, 1)
+          = clamp(max(1.0, 0.0), 0, 1)
           = 1.0
 
 frus = clamp(base_frus × 0.85 + (ck_fr + jw_fr) × 0.15, 0, 1)
@@ -844,12 +826,13 @@ Frame 5:       0.776     0.389       0.408      0.312
 ### Bobot dan Normalisasi
 
 ```python
-# Dari rules (contoh Boredom):
-siglip_w_raw = 0.50
-land_w_raw   = 0.50
-total        = 0.50 + 0.50 = 1.0
-siglip_w     = 0.50 / 1.0 = 0.500
-land_w       = 0.50 / 1.0 = 0.500
+# Dari rules (contoh Boredom — siglip_w=0.25, land_w=0.75):
+siglip_w_raw = 0.25
+land_w_raw   = 0.75
+total        = 0.25 + 0.75 = 1.0
+siglip_w     = 0.25 / 1.0 = 0.250
+land_w       = 0.75 / 1.0 = 0.750
+# Bobot per label (Bore/Eng/Conf/Frus): siglip_w=[0.25, 0.50, 0.35, 0.30], land_w=[0.75, 0.50, 0.65, 0.70].
 ```
 
 Bobot tidak harus berjumlah 1 — sistem normalisasi otomatis:
@@ -868,73 +851,33 @@ siglip_score_f0 = 0.812
 landmark_score_f0 = 0.989  # dari compute_emotion_scores (contoh di atas)
 
 hybrid_f0 = siglip_w × siglip_score + land_w × landmark_score
-          = 0.500 × 0.812 + 0.500 × 0.989
-          = 0.406 + 0.4945
-          = 0.9005
-          → dibulatkan ke 4 desimal: 0.9005
+          = 0.250 × 0.812 + 0.750 × 0.989
+          = 0.203 + 0.74175
+          = 0.94475
+          → dibulatkan ke 4 desimal: 0.9448
 ```
 
 Untuk semua 6 frame:
 ```
-Frame 0: 0.500 × 0.812 + 0.500 × 0.989 = 0.9005
-Frame 1: 0.500 × 0.788 + 0.500 × 0.971 = 0.8795
-Frame 2: 0.500 × 0.824 + 0.500 × 0.981 = 0.9025
-Frame 3: 0.500 × 0.841 + 0.500 × 0.988 = 0.9145
-Frame 4: 0.500 × 0.799 + 0.500 × 0.975 = 0.8870
-Frame 5: 0.500 × 0.776 + 0.500 × 0.962 = 0.8690
+Frame 0: 0.250 × 0.812 + 0.750 × 0.989 = 0.9448
+Frame 1: 0.250 × 0.788 + 0.750 × 0.971 = 0.9253
+Frame 2: 0.250 × 0.824 + 0.750 × 0.981 = 0.9418
+Frame 3: 0.250 × 0.841 + 0.750 × 0.988 = 0.9513
+Frame 4: 0.250 × 0.799 + 0.750 × 0.975 = 0.9310
+Frame 5: 0.250 × 0.776 + 0.750 × 0.962 = 0.9155
 
-avg_score = mean(0.9005, 0.8795, 0.9025, 0.9145, 0.8870, 0.8690)
-          = 5.3530 / 6
-          = 0.8922
+avg_score = mean(0.9448, 0.9253, 0.9418, 0.9513, 0.9310, 0.9155)
+          = 5.6097 / 6
+          = 0.9350
 ```
 
 ---
 
-## 13. Temporal Restlessness Bonus (Boredom)
+## 13. Temporal Restlessness Bonus (Boredom) — **DIHAPUS**
 
-Bonus ini mendeteksi **kepala yang bergerak bolak-balik antar frame** — sinyal bosan yang tidak bisa dilihat dari satu frame saja.
-
-### Perhitungan
-
-```python
-# Kumpulkan nilai yaw dari semua frame yang face_found = True:
-yaws = [+12.3, +5.8, −2.1, +8.4, −6.2, +10.1]   # dari 6 frame
-
-import numpy as np
-yaw_std = np.std(yaws)
-        = std([12.3, 5.8, -2.1, 8.4, -6.2, 10.1])
-        = 6.41°
-
-# Parameter bonus:
-std_min   = 3.0°    # std_dev harus melebihi ini agar bonus mulai
-std_range = 7.0°    # range std untuk mencapai bonus maksimum
-bonus_max = 0.15    # bonus paling besar
-
-bonus = min(max((yaw_std - std_min) / std_range, 0.0), 1.0) × bonus_max
-      = min(max((6.41 - 3.0) / 7.0, 0.0), 1.0) × 0.15
-      = min(max(0.487, 0.0), 1.0) × 0.15
-      = 0.487 × 0.15
-      = 0.073
-
-# Terapkan ke semua hybrid scores Boredom:
-hybrid_scores_after_bonus = [min(s + 0.073, 1.0) for s in hybrid_scores]
-                          = [0.9005+0.073, 0.8795+0.073, ...]
-                          = [0.9735, 0.9525, 0.9755, 0.9875, 0.9600, 0.9420]
-```
-
-```
-Debug log: [RESTLESS] yaw_std=6.4° → bonus=0.073
-```
-
-### Kapan Bonus Aktif?
-
-| yaw_std | bonus |
-|---|---|
-| < 3° | 0.000 (kepala diam, tidak ada bonus) |
-| 3° | 0.000 (batas bawah) |
-| 6.5° | 0.075 |
-| 10° | 0.150 (bonus maksimum) |
-| > 10° | 0.150 (sudah maksimum) |
+> **Fitur ini sudah DIHAPUS dari kode.** Dulu ada "bonus bosan" yang menambah skor Boredom saat kepala tolah-toleh antar frame (berdasarkan std-dev yaw). Mekanisme ini **tidak punya dasar paper** — Craig 2008 hanya memvalidasi AU43 (eye closure) untuk Boredom, bukan gerakan kepala temporal. Karena itu kode terkait (`restless_bonus_max`, `restless_std_min`, `restless_std_range`) **dibuang** (lihat ALUR_METODE.md §kesimpulan).
+>
+> Konsekuensi pada contoh di atas: skor Boredom akhir = **langsung dari hybrid §12** (tidak ada penambahan bonus). Jadi `hybrid_scores_final` = `[0.9448, 0.9253, 0.9418, 0.9513, 0.9310, 0.9155]`.
 
 ---
 
@@ -946,12 +889,12 @@ Debug log: [RESTLESS] yaw_std=6.4° → bonus=0.073
 threshold_boredom = 0.50   # dari slider di panel kanan
 
 frame_preds = [1 if s >= 0.50 else 0 for s in hybrid_scores_final]
-            = [1 if 0.9735 >= 0.50,   # frame 0 → 1
-               1 if 0.9525 >= 0.50,   # frame 1 → 1
-               1 if 0.9755 >= 0.50,   # frame 2 → 1
-               1 if 0.9875 >= 0.50,   # frame 3 → 1
-               1 if 0.9600 >= 0.50,   # frame 4 → 1
-               1 if 0.9420 >= 0.50]   # frame 5 → 1
+            = [1 if 0.9448 >= 0.50,   # frame 0 → 1
+               1 if 0.9253 >= 0.50,   # frame 1 → 1
+               1 if 0.9418 >= 0.50,   # frame 2 → 1
+               1 if 0.9513 >= 0.50,   # frame 3 → 1
+               1 if 0.9310 >= 0.50,   # frame 4 → 1
+               1 if 0.9155 >= 0.50]   # frame 5 → 1
             = [1, 1, 1, 1, 1, 1]
 ```
 
@@ -982,14 +925,14 @@ prediction = 1 if (n_valid > 0 and vote_pos >= max(1, (n_valid+1)//2)) else 0
   "per_label": {
     "0": {
       "prediction":   1,
-      "vote_pos":     5,
+      "vote_pos":     6,
       "vote_neg":     0,
-      "skipped":      1,
-      "avg_score":    0.9682,
+      "skipped":      0,
+      "avg_score":    0.9350,
       "siglip_avg":   0.8065,
       "landmark_avg": 0.9777,
       "threshold":    0.50,
-      "frame_scores": [0.9735, 0.9525, 0.9755, 0.9875, 0.9600, 0.9420],
+      "frame_scores": [0.9448, 0.9253, 0.9418, 0.9513, 0.9310, 0.9155],
       "frame_preds":  [1, 1, 1, 1, 1, 1]
     }
   }
@@ -1051,11 +994,6 @@ Jika Confusion > 0.5, baris tambahan muncul:
 | `pts_mid=5` | 5 titik di zona tengah |
 | `pts_bot=3` | 3 titik di zona bawah |
 
-```
-  [RESTLESS] yaw_std=6.4° → bonus=0.073
-```
-Muncul hanya jika temporal restlessness bonus aktif (yaw_std ≥ 3°).
-
 ---
 
 ## 16. Contoh Lengkap Satu Frame
@@ -1080,10 +1018,10 @@ GAZE CALCULATION:
   gaze_dev = sqrt(23.25²) = 23.25°
 
 BOREDOM:
-  bore_gaze = clamp((23.25-5)/20, 0,1) = clamp(0.913, 0,1) = 0.913
+  bore_gaze = clamp((23.25-5)/8, 0,1) = clamp(2.281, 0,1) = 1.000
   blink_v = 0, yawn_v = clamp(0.10/0.35,0,1)=0.286
   sig_expr = 0.286×0.70 = 0.200
-  bore = clamp(0.913×0.85 + (0.913+0.200)×0.15, 0,1) = clamp(0.776+0.167, 0,1) = 0.943
+  bore = clamp(1.000×0.85 + (1.000+0.200)×0.15, 0,1) = clamp(0.850+0.180, 0,1) = 1.000
 
 ENGAGEMENT:
   gate = clamp(1-(23.25-5)/12, 0,1) = clamp(1-1.52, 0,1) = 0.0
@@ -1222,17 +1160,24 @@ Pemetaan Action Unit ke emosi belajar secara empiris menggunakan **association r
 
 Temuan utama dari Table 2 (basis implementasi pada branch `paper/craig2008-au-mapping`):
 
-| Emosi | AU Utama | Coverage | Implementasi Blendshape |
-|---|---|---|---|
-| **Frustration** | AU1 (outer brow raise) + AU2 (inner brow raise) | 100% co-occur | `browOuterUpLeft/Right` + `browInnerUp` |
-| **Confusion** | AU4 (brow lowerer) + AU7 (lid tightener) | 73% co-occur | `browDownLeft/Right` + `eyeSquintLeft/Right` |
-| **Confusion** | AU12 (lip corner puller) | 95% co-occur | `mouthSmileLeft/Right` (bukan suppressor penuh) |
-| **Boredom** | AU43 (eye closure) | 40% (primary) | `eyeBlinkLeft/Right` (independen dari gaze) |
+> **Catatan penomoran:** Table 2 Craig 2008 memakai penomoran **non-standar** (di tabelnya "AU2"=inner, "AU1"=outer). Tabel di bawah memakai **FACS standar** (AU1=inner, AU2=outer; dikonfirmasi Grafsgaard 2013) agar konsisten dengan kode — pemetaan dilakukan via **deskripsi anatomis**, bukan angka literal.
 
-**Catatan desain** (branch ini vs. implementasi sebelumnya):
-- Frustration: `browInnerUp` + `browOuterUp` ditambahkan sebagai sinyal **primer**; sebelumnya hanya `noseSneer` + `cheekSquint` (tidak ada di paper).
-- Confusion: AU4+AU7 co-occurrence (`browDown` × `eyeSquint`) ditambahkan sebagai sinyal eksplisit; `smile_conf_gate_th` dinaikkan 0.20→0.35 karena AU12 empirically co-occurs.
-- Boredom: `eyeBlink` (AU43) ditambahkan sebagai kontribusi **langsung** (`blink_direct`) tanpa memerlukan gaze gate.
+| Emosi | AU Utama | Coverage | Implementasi Blendshape (→ AU intensity) |
+|---|---|---|---|
+| **Frustration** | AU1 (inner brow raise) + AU2 (outer brow raise) | 100% co-occur | `browInnerUp` + `browOuterUpLeft/Right` |
+| **Confusion** | AU4 (brow lowerer) | 95% | `browDownLeft/Right` (lemah di MediaPipe) |
+| **Confusion** | AU7 (lid tightener) — standalone | 78% | `eyeSquintLeft/Right` (`au7_alone_w=0.78`) |
+| **Confusion** | AU4+AU7 co-occurrence | 73% | `browDown` × `eyeSquint` |
+| **Confusion** | AU12 (lip corner puller) — gate | sekunder (prosa, **bukan 95%**) | `mouthSmileLeft/Right` (gate, bukan sinyal positif) |
+| **Boredom** | AU43 (eye closure) | 40% | `eyeBlinkLeft/Right` (independen dari gaze) |
+
+**Catatan desain** (revisi terbaru):
+- **Sumber AU primer (Confusion/Frustration) = py-feat (AU FACS asli).** Validasi menunjukkan AU-dari-blendshape MediaPipe lemah untuk AU brow (AU4 r=0.09, AU7 r=0.01 vs py-feat) → ekstraksi AU dipindah ke py-feat lewat worker subprocess (`core/pyfeat_*.py`). MediaPipe tetap untuk Boredom (AU43, r=0.51) + gaze + viz. Lihat DESIGN_RATIONALE **§16**.
+- **AU dari blendshape (fallback + Boredom) baseline-normalized** lewat `core/action_units.py` — blendshape mentah MediaPipe (baseline tinggi: browInnerUp/Up ~0.46, browDown ~0.001) dikonversi ke intensitas AU 0–1 relatif netral. Dipakai bila py-feat tak tersedia. Contoh perhitungan numerik di bawah (yang masih memakai `brow_dn_th`/pembagi langsung) adalah metode **lama**.
+- Frustration: `browInnerUp` (AU1) + `browOuterUp` (AU2) sinyal **primer** (Craig 100%). Baseline ~0.46 kini = 0 intensity sehingga tidak over-fire.
+- Confusion: AU7 dipakai **standalone** (Craig 78%), bukan hanya co-occurrence — krusial karena browDown (AU4) nyaris mati di MediaPipe.
+- AU12: **koreksi** — bukan 95% (95% itu AU4); AU12 sinyal sekunder lemah lintas-emosi → dipakai sebagai *gate* saja.
+- Boredom: `eyeBlink` (AU43) kontribusi langsung (`blink_direct`) tanpa gaze gate.
 
 ### Gaze Deviation & Engagement Detection
 

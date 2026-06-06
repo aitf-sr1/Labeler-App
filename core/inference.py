@@ -15,125 +15,7 @@ import torch
 from .siglip_model import get_siglip, get_device
 
 
-_LABEL_KEYS   = ["BOREDOM", "ENGAGEMENT", "CONFUSION", "FRUSTRATION"]
-_LABEL_DEFAULTS = [
-    (0.50, 0.50),   # Boredom
-    (0.50, 0.50),   # Engagement
-    (0.50, 0.50),   # Confusion
-    (0.50, 0.50),   # Frustration
-]
 
-
-def _get_label_weights(label_idx: int) -> tuple:
-    """
-    Baca bobot hybrid per-label dari env.
-
-    Urutan prioritas:
-    1. {LABEL}_SIGLIP_WEIGHT / {LABEL}_LANDMARK_WEIGHT   (per-label)
-    2. SIGLIP_WEIGHT / LANDMARK_WEIGHT                   (global fallback)
-    3. Hardcoded default dari _LABEL_DEFAULTS
-    """
-    import os
-    sw_def, lw_def = _LABEL_DEFAULTS[label_idx]
-    key = _LABEL_KEYS[label_idx]
-    try:
-        # Per-label env var, fall back to global, then hardcoded
-        global_sw = float(os.getenv("SIGLIP_WEIGHT",   str(sw_def)))
-        global_lw = float(os.getenv("LANDMARK_WEIGHT", str(lw_def)))
-        sw = float(os.getenv(f"{key}_SIGLIP_WEIGHT",   str(global_sw)))
-        lw = float(os.getenv(f"{key}_LANDMARK_WEIGHT", str(global_lw)))
-        total = sw + lw if (sw + lw) > 0 else 1
-        return sw / total, lw / total
-    except ValueError:
-        return sw_def / (sw_def + lw_def), lw_def / (sw_def + lw_def)
-
-
-def _apply_dominance_gap(per_label_result: dict, n_labels: int, n_frames: int,
-                         thresholds: list, cfg: dict):
-    """
-    Single-label dominance bias — spec: "Most images should contain one dominant emotion only."
-
-    Per-frame: jika ≥2 label di atas threshold, suppress yang lebih lemah
-    jika gap dari label terkuat > dual_label_gap.
-    Mutual exclusive pairs (Bore↔Eng, Conf↔Frus) sudah ditangani di tempat lain.
-    """
-    gap = cfg["hybrid"].get("dual_label_gap", 0.12)
-    if gap <= 0:
-        return  # disabled
-
-    for f in range(n_frames):
-        active = []
-        for i in range(n_labels):
-            score = per_label_result[i]["frame_scores"][f]
-            if score >= thresholds[i]:
-                active.append((i, score))
-        if len(active) < 2:
-            continue
-        active.sort(key=lambda x: x[1], reverse=True)
-        top_score = active[0][1]
-        for label_idx, score in active[1:]:
-            if top_score - score > gap:
-                per_label_result[label_idx]["frame_preds"][f] = 0
-
-
-def _apply_strict_rules_bias(per_label_result: dict, n_labels: int, n_frames: int,
-                             landmark_results: list, cfg: dict):
-    """
-    Encode spec's 7 strict labeling rules sebagai SOFT BIAS pada hybrid scores.
-
-    Tidak hard-override, tapi menambah/kurangi skor hybrid berdasarkan landmark evidence.
-    Ini membantu hybrid scoring membuat keputusan yang lebih sesuai spec.
-
-    Rules yang di-encode:
-        Rule 1: forward gaze + upright + no cues → boost engagement
-        Rule 3: looking down + forward → boost engagement
-        Rule 4: gaze away + slouched → boost boredom
-        Rule 5: hand on face + focused → boost engagement+frustration
-        Rule 6: hand on face + disengaged → boost boredom+frustration
-        Rule 7: smiling + forward → boost engagement
-    """
-    if not landmark_results or len(landmark_results) != n_frames:
-        return
-
-    strength = cfg["hybrid"].get("strict_rules_strength", 0.20)
-    if strength <= 0:
-        return  # disabled
-
-    def _clamp(v, lo, hi):
-        return max(lo, min(hi, v))
-
-    for f in range(n_frames):
-        r = landmark_results[f]
-        if not r.face_found:
-            continue
-
-        g = lambda k: r.blendshapes.get(k, 0.0)
-        gaze_h = abs(r.yaw + r.iris_x * 35.0)
-        gaze_v_up = max(0.0, r.pitch - 5.0)
-        gaze_dev = (gaze_h ** 2 + gaze_v_up ** 2) ** 0.5
-        look_down_v = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
-        smile = max(g("mouthSmileLeft"), g("mouthSmileRight"))
-
-        scores = [per_label_result[i]["frame_scores"][f] for i in range(n_labels)]
-
-        # Rule 1: forward gaze + upright → boost engagement
-        if gaze_dev < 8.0 and abs(r.yaw) < 20.0:
-            scores[1] = min(1.0, scores[1] + strength)
-
-        # Rule 3: looking down + forward yaw → boost engagement
-        if look_down_v > 0.25 and abs(r.yaw) < 20.0:
-            scores[1] = min(1.0, scores[1] + strength * 0.8)
-
-        # Rule 4: gaze away + large yaw → boost boredom
-        if gaze_dev > 15.0 or abs(r.yaw) > 25.0:
-            scores[0] = min(1.0, scores[0] + strength)
-
-        # Rule 7: smiling + forward → boost engagement
-        if smile > 0.20 and gaze_dev < 15.0:
-            scores[1] = min(1.0, scores[1] + strength)
-
-        for i in range(n_labels):
-            per_label_result[i]["frame_scores"][f] = round(scores[i], 4)
 
 
 def run_siglip_on_frames(
@@ -273,21 +155,25 @@ def run_siglip_on_frames(
                 sum(land_scores_per_frame[f][i] for f in valid_frames) / len(valid_frames), 4
             )
 
-            # ── Temporal Restlessness Bonus (khusus Boredom, i=0) ────────
-            if i == 0:
-                yaws = [r.yaw for r in landmark_results if r.face_found]
-                if len(yaws) >= 2:
-                    import numpy as np
-                    yaw_std = float(np.std(yaws))
-                    std_min   = hcfg["restless_std_min"]
-                    std_range = hcfg["restless_std_range"]
-                    bonus_max = hcfg["restless_bonus_max"]
-                    restless_bonus = min(max((yaw_std - std_min) / std_range, 0.0), 1.0) * bonus_max
-                    if restless_bonus > 0.01:
-                        hybrid_scores = [
-                            round(min(s + restless_bonus, 1.0), 4) for s in hybrid_scores
-                        ]
-                        print(f"  [RESTLESS] yaw_std={yaw_std:.1f}° → bonus={restless_bonus:.3f}")
+            # ── Gaze-attention gate khusus Engagement (i=1) ──────────────
+            # Whitehill et al. (2014): "looking away from the computer" = NOT engaged (level 1).
+            # GazeTutor (D'Mello et al. 2012): gaze menjauh layar → bored/disengaged.
+            # Problem: SigLIP memberikan skor "engaged" dari penampilan wajah saja, tanpa tahu
+            # apakah orang menatap layar. Gate ini mencegah engagement tinggi saat gaze jauh.
+            # Gate = gaze_dev_eng dari landmark (sudah menggabungkan yaw+iris, tanpa roll).
+            # Jika landmark tidak tersedia, gate tidak diterapkan.
+            if i == 1 and landmark_results:
+                eng_gate_th    = hcfg.get("eng_gaze_gate_th", 15.0)    # gaze_dev_eng (°) mulai suppress
+                eng_gate_range = hcfg.get("eng_gaze_gate_range", 15.0) # nol di th+range (default 30°)
+                eng_gate_hard  = hcfg.get("eng_gaze_gate_hard", 0.20)  # max pengurangan skor (0–1)
+                for f_idx, r_lm in enumerate(landmark_results):
+                    if not r_lm.face_found:
+                        continue
+                    gaze_h_eff = abs(r_lm.yaw + r_lm.iris_x * 35.0)
+                    gaze_v_up  = max(0.0, -(-r_lm.pitch + r_lm.iris_y * 25.0))
+                    gaze_dev_f = (gaze_h_eff ** 2 + gaze_v_up ** 2) ** 0.5
+                    gate_penalty = min(max((gaze_dev_f - eng_gate_th) / max(eng_gate_range, 1e-6), 0.0), 1.0) * eng_gate_hard
+                    hybrid_scores[f_idx] = round(max(0.0, hybrid_scores[f_idx] - gate_penalty), 4)
         else:
             hybrid_scores = siglip_scores
             land_avg      = None
@@ -327,12 +213,9 @@ def run_siglip_on_frames(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    # ── Strict rules soft bias (spec's 7 deterministic rules) ─────────────
-    _apply_strict_rules_bias(per_label_result, n_labels, n_frames,
-                             landmark_results, cfg)
-
-    # ── Single-label dominance gap (spec: most images = 1 label) ─────────
-    _apply_dominance_gap(per_label_result, n_labels, n_frames, thresholds, cfg)
+    # CATATAN: strict_rules_bias & dominance_gap DIHAPUS (keduanya "spec", bukan dari paper;
+    # dominance_gap juga bertentangan dengan multi-label DAiSEE). Skor multi-label dibiarkan
+    # apa adanya (tiap emosi independen). Lihat DESIGN_RATIONALE §15.
 
     # Recompute predictions after adjustments
     for i in range(n_labels):
@@ -484,14 +367,6 @@ def run_siglip_batch(
                 ]
                 land_avg = round(sum(land_scores_per_frame[f][i] for f in valid_frames) / len(valid_frames), 4)
 
-                if i == 0 and landmark_results:
-                    yaws = [r.yaw for r in landmark_results if r.face_found]
-                    if len(yaws) >= 2:
-                        import numpy as np
-                        yaw_std       = float(np.std(yaws))
-                        restless_bonus = min(max((yaw_std - hcfg["restless_std_min"]) / hcfg["restless_std_range"], 0.0), 1.0) * hcfg["restless_bonus_max"]
-                        if restless_bonus > 0.01:
-                            hybrid_scores = [round(min(s + restless_bonus, 1.0), 4) for s in hybrid_scores]
             else:
                 hybrid_scores = siglip_scores
                 land_avg      = None
@@ -523,12 +398,8 @@ def run_siglip_batch(
                 "threshold":    thr,
             }
 
-        # ── Strict rules soft bias (spec's 7 deterministic rules) ─────────
-        _apply_strict_rules_bias(per_label_result, n_labels, n_frames,
-                                 landmark_results, cfg)
-
-        # ── Single-label dominance gap (spec: most images = 1 label) ─────
-        _apply_dominance_gap(per_label_result, n_labels, n_frames, thresholds, cfg)
+        # CATATAN: strict_rules_bias & dominance_gap DIHAPUS (spec, bukan paper; dominance_gap
+        # bertentangan dengan multi-label DAiSEE). Skor multi-label dibiarkan apa adanya.
 
         # Recompute predictions after adjustments
         for i in range(n_labels):

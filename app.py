@@ -58,7 +58,7 @@ ctk.set_default_color_theme("blue")
 class VideoLabelerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Labeler Emosi SigLIP2")
+        self.root.title("Labeler App — Pelabelan Emosi")
         self.root.geometry("1280x850")
         self.root.minsize(1100, 750)
 
@@ -100,6 +100,7 @@ class VideoLabelerApp:
         self.viz_images = []   # Cache viz PIL images untuk video aktif
 
         self.batch_running, self.cancel_batch = False, False
+        self._shutting_down = False  # diset True saat window ditutup (stop worker daemon rapi)
         self._viz_regen_requested = False
         self.save_lock = threading.RLock()
 
@@ -302,6 +303,17 @@ class VideoLabelerApp:
         self.right_panel.update_manual_statistics(self.manual_labels)
         # Refresh dropdown daftar batch file yang tersedia
         self.right_panel.refresh_batch_files(os.path.dirname(self.path_json_batch_history))
+        # Kalibrasi per-orang: buang cache modul (anti-stale saat ganti folder) + refresh label
+        # supaya tanda netral yang TERSIMPAN di disk langsung tercermin saat folder dibuka.
+        try:
+            from utils.person_neutral import invalidate_cache
+            invalidate_cache()
+            n_marked, total, _ = self._neutral_status()
+            print(f"[Kalibrasi] person_neutrals.json: {os.path.join(self._dataset_dir(), 'person_neutrals.json')}")
+            print(f"[Kalibrasi] {n_marked}/{total} orang sudah punya baseline netral (dimuat dari disk)")
+            self._update_neutral_label()
+        except Exception as e:
+            print(f"[Kalibrasi] gagal muat status netral: {e}")
 
     def _enforce_mutual_exclusion_on_history(self, history: dict):
         """Perbaiki data batch_history lama: nol-kan prediction dan frame_preds
@@ -953,6 +965,14 @@ class VideoLabelerApp:
         vp       = self.video_files[self.current_index]
         rel_path = os.path.relpath(vp, self.root_folder)
         active_lbl = self.active_frame_label.get()
+        try:
+            self._update_neutral_label()
+            # Index frame acuan netral (untuk marker '★ NETRAL' di galeri), -1 bila bukan video netral
+            from utils.person_neutral import get_person_neutral_frame
+            nf = get_person_neutral_frame(self._dataset_dir(), rel_path)
+            self.left_panel._neutral_frame_idx = nf if nf is not None else -1
+        except Exception:
+            self.left_panel._neutral_frame_idx = -1
 
         # ── Fast path: cache hit ─────────────────────────────────────────────
         if self._gallery_cache["rel_path"] == rel_path:
@@ -997,15 +1017,24 @@ class VideoLabelerApp:
                     self.right_panel.update_ai_score_bar(lbl, fsc, thr)
 
         def worker():
-            from utils.video import prepare_cropped_frames
-            result = prepare_cropped_frames(
-                vp, self.root_folder, self.path_dir_cropped,
-                raw_cache_dir=self.path_dir_raw_cache if hasattr(self, "path_dir_raw_cache") else None,
-                cfg=self.rules if hasattr(self, "rules") else None,
-            )
-            if self._gallery_version != my_version:
-                return  # hasil sudah kedaluwarsa — buang
-            self.root.after(0, lambda: self._apply_gallery_result(rel_path, result, my_version))
+            try:
+                from utils.video import prepare_cropped_frames
+                result = prepare_cropped_frames(
+                    vp, self.root_folder, self.path_dir_cropped,
+                    raw_cache_dir=self.path_dir_raw_cache if hasattr(self, "path_dir_raw_cache") else None,
+                    cfg=self.rules if hasattr(self, "rules") else None,
+                )
+                if getattr(self, "_shutting_down", False) or self._gallery_version != my_version:
+                    return  # app menutup / hasil kedaluwarsa — buang
+                self.root.after(0, lambda: self._apply_gallery_result(rel_path, result, my_version))
+            except RuntimeError as e:
+                # Race saat app ditutup (MediaPipe/Tk shutdown) — abaikan diam-diam
+                if "interpreter shutdown" in str(e) or "main thread is not in main loop" in str(e):
+                    return
+                print(f"[Gallery] worker error: {e}")
+            except Exception as e:
+                if not getattr(self, "_shutting_down", False):
+                    print(f"[Gallery] worker error: {e}")
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1786,6 +1815,14 @@ class VideoLabelerApp:
         Hasil ditulis ke frame_annotations dan batch_history, lalu UI diupdate.
         """
         if not self.video_files: return
+        # GATE kalibrasi: video ini hanya boleh diproses bila ORANG-nya sudah punya baseline netral,
+        # kecuali checkbox "pakai default" dicentang (pakai baseline populasi).
+        if not self._calib_ok_single():
+            messagebox.showwarning("Kalibrasi netral",
+                "Orang di video ini BELUM ditandai frame netralnya.\n\n"
+                "Tandai dulu via 'Tandai Frame Netral Orang Ini', ATAU centang "
+                "'Pakai baseline default' untuk memproses dengan baseline populasi.")
+            return
         vp       = self.video_files[self.current_index]
         rel_path = os.path.relpath(vp, self.root_folder)
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
@@ -1860,16 +1897,6 @@ class VideoLabelerApp:
             _n   = res.get("n_frames", 2)
             _ths = res["thresholds"]
             _fa  = self.frame_annotations.get(rel_path, {})
-            _KEY_BS = [
-                "jawOpen", "eyeBlinkLeft", "eyeBlinkRight",
-                "eyeWideLeft", "eyeWideRight",
-                "eyeSquintLeft", "eyeSquintRight",
-                "browInnerUp", "browDownLeft", "browDownRight",
-                "mouthSmileLeft", "mouthSmileRight",
-                "mouthUpperUpLeft", "mouthUpperUpRight",
-                "noseSneerLeft", "noseSneerRight",
-                "cheekSquintLeft", "cheekSquintRight",
-            ]
             _lines = [
                 "",
                 "=" * 70,
@@ -1892,14 +1919,25 @@ class VideoLabelerApp:
                         f"img=(x={_lr.iris_img_x:+.3f} y={_lr.iris_img_y:+.3f})"
                     )
                     _lines.append(
-                        f"  hand   forehead={_lr.hand_forehead:.3f}  chin={_lr.hand_chin:.3f}"
+                        f"  hand   1-hand={_lr.hand_one:.3f}  2-hands={_lr.hand_two:.3f}"
                     )
-                    # blendshapes dalam 2 kolom
-                    _bs = _lr.blendshapes
-                    _bs_vals = [f"{_k.replace('Left','L').replace('Right','R'):<20}={_bs.get(_k,0):.3f}"
-                                for _k in _KEY_BS]
-                    for _bi in range(0, len(_bs_vals), 2):
-                        _lines.append("  bs     " + "  ".join(_bs_vals[_bi:_bi+2]))
+                    # ── AU source & nilai (MENTAH py-feat — dipakai untuk baseline per-orang) ──
+                    _src = getattr(_lr, "au_source", "") or "?"
+                    _pf  = getattr(_lr, "pyfeat_aus", None)
+                    if _pf:
+                        _au_str = "  ".join(
+                            f"{_k}={_pf.get(_k, 0.0):.3f}"
+                            for _k in ["AU01","AU02","AU04","AU07","AU12","AU14","AU43","AU25","AU26"]
+                        )
+                        _lines.append(f"  AU[{_src}]  {_au_str}")
+                    else:
+                        from core.action_units import compute_action_units as _cau
+                        _au_mp = _cau(_lr.blendshapes, self.rules)
+                        _au_str = "  ".join(
+                            f"{_k}={_au_mp.get(_k, 0.0):.3f}"
+                            for _k in ["AU1","AU2","AU4","AU7","AU12","AU14","AU43"]
+                        )
+                        _lines.append(f"  AU[{_src}/mediapipe-fallback]  {_au_str}")
 
                     # ── Landmark emotion scores ──
                     _lsc = _ces(_lr, self.rules)
@@ -1968,6 +2006,194 @@ class VideoLabelerApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    # ── Kalibrasi netral PER-ORANG (Bosch 2023 + FACS) ────────────────────────
+    def _dataset_dir(self) -> str:
+        """Folder dataset tempat person_neutrals.json disimpan (induk raw_cache)."""
+        return os.path.dirname(self.path_dir_raw_cache) if self.path_dir_raw_cache else ""
+
+    def _enumerate_persons(self) -> list:
+        """List UUID orang unik (urut) dari video_files."""
+        from utils.person_neutral import person_id_from_relpath
+        seen = []
+        for vp in self.video_files:
+            rel = os.path.relpath(vp, self.root_folder)
+            pid = person_id_from_relpath(rel)
+            if pid and pid not in seen:
+                seen.append(pid)
+        return seen
+
+    def _current_person_id(self) -> str | None:
+        from utils.person_neutral import person_id_from_relpath
+        if not self.video_files:
+            return None
+        rel = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+        return person_id_from_relpath(rel)
+
+    def _neutral_status(self) -> tuple:
+        """(jumlah_ditandai, total_orang, indeks_orang_sekarang_1based)."""
+        from utils.person_neutral import load_person_neutrals
+        persons = self._enumerate_persons()
+        marked  = load_person_neutrals(self._dataset_dir())
+        n_marked = sum(1 for p in persons if p in marked)
+        cur = self._current_person_id()
+        cur_idx = (persons.index(cur) + 1) if (cur in persons) else 0
+        return n_marked, len(persons), cur_idx
+
+    def _goto_person(self, delta: int):
+        """Loncat ke video PERTAMA orang berikutnya (+1) / sebelumnya (-1) untuk kalibrasi."""
+        if not self.video_files:
+            return
+        from utils.person_neutral import person_id_from_relpath
+        persons = self._enumerate_persons()
+        if not persons:
+            return
+        cur = self._current_person_id()
+        cur_idx = persons.index(cur) if cur in persons else 0
+        target_idx = max(0, min(cur_idx + delta, len(persons) - 1))
+        if target_idx == cur_idx and cur in persons:
+            self.right_panel.lbl_batch_status.configure(
+                text=("Sudah orang terakhir" if delta > 0 else "Sudah orang pertama"),
+                text_color="#fbbf24")
+            return
+        target_person = persons[target_idx]
+        # Kumpulkan semua video index milik target_person
+        idxs = [i for i, vp in enumerate(self.video_files)
+                if person_id_from_relpath(os.path.relpath(vp, self.root_folder)) == target_person]
+        if not idxs:
+            return
+        # Kalau sudah ada video netral yang ditandai → loncat ke situ (biar marker kelihatan);
+        # else ke video pertama orang itu.
+        from utils.person_neutral import load_person_neutrals
+        marked = load_person_neutrals(self._dataset_dir()).get(target_person, {})
+        neutral_vid = marked.get("_video")
+        target_i = idxs[0]
+        if neutral_vid:
+            for i in idxs:
+                if os.path.relpath(self.video_files[i], self.root_folder) == neutral_vid:
+                    target_i = i
+                    break
+        self.save_current_state()
+        self.current_index = target_i
+        self.load_video()
+
+    def _next_person(self):
+        self._goto_person(+1)
+
+    def _prev_person(self):
+        self._goto_person(-1)
+
+    def _use_default_baseline(self) -> bool:
+        """True jika checkbox 'pakai baseline default (populasi)' dicentang."""
+        var = getattr(self.right_panel, "use_default_baseline_var", None)
+        return bool(var.get()) if var is not None else False
+
+    def _calib_ok_single(self) -> bool:
+        """Boleh proses video saat ini? (orangnya sudah netral, ATAU pakai default)."""
+        if self._use_default_baseline():
+            return True
+        if not self.video_files:
+            return False
+        from utils.person_neutral import get_person_neutral
+        rel = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+        return get_person_neutral(self._dataset_dir(), rel) is not None
+
+    def _update_neutral_label(self):
+        """Perbarui label status kalibrasi + state tombol proses (gate kalibrasi)."""
+        if not hasattr(self.right_panel, "lbl_neutral_status"):
+            return
+        if not self.video_files:
+            self.right_panel.lbl_neutral_status.configure(text="Kalibrasi: buka folder dulu")
+            return
+        from utils.person_neutral import get_person_neutral
+        n_marked, total, cur_idx = self._neutral_status()
+        rel = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+        cur_done = get_person_neutral(self._dataset_dir(), rel) is not None
+        tick = " ✓ sudah" if cur_done else " — BELUM"
+        color = "#10b981" if n_marked == total and total > 0 else "#fbbf24"
+        self.right_panel.lbl_neutral_status.configure(
+            text=f"Orang ke-{cur_idx}/{total}{tick}  ·  {n_marked}/{total} netral ditandai",
+            text_color=color,
+        )
+        # ── Gate tombol proses (jangan ganggu saat batch sedang jalan) ──
+        if getattr(self, "batch_running", False):
+            return
+        use_def = self._use_default_baseline()
+        # Proses Video Ini: aktif bila orang ini sudah netral ATAU pakai default
+        ok_single = use_def or cur_done
+        self.right_panel.btn_proses_satu.configure(state=("normal" if ok_single else "disabled"))
+        # Batch Semua: aktif bila SEMUA orang netral ATAU pakai default
+        ok_batch = use_def or (total > 0 and n_marked >= total)
+        self.right_panel.btn_proses_semua.configure(state=("normal" if ok_batch else "disabled"))
+
+    def _on_default_toggle(self):
+        """Dipanggil saat checkbox 'pakai default' diubah → refresh gate tombol."""
+        self._update_neutral_label()
+
+    def _mark_neutral_current(self):
+        """Tandai 1 frame video saat ini sebagai netral orang ini → person_neutrals.json."""
+        from utils.person_neutral import set_person_neutral, person_id_from_relpath
+        if not self.video_files:
+            return
+        rel = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+        pid = person_id_from_relpath(rel)
+        if not pid:
+            messagebox.showwarning("Kalibrasi", "Tidak bisa kenali identitas orang dari path video ini.")
+            return
+        dd = self._dataset_dir()
+        if not dd:
+            messagebox.showwarning("Kalibrasi",
+                "Folder dataset belum siap (path_dir_raw_cache kosong). Buka folder dataset dulu.")
+            return
+        lrs = self._gallery_cache.get("landmark_results") or []
+        valid = [(i, lr) for i, lr in enumerate(lrs)
+                 if getattr(lr, "face_found", False) and getattr(lr, "pyfeat_aus", None)]
+        print(f"[Kalibrasi] klik Tandai: {len(lrs)} frame di galeri, {len(valid)} valid (face+pyfeat) | dataset={dd}")
+        if not valid:
+            messagebox.showwarning("Kalibrasi",
+                "Frame ini belum punya AU py-feat.\n\n"
+                "Pastikan: (1) galeri SUDAH selesai memuat (py-feat GPU butuh beberapa detik di video pertama), "
+                "(2) wajah terdeteksi di frame. Tunggu lalu klik lagi.")
+            return
+
+        def _save(au_values, frame_idx):
+            set_person_neutral(dd, pid, au_values, meta={"_video": rel, "_frame": frame_idx})
+            self._update_neutral_label()
+            self.refresh_frame_gallery()   # gambar marker '★ NETRAL' di frame terpilih
+            self.right_panel.lbl_batch_status.configure(
+                text=f"✓ Netral disimpan (frame {frame_idx}) — {pid[:10]}…", text_color="#10b981")
+
+        if len(valid) == 1:
+            _save(valid[0][1].pyfeat_aus, valid[0][0])
+            return
+
+        # >1 frame valid → biar annotator pilih yang paling netral
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title("Pilih frame paling NETRAL")
+        dlg.geometry("520x230")
+        dlg.transient(self.root)
+        # grab_set HARUS setelah window viewable (CTkToplevel render tertunda) → defer.
+        def _grab():
+            try:
+                dlg.grab_set()
+            except Exception:
+                pass
+        dlg.after(50, _grab)
+        ctk.CTkLabel(dlg, text=f"Orang: {pid[:24]}…  — pilih frame wajah paling RILEKS/netral",
+                     font=self.app_font_or_default()).pack(pady=(12, 6))
+        row = ctk.CTkFrame(dlg, fg_color="transparent"); row.pack(fill="both", expand=True, padx=12)
+        for i, lr in valid:
+            au = lr.pyfeat_aus
+            summary = (f"Frame {i}\nAU4(alis↓)={au.get('AU04',0):.2f}  AU1(alis↑)={au.get('AU01',0):.2f}\n"
+                       f"AU7={au.get('AU07',0):.2f}  AU43(mata)={au.get('AU43',0):.2f}")
+            cell = ctk.CTkFrame(row); cell.pack(side="left", fill="both", expand=True, padx=6, pady=6)
+            ctk.CTkLabel(cell, text=summary, justify="left", font=("Poppins", 11)).pack(pady=(8, 4))
+            ctk.CTkButton(cell, text=f"Pilih frame {i} ini",
+                          command=lambda a=au, fi=i: (_save(a, fi), dlg.destroy()),
+                          fg_color="#10b981", hover_color="#059669").pack(pady=(4, 8), padx=8, fill="x")
+
+    def app_font_or_default(self):
+        return getattr(self, "font_sm", ("Poppins", 11))
+
     def _toggle_batch(self):
         """
         Toggle antara memulai dan menghentikan proses batch.
@@ -1992,6 +2218,20 @@ class VideoLabelerApp:
         Hasil tiap video langsung disimpan ke disk.
         """
         if not self.video_files: return
+
+        # GATE: SEMUA orang harus punya baseline netral dulu (Bosch 2023 per-person calibration),
+        # KECUALI checkbox "pakai default" dicentang. Tanpa centang → BLOK (tidak bisa batch).
+        n_marked, total, _ = self._neutral_status()
+        use_default = self._use_default_baseline()
+        if total > 0 and n_marked < total and not use_default:
+            messagebox.showwarning(
+                "Batch terkunci — kalibrasi belum lengkap",
+                f"Baru {n_marked}/{total} orang yang ditandai frame netralnya.\n\n"
+                f"Selesaikan kalibrasi semua orang dulu, ATAU centang "
+                f"'Pakai baseline default' untuk batch dengan baseline populasi.",
+            )
+            return
+
         self.batch_running = True
         self.cancel_batch  = False
         # Matikan debug log saat batch — print per-frame sangat memperlambat
@@ -2108,6 +2348,23 @@ class VideoLabelerApp:
                         except _q.Full:
                             pass
                         return
+
+                    # Debug ringkas: au_source + pose + AU43 per frame
+                    _src_list = [getattr(lr, "au_source", "?") or "?" for lr in landmark_results]
+                    _pf_ok    = sum(1 for lr in landmark_results if getattr(lr, "pyfeat_aus", None))
+                    _frame_parts = []
+                    for _i, _lr in enumerate(landmark_results):
+                        if not _lr.face_found:
+                            _frame_parts.append(f"[{_i}] no_face")
+                        else:
+                            _pf = getattr(_lr, "pyfeat_aus", None)
+                            _au43 = _pf.get("AU43", 0.0) if _pf else 0.0
+                            _frame_parts.append(
+                                f"[{_i}] yaw={_lr.yaw:+.1f}° pitch={_lr.pitch:+.1f}° "
+                                f"AU43={_au43:.3f} src={_src_list[_i]}"
+                            )
+                    print(f"[Batch] {os.path.basename(rel_path):<38} pyfeat={_pf_ok}/{len(landmark_results)}  "
+                          + "  |  ".join(_frame_parts))
 
                     item_ready = {
                         "type":             "ready",
@@ -2246,7 +2503,6 @@ class VideoLabelerApp:
                 self.right_panel.btn_proses_semua.configure(
                     text="Batch Semua", fg_color="#10b981", hover_color="#059669"
                 )
-                self.right_panel.btn_proses_satu.configure(state="normal")
                 thrs = [v.get() for v in self.right_panel.threshold_vars]
                 update_batch_meta(self.path_json_batch_history, self.rules, thrs)
                 # Sync manual_labels untuk video-video baru yang baru diproses batch
@@ -2254,6 +2510,8 @@ class VideoLabelerApp:
                 self._sync_manual_missing_from_ai()
                 self.right_panel.update_statistics(self.batch_history)
                 self.right_panel.update_manual_statistics(self.manual_labels)
+                # Pulihkan state tombol sesuai gate kalibrasi (bukan paksa normal)
+                self._update_neutral_label()
 
             self.root.after(0, on_finish)
 
@@ -2276,4 +2534,17 @@ if __name__ == "__main__":
     # Start SigLIP preload shortly after window renders — heavy import happens
     # in background so UI stays responsive; model ready before user runs inference.
     root.after(800, _start_siglip_preload_bg)
+
+    def _on_close():
+        # Tandai shutdown agar worker daemon (galeri/batch) berhenti rapi & tidak
+        # melempar 'cannot schedule new futures after interpreter shutdown'.
+        app._shutting_down = True
+        app.cancel_batch = True
+        try:
+            from core.pyfeat_client import get_pyfeat_client
+            get_pyfeat_client().shutdown()
+        except Exception:
+            pass
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", _on_close)
     root.mainloop()

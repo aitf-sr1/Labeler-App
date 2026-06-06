@@ -112,8 +112,8 @@ Cache ini memungkinkan Recalculate tanpa re-run SigLIP (model terbesar dalam pip
 | `iris_x` | Offset iris horizontal relatif ke sudut mata (−1..+1) | Boredom, Engagement |
 | `iris_y` | Offset iris vertikal relatif ke sudut mata (−1..+1) | Confusion |
 | Blendshapes | 52 koefisien otot wajah (0..1) dari MediaPipe | Semua label |
-| `hand_forehead` | Proporsi tangan di zona DAHI (y ∈ [-0.20, 0.25) dari crop) | + Frustration, − Confusion |
-| `hand_chin` | Proporsi tangan di zona PIPI/DAGU (y ∈ [0.25, 1.20] dari crop) | + Confusion |
+| `hand_one` | 1.0 jika terdeteksi **tepat 1 tangan** di area wajah (count-based) | Confusion (cue LEMAH, `max(hand_one,hand_two)*hand_conf_w=0.40`) — Behera 2020: HoF ↑ saat difficulty ↑ + Mahmoud 2011: "unsure" |
+| `hand_two` | 1.0 jika terdeteksi **≥ 2 tangan** di area wajah (count-based) | Confusion (HoF) **+** Frustration (cue LEMAH, `hand_frus_w=0.30`) — Grafsgaard 2013b: hand-to-face ↔ self-efficacy rendah |
 
 ### Koordinat Iris
 
@@ -121,14 +121,14 @@ Frame yang diinput adalah **crop yang sudah mengikuti wajah**, sehingga `iris_im
 
 ### Deteksi Tangan dari Full Frame
 
-HandLandmarker memerlukan telapak tangan untuk tahap deteksi pertama. Dengan padding crop 0.30–0.60, telapak sering terpotong. Solusi: tangan dideteksi dari **full frame video asli**, lalu koordinatnya di-remap ke ruang crop wajah:
+HandLandmarker memerlukan telapak tangan untuk tahap deteksi pertama. Dengan padding crop 0.30–0.60, telapak sering terpotong. Solusi: tangan dideteksi dari **full frame video asli**, lalu jumlahnya (`hand_one`=1 tangan, `hand_two`=≥2 tangan) dipakai sebagai sinyal count-based:
 
 ```python
 # utils/video.py — alur per frame:
-hand_top, hand_mid_bot, hand_pts_px, hand_raw = detect_hands_from_full_frame(
-    full_frame, face_bbox, crop_size=512
+hand_one, hand_two, hand_pts_px, hand_raw = detect_hands_from_full_frame(
+    full_frame, face_bbox, crop_size=224
 )
-lr = analyze_frame(crop_bgr, injected_hand=(hand_top, hand_mid_bot, hand_pts_px, hand_raw))
+lr = analyze_frame(crop_bgr, injected_hand=(hand_one, hand_two, hand_pts_px, hand_raw))
 ```
 
 ### Penyimpanan Raw Feature Cache
@@ -150,8 +150,8 @@ Setelah landmark analysis, fitur per frame disimpan ke `raw_cache/`:
       "iris_img_x": 0.01,
       "iris_img_y": 0.02,
       "blendshapes": { "browDownLeft": 0.12, "jawOpen": 0.08, "... (52 total)": 0 },
-      "hand_forehead": 0.0,
-      "hand_chin": 0.0
+      "hand_one": 0.0,
+      "hand_two": 0.0
     }
   ]
 }
@@ -175,13 +175,13 @@ Threshold diterapkan per frame: `frame_pred = 1 if hybrid_score >= threshold els
 
 | Label | SigLIP (α) | Landmark (β) | Alasan |
 |---|---|---|---|
-| Boredom | 0.50 | 0.50 | Landmark kuat untuk yaw/iris; SigLIP untuk ekspresi lelah/kosong |
-| Engagement | 0.50 | 0.50 | Gate logic Landmark sangat presisi; SigLIP mendukung visual |
-| Confusion | **0.60** | **0.40** | SigLIP lebih baik untuk ekspresi berpikir halus |
-| Frustration | 0.50 | 0.50 | Seimbang: Landmark untuk gestur tangan, SigLIP untuk aura stres |
+| Boredom | 0.25 | 0.75 | gaze (geometrik) + AU43 dominan; SigLIP kecil (tired/vacant) |
+| Engagement | **0.50** | 0.50 | **HOLISTIK** — tak ada AU dominan (Whitehill 2014) → SigLIP tertinggi |
+| Confusion | 0.35 | 0.65 | AU4+AU7 (py-feat) primer + SigLIP jaring pengaman (oklusi tangan) |
+| Frustration | 0.30 | 0.70 | AU1+AU2/AU4/AU14 (py-feat) + tangan primer + SigLIP gestalt stres |
 
-**Temporal Restlessness Bonus (Boredom):**  
-Jika std deviasi yaw antar frame ≥ `restless_std_min` (default: 3°), skor Boredom mendapat bonus hingga `restless_bonus_max` (default: +0.15). Menangkap pola tolah-toleh yang tidak terlihat per-frame.
+**~~Temporal Restlessness Bonus (Boredom)~~ — DIHAPUS:**  
+Dulu skor Boredom dapat bonus dari std-dev yaw antar frame. **Sudah dibuang** — tidak ada dasar paper (Craig 2008 hanya AU43 untuk Boredom). Tidak ada lagi di kode/rules.
 
 ---
 
@@ -195,8 +195,6 @@ raw_cache/{safe}.json  →  _reconstruct_lr()  →  LandmarkResult
                                          compute_emotion_scores(lr, rules_baru)
                                                       ↓
 siglip_cache/{safe}.json  ────────────────────── hybrid combine
-                                                      ↓
-                                          restless bonus (Boredom)
                                                       ↓
                                           threshold → frame_preds
                                                       ↓

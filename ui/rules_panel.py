@@ -42,8 +42,6 @@ _SLIDER_DEFS = [
      "Rentang blink di atas dead zone. Makin besar = butuh mata lebih merem baru efek signifikan."),
     ("boredom", "sig_expr_weight", "Expr Weight",         0.0,  1.0,
      "Bobot sinyal blink (AU43) dalam boredom. Craig 2008: AU43 = satu-satunya sinyal yang divalidasi."),
-    ("boredom", "squint_blink_correction", "Squint->Blink Correction", 0.0, 1.0,
-     "Koreksi teknis: squint sedikit menutup mata → inflasi blink_avg. Bukan AU, hanya kalibrasi sensor."),
     ("boredom", "fwd_yaw_th",        "Fwd Yaw Th (deg)",    3.0,  20.0,
      "MUTLAK: |yaw| < ini = hadap depan = TIDAK BOSAN. Boredom hanya muncul kalau kepala menoleh. Default 8 deg."),
     ("boredom", "fwd_yaw_range",     "Fwd Yaw Range (deg)", 3.0,  15.0,
@@ -65,8 +63,6 @@ _SLIDER_DEFS = [
      "Blink > ini = mata terlalu merem (ngantuk). Menurunkan engagement."),
     ("engagement", "blink_heavy_min", "Min Engagement",      0.0,  0.5,
      "Engagement minimum saat blink sangat berat. Lantai engagement tidak pernah di bawah ini."),
-    ("engagement", "eye_wide_boost",  "EyeWide Boost",       0.0,  0.5,
-     "Inverse 'eyes barely open' (Whitehill level 2). Naik = mata lebar lebih boost engagement."),
     ("engagement", "pitch_gate_th",   "Pitch Gate Th (deg)",   0.0, 30.0,
      "Kepala mendongak > ini = engagement mulai turun. 15 deg = wajar duduk, nol di th+range."),
     ("engagement", "pitch_gate_range","Pitch Gate Range (deg)", 5.0, 40.0,
@@ -74,64 +70,80 @@ _SLIDER_DEFS = [
     ("engagement", "bore_suppress_th", "Bore Suppress Th",    0.0,  0.5,
      "D'Mello 2012: boredom↔engagement near-exclusive. Dead zone sebelum suppress aktif."),
     ("engagement", "bore_eng_suppress","Bore->Eng Suppress",   0.0,  1.0,
-     "D'Mello 2012: boredom tinggi menekan engagement."),
-    ("engagement", "conf_eng_suppress_th", "Conf Eng Supp Th", 0.2, 0.8,
-     "D'Mello 2012: Confusion→Engagement/Flow signifikan (productive struggle). Threshold suppress."),
-    ("engagement", "conf_eng_suppress",    "Conf->Eng Suppress", 0.0, 0.8,
-     "D'Mello 2012: confusion menekan engagement tapi tidak total (productive struggle bisa co-occur)."),
-    # CONFUSION — Craig et al. (2008): AU4 (95%), AU7 (78%), AU4+AU7 co-occurrence (73%), AU12 secondary (95%)
-    ("confusion", "brow_dn_th",         "BrowDown Th (AU4)",   0.01, 0.5,
-     "Pembagi browDown (AU4, Craig2008 95%). Kalibrasi MediaPipe: p90=0.033 → set 0.05 agar AU4 aktif."),
-    ("confusion", "au7_th",             "AU7 Squint Th",       0.05, 0.4,
-     "Threshold eyeSquint minimum untuk dihitung sebagai AU7 (lid tightener) dalam co-occurrence AU4+AU7."),
+     "D'Mello 2012 + DAiSEE: boredom↔engagement near-exclusive (satu-satunya suppression yang dipertahankan)."),
+    # ACTION UNITS — kalibrasi baseline-relative (blendshape MediaPipe → intensitas AU FACS)
+    # intensity = clamp((raw - neutral)/(active - neutral), 0, 1). active turun = AU lebih sensitif.
+    ("action_units", "AU1_active",  "AU1 Active (inner brow)", 0.55, 1.0,
+     "browInnerUp saat AU1 aktif penuh (Frustration). Turun = frustration lebih sensitif. Netral MediaPipe ~0.46."),
+    ("action_units", "AU2_active",  "AU2 Active (outer brow)", 0.55, 1.0,
+     "browOuterUp saat AU2 aktif penuh (Frustration). Turun = frustration lebih sensitif. Netral MediaPipe ~0.47."),
+    ("action_units", "AU4_active",  "AU4 Active (brow lower)", 0.05, 0.4,
+     "browDown saat AU4 aktif penuh (Confusion). browDown MediaPipe nyaris mati (p99=0.18) → 0.15 men-stretch agar AU4 terdeteksi."),
+    ("action_units", "AU7_active",  "AU7 Active (lid tight)",  0.35, 0.7,
+     "eyeSquint saat AU7 aktif penuh (Confusion). Netral MediaPipe ~0.31, p90~0.50."),
+    ("action_units", "AU12_active", "AU12 Active (smile)",     0.3,  0.8,
+     "mouthSmile saat AU12 aktif penuh (gate Confusion)."),
+    ("action_units", "AU14_active", "AU14 Active (dimpler)",   0.05, 0.3,
+     "mouthDimple saat AU14 aktif penuh (Frustration sekunder, Grafsgaard 2013). Nyaris mati di MediaPipe (p99=0.069) → di-stretch."),
+    ("action_units", "AU43_active", "AU43 Active (eye close)", 0.35, 0.7,
+     "eyeBlink saat AU43 aktif penuh (Boredom). Netral MediaPipe ~0.12, p90~0.53."),
+    # CONFUSION — Craig et al. (2008): AU4 (95%), AU7 (78%), AU4+AU7 co-occurrence (73%); AU12 sekunder
     ("confusion", "au4_au7_co_w",       "AU4+AU7 Co-occur W",  0.1,  1.0,
      "Bobot co-occurrence AU4+AU7 (Craig2008 73% coverage). Naik = co-occurrence lebih dominan dari AU4 sendiri."),
-    ("confusion", "smile_conf_gate_th", "AU12 Smile Gate Th",  0.1,  0.5,
-     "AU12 (mouthSmile/questioning smile) co-occurs 95% (Craig2008). Gate floor mencegah senyum mematikan confusion."),
+    ("confusion", "au7_alone_w",        "AU7 Standalone W",    0.0,  1.0,
+     "Craig2008: AU7 (lid tightener) 78% coverage sebagai sinyal standalone. Naik = confusion lebih mudah terdeteksi."),
+    ("confusion", "hand_conf_w",        "HoF → Confusion W",   0.0,  0.6,
+     "Mahmoud2011: hand-to-face = 14/15 segmen 'thinking'+'unsure' (≈93% cognitive, KUANTITATIF). "
+     "ConfusionBench2026 + Behera2020 menguatkan. max(hand_one,hand_two). Default 0.40 — kontribusi kuat "
+     "tapi belum memicu sendiri (caveat: tak bisa bedakan gesture aktif=kognitif vs pasif=relaxed)."),
+    ("confusion", "mouth_open_conf_w",  "Mouth Open W",        0.0,  0.5,
+     "Namba2024: AU25(Lips Part)+AU26(Jaw Drop) = 'most significant' thinking face component saat jawab pertanyaan sulit. "
+     "Chain: thinking face (Namba) + thinking = Confusion (D'Mello2012). Default 0.25."),
+    ("confusion", "smile_conf_gate_th", "AU12 Smile Gate Th",  0.1,  0.8,
+     "AU12 (questioning smile) intensity >= ini mulai men-gate confusion. Floor mencegah senyum mematikan confusion."),
     ("confusion", "smile_conf_gate_floor", "AU12 Smile Floor", 0.1,  0.5,
-     "Floor gate senyum. 0.30 = confusion tetap ≥30% meski senyum penuh (AU12 co-occurs per Craig2008)."),
-    ("confusion", "bore_conf_suppress_bore", "Bore->Conf Suppress", 0.0, 0.8,
-     "D'Mello 2012: Confusion→Boredom terjadi at chance. Boredom tinggi menekan confusion."),
+     "Floor gate senyum. 0.30 = confusion tetap ≥30% meski senyum penuh (AU12 co-occurs)."),
     # FRUSTRATION — Craig et al. (2008): AU1+AU2 primary (100%), AU4 secondary (Grafsgaard 2013)
-    ("frustration", "brow_outer_up_th", "BrowOuterUp Th (AU2)", 0.10, 1.0,
-     "Craig2008: AU2 (outer brow raise) = primary frustration signal, 100% coverage. "
-     "browOuterUp median alami=0.47 → threshold 0.75 = hanya top 25% yang fire (kalibrasi MediaPipe)."),
-    ("frustration", "brow_inner_up_th", "BrowInnerUp Th (AU1)", 0.10, 1.0,
-     "Craig2008: AU1 (inner brow raise) = primary frustration signal, 100% coverage. "
-     "browInnerUp median alami=0.43 → threshold 0.75 = hanya top 25% yang fire (kalibrasi MediaPipe)."),
+    # Sensitivitas brow raise kini diatur via AU1_active/AU2_active di seksi Action Units.
     ("frustration", "brow_raise_direct_w", "AU1+AU2 Direct W",  0.3,  1.0,
      "Craig2008: AU1+AU2 co-occurrence = 100% coverage. Bobot langsung untuk sinyal primer."),
-    ("frustration", "brow_dn_th",      "BrowDown Th (AU4)",   0.01, 0.6,
-     "Grafsgaard 2013: AU4 (brow lowering) positively correlated with frustration. Secondary signal."),
-    ("frustration", "face_weight",     "AU4 Secondary W",     0.1,  0.8,
-     "Bobot AU4 secondary (Grafsgaard 2013) relatif terhadap primary AU1+AU2."),
+    ("frustration", "face_weight",     "AU4/AU14 Primer W",   0.1,  0.8,
+     "Grafsgaard2013 (verbatim): 'AU4 (brow lowering) POSITIVELY correlated with frustration'; AU14 juga. "
+     "Konteks belajar + deteksi otomatis = paling cocok → AU4/AU14 PRIMER (default 0.60, dulu 0.45 sekunder). "
+     "AU4 sering nyala → frustration lebih terdeteksi."),
+    ("frustration", "hand_frus_w",     "2-Hands to Face W",   0.0,  1.0,
+     "Grafsgaard2013b: 2-tangan ↔ self-efficacy rendah (SIGNIFIKAN) ≈ Frustration. Hand2Face2017 & "
+     "ConfusionBench2026 juga kaitkan HoF→frustration. HANYA 2-tangan (hand_two). Default 0.30, belum memicu sendiri."),
     # HYBRID
     ("hybrid", "empirical_bias",       "SigLIP Empirical Bias", 1.0, 6.0,
      "Bias global yang ditambahkan ke logits SigLIP sebelum sigmoid. Naik → semua skor SigLIP naik (semua emosi lebih mudah positif). Turun → skor SigLIP lebih konservatif. Terlalu besar = semua label selalu 1."),
-    ("hybrid", "restless_bonus_max",   "Restless Bonus Max",    0.0, 0.3,
-     "Bonus maks Boredom dari variasi yaw (kepala gelisah bergerak). 0 = disabled (direkomendasikan — heuristik tanpa basis definisi). Naik → Boredom ↑ jika kepala banyak bergerak antar frame."),
-    ("hybrid", "restless_std_min",     "Restless Std Min (deg)",  1.0, 8.0,
-     "Std-dev yaw minimum sebelum restless bonus Boredom aktif. Naik = butuh gerakan kepala lebih banyak sebelum bonus aktif."),
-    ("hybrid", "restless_std_range",   "Restless Std Range (deg)", 3.0, 15.0,
-     "Rentang std-dev yaw dari min sampai bonus maks. Naik = transisi lebih pelan, bonus Boredom naik lebih bertahap."),
+    ("hybrid", "eng_gaze_gate_th",    "Eng Gaze Gate Th (deg)",  5.0, 30.0,
+     "Whitehill2014+GazeTutor: gaze_dev_eng di atas ini → hybrid score Engagement diturunkan. "
+     "Cegah SigLIP 'engaged' tinggi padahal orang tidak lihat layar. Default 15°."),
+    ("hybrid", "eng_gaze_gate_range", "Eng Gaze Gate Range (deg)", 5.0, 30.0,
+     "Rentang gate engagement dari threshold. Di th+range, penalti maksimal. Default 15° → penuh di 30°."),
+    ("hybrid", "eng_gaze_gate_hard",  "Eng Gaze Gate Strength",  0.0,  0.5,
+     "Maksimal pengurangan hybrid score Engagement per frame oleh gaze gate. Default 0.20 = moderate."),
 ]
 
 _SECTION_COLORS = {
-    "gaze":        "#9ca3af",
-    "boredom":     "#fbbf24",
-    "engagement":  "#10b981",
-    "confusion":   "#3b82f6",
-    "frustration": "#ef4444",
-    "hybrid":      "#8b5cf6",
+    "gaze":         "#9ca3af",
+    "action_units": "#06b6d4",
+    "boredom":      "#fbbf24",
+    "engagement":   "#10b981",
+    "confusion":    "#3b82f6",
+    "frustration":  "#ef4444",
+    "hybrid":       "#8b5cf6",
 }
 
 _SECTION_LABELS = {
-    "gaze":        "Gaze (shared)",
-    "boredom":     "Boredom",
-    "engagement":  "Engagement",
-    "confusion":   "Confusion",
-    "frustration": "Frustration",
-    "hybrid":      "Hybrid Weights & SigLIP",
+    "gaze":         "Gaze (shared)",
+    "action_units": "Action Units (kalibrasi AU FACS)",
+    "boredom":      "Boredom",
+    "engagement":   "Engagement",
+    "confusion":    "Confusion",
+    "frustration":  "Frustration",
+    "hybrid":       "Hybrid Weights & SigLIP",
 }
 
 _LABEL_NAMES = ["Boredom", "Engagement", "Confusion", "Frustration"]

@@ -1,6 +1,18 @@
-# Labeler Emosi SigLIP2
+# Labeler App — Pelabelan Emosi Pembelajaran
 
-Aplikasi desktop untuk melabeli emosi siswa pada video secara manual maupun semi-otomatis. Menggunakan **SigLIP2** (Google VLM) dikombinasikan dengan **MediaPipe FaceLandmarker** (geometri wajah 3D) sebagai Hybrid Scoring.
+Aplikasi desktop untuk melabeli emosi siswa (Boredom, Engagement, Confusion, Frustration) pada video secara manual maupun semi-otomatis.
+
+Disebut **"Labeler App"** (bukan lagi "Labeler SigLIP") karena tidak mengandalkan satu model saja — keputusan label menggabungkan **banyak unsur sinyal**:
+
+| Unsur | Peran |
+|---|---|
+| **SigLIP2** (Google VLM) | Membaca ekspresi wajah halus dari crop wajah 224×224 (visual) |
+| **MediaPipe FaceLandmarker** | Geometri wajah 3D: arah kepala (yaw/pitch/roll), iris/gaze, 52 blendshape |
+| **MediaPipe HandLandmarker** | Deteksi tangan di wajah (hand-over-face) → cue Confusion/Frustration |
+| **MediaPipe FaceLandmarker** | Satu-satunya sumber AU: blendshape→AU dengan normalisasi baseline-relative (stretch agresif AU4, per-person calibration) |
+| **Kalibrasi per-orang** | Frame netral per siswa (Bosch 2023) sebagai baseline AU |
+
+Keempat-empatnya digabung lewat **Hybrid Scoring** (lihat [§5](#5-cara-kerja-sistem-scoring-ringkasan)). Setiap mekanisme punya dasar paper — lihat [docs/ACADEMIC_BASIS.md](docs/ACADEMIC_BASIS.md).
 
 ---
 
@@ -21,9 +33,13 @@ Aplikasi desktop untuk melabeli emosi siswa pada video secara manual maupun semi
 
 | Dokumen | Isi |
 |---|---|
+| [docs/ACADEMIC_BASIS.md](docs/ACADEMIC_BASIS.md) | **Dasar akademis** tiap mekanisme: verbatim quote dari paper + penjelasan (FACS/AU, gaze, tangan, kalibrasi per-orang, co-occurrence). |
+| [docs/ALUR_METODE.md](docs/ALUR_METODE.md) | Alur metode end-to-end: sinyal apa → emosi apa → paper mana, beserta bobotnya. |
 | [docs/COMPUTATION.md](docs/COMPUTATION.md) | Panduan teknis lengkap: dari angka mentah MediaPipe → rumus per-emosi → SigLIP → hybrid → prediksi. Dilengkapi contoh angka nyata dan referensi akademis. |
+| [docs/PANDUAN_ANOTASI_MANUAL.md](docs/PANDUAN_ANOTASI_MANUAL.md) | Panduan anotator manusia: ciri tiap emosi, tabel gaze, tabel suppress/co-occurrence, cue tangan. |
+| [docs/DESIGN_RATIONALE.md](docs/DESIGN_RATIONALE.md) | Alasan desain tiap bobot (kenapa angka segini), kode vs. paper. |
 | [docs/RULES_PANEL.md](docs/RULES_PANEL.md) | Cara menggunakan Rules Editor: semua ~50 parameter dijelaskan, panduan "kalau label X bermasalah ubah ini", strategi tuning. |
-| [core/README_SIGLIP.md](core/README_SIGLIP.md) | Arsitektur pipeline inferensi: SigLIP2, MediaPipe, sistem cache, recalculate, viz regeneration. |
+| [core/README_SIGLIP.md](core/README_SIGLIP.md) | Arsitektur pipeline inferensi: SigLIP2, MediaPipe-only AU pipeline, kalibrasi per-orang, sistem cache, recalculate, viz. |
 
 ---
 
@@ -330,61 +346,91 @@ Klik **Split Label 2D** di panel kanan untuk membagi dataset menjadi train/val/t
 
 ## 5. Cara Kerja Sistem Scoring (Ringkasan)
 
-Sistem menggunakan **Hybrid Scoring**: menggabungkan dua sumber sinyal per frame, lalu rata-rata dari seluruh frame untuk keputusan akhir.
+Sistem menggunakan **Hybrid Scoring**: menggabungkan dua jalur sinyal per frame, lalu rata-rata dari seluruh frame untuk keputusan akhir.
 
 ```
-                    ┌─ SigLIP2 (visual)  ─────────────────────────────┐
-Video → N frame →  │  logit → sigmoid(logit + bias) → siglip_score    │
-                    │                                                   ├─► hybrid = siglip_w × siglip + land_w × land
-                    └─ MediaPipe (geometri) ──────────────────────────┘
-                       yaw, pitch, iris, blendshapes, tangan → landmark_score
+                    ┌─ SigLIP2 (visual) ──────────────────────────────┐
+                    │  logit → sigmoid(logit + bias) → siglip_score    │
+Video → N frame →  │                                                   ├─► hybrid = (siglip_w×siglip + land_w×land) / (siglip_w + land_w)
+                    │  LANDMARK_score = gabungan dari:                 │
+                    │   • MediaPipe Face: yaw/pitch/roll, iris/gaze    │
+                    │   • MediaPipe Hand: tangan di wajah (HoF)        │
+                    │   • Action Unit FACS: py-feat (utama) /          │
+                    └─    blendshape→AU (fallback), baseline-normalized┘
 
 avg(hybrid_score semua frame) → vs threshold → prediction video (0/1)
 ```
 
-### Bobot Hybrid per Label (rules.json)
+> **Penting:** `landmark_score` **bukan cuma geometri MediaPipe** — ia membungkus **Action Unit FACS** (py-feat/blendshape) + **sinyal tangan**. Inilah alasan app ini bukan sekadar "SigLIP labeler".
+
+### Action Unit (AU FACS) — jantung deteksi Confusion & Frustration
+
+Confusion/Frustration tidak bisa dibaca dari arah kepala saja; keduanya butuh **otot wajah halus**. Sistem memetakannya ke **Action Unit FACS** (Craig et al. 2008):
+
+| AU | Otot | Dipakai untuk |
+|---|---|---|
+| AU1 + AU2 | inner+outer brow raise | **Frustration** (Craig 2008: co-occurrence 100%) — `brow_raise_direct_w=0.65` |
+| AU4 + AU14 | brow lowerer + dimpler | **Frustration PRIMER** (Grafsgaard 2013) — `face_weight=0.60` |
+| AU4 + AU7 | brow lowerer + lid tightener | **Confusion** (Craig 2008: 95%/78%) — `au7_alone_w=0.78`, `au4_au7_co_w=0.50` |
+| AU25 + AU26 | lips part + jaw drop | **Confusion** (Namba 2024 "thinking face") — `mouth_open_conf_w=0.25` |
+| AU12 | lip corner (smile) | **gate** Confusion (lintas-emosi, bukan sinyal positif) |
+| AU43 | eye closure | **Boredom** — `blink_direct_w=0.45` |
+
+**Dua sumber AU (dengan baseline-normalization):**
+1. **py-feat** — detektor yang dilatih langsung pada FACS (sumber **utama**, jalan di GPU). Berada di venv terpisah `.venv-pyfeat`, dipanggil lewat subprocess.
+2. **Blendshape MediaPipe → AU** — fallback bila py-feat tidak tersedia.
+
+AU dinormalisasi terhadap baseline: `intensity = clamp((raw − neutral) / (active − neutral), 0, 1)`. Bila siswa punya **frame netral** yang ditandai (kalibrasi per-orang, Bosch 2023), `neutral` diambil dari frame itu; jika tidak, dipakai baseline populasi.
+
+### Bobot Hybrid per Label (rules.json → `hybrid.siglip_w` / `hybrid.land_w`)
 
 | Label | siglip_w | land_w | Alasan |
 |---|---|---|---|
-| Boredom | 0.30 | 0.70 | Gaze MediaPipe sangat reliable untuk deteksi noleh |
-| Engagement | 0.20 | 0.80 | Gaze MediaPipe sangat reliable, dominan landmark |
-| Confusion | 0.85 | 0.15 | SigLIP lebih andal baca ekspresi wajah halus |
-| Frustration | 0.50 | 0.50 | Balanced: SigLIP baca ekspresi, landmark deteksi tangan |
+| Boredom | 0.25 | 0.75 | gaze (geometrik) + AU43 dominan; SigLIP kecil (tired/vacant look) |
+| Engagement | 0.50 | 0.50 | **HOLISTIK** — Whitehill 2014: tak ada AU tunggal, "static pixels" → SigLIP tertinggi |
+| Confusion | 0.35 | 0.65 | AU4+AU7 (py-feat) primer + SigLIP jaring pengaman (oklusi tangan) |
+| Frustration | 0.30 | 0.70 | AU1+2/AU4/AU14 (py-feat) + tangan primer + SigLIP gestalt stres |
+
+> **Prinsip:** SigLIP **tertinggi di Engagement** (satu-satunya emosi holistik tanpa AU dominan — Whitehill 2014). Tiga emosi lain punya **AU diskrit** (Craig 2008) → bertumpu **py-feat (AU FACS) + MediaPipe**, tapi tetap diberi **SigLIP** sebagai *cross-check independen* (berguna saat py-feat gagal: oklusi tangan/wajah miring). SigLIP = expression reader tervalidasi (Zhai 2023); D'Mello 2009 memakai *"facial features"* untuk keempat emosi — jadi bobot SigLIP di sini **ada dasarnya**, dan nilainya = kalibrasi empiris (seperti threshold).
+
+`hybrid = (siglip_w×siglip + land_w×land) / (siglip_w + land_w)` — rata-rata berbobot (ternormalisasi), bukan jumlah mentah.
 
 ### Formula Landmark per Emosi
 
 **Boredom:**
-- Signal utama: `gaze_dev` (deviasi angular 2D kepala+iris dari kamera)
-- Signal pendukung: mata berat (eyeBlink), menguap (jawOpen), kepala mendongak
-- **expr_gate:** signal pendukung (blink/yawn) hanya aktif jika `gaze_dev > threshold` ATAU mata melirik ke bawah (ngetik). Jika gaze lurus ke depan, ekspresi saja tidak cukup trigger Boredom.
+- Signal utama: `gaze_dev` (deviasi angular 2D kepala+iris dari kamera) — noleh ke atas/samping = bosan.
+- Signal pendukung: mata berat (AU43/eyeBlink), menguap (jawOpen).
+- **expr_gate:** signal pendukung hanya aktif jika `gaze_dev` cukup besar. Gaze **ke bawah** (lihat keyboard/menulis) TIDAK dihitung bosan (Sümer 2021: head-down = taking notes).
 
 **Engagement:**
-- Inversely proportional dengan gaze_dev — semakin tinggi deviasi gaze, semakin rendah Engagement
-- Dikurangi jika ada droopy eyes parah (eyeBlink > 0.5)
+- Inversely proportional dengan gaze_dev — semakin tinggi deviasi gaze, semakin rendah Engagement.
+- Gaze ke bawah masih boleh engaged (lihat keyboard). Dikurangi jika ada droopy eyes parah.
 
 **Confusion:**
-- **Murni ekspresi wajah** — alis berkerut (`browDown`), alis dalam naik (`browInnerUp`), iris melirik atas, mulut mangap tipis, bibir mengerucut
-- **attentive_gate:** di-gate oleh gaze_dev — confusion menurun signifikan jika gaze sangat deviated (orang bingung masih fokus ke konten)
-- **Hand suppression:** jika tangan terdeteksi dekat kepala (zona manapun), skor Confusion ditekan langsung
+- **AU brow + lid:** AU4 (brow lowerer) dan **AU7 standalone** (`au7_alone_w=0.78`) + co-occurrence AU4+AU7 (`au4_au7_co_w=0.50`).
+- **Mulut "thinking face":** AU25+AU26 (`mouth_open_conf_w=0.25`, Namba 2024).
+- **Tangan (HoF):** `max(hand_one,hand_two) × hand_conf_w=0.40` **menambah** Confusion (Behera 2020: HoF↑ saat difficulty↑). *Catatan: ini menggantikan "hand suppression" desain lama — tangan kini cue positif, bukan penekan.*
+- **AU12 smile gate:** senyum lebar meredam Confusion sebagian (floor 0.30, tidak men-nol-kan — "questioning smile" boleh co-occur).
+- Boleh **co-occur dengan Engagement** (D'Mello: productive confusion) — tidak ada suppress Conf↔Eng.
 
 **Frustration:**
-- Sinyal tangan (zona dahi ATAU pipi/dagu) sebagai **primer** (weight=0.65)
-- Sinyal wajah (nose sneer, brow down, mouth press, eye squint, cheek squint) sebagai **suplemen** (weight=0.35)
-- Formula: `base = max(hand×0.65 + face×0.35, hand_alone, face_alone)` — weighted-max, bukan aditif
-- Single cue yang sangat kuat tetap bisa trigger (tangan facepalm kuat tidak perlu ekspresi wajah)
+- **AU1+AU2** (inner+outer brow raise) sebagai sinyal langsung — `brow_raise_direct_w=0.65` (Craig 2008: 100%).
+- **AU4+AU14** (brow lowerer + dimpler) sebagai **PRIMER** — `face_weight=0.60` (Grafsgaard 2013; dinaikkan dari sekunder).
+- **2 tangan** di wajah — `hand_two × hand_frus_w=0.30` (Grafsgaard 2013b: self-efficacy rendah). Cue LEMAH.
+- Formula: weighted-max antar sinyal — single cue kuat tetap bisa trigger.
 
-### Threshold Aktif (thresholds.json)
+### Threshold (thresholds.json)
 
-| Label | Threshold |
-|---|---|
-| Boredom | 0.28 |
-| Engagement | 0.24 |
-| Confusion | 0.34 |
-| Frustration | 0.26 |
+Threshold dibandingkan dengan `avg_score` (rata-rata hybrid semua frame) untuk menentukan prediksi video (0/1). **Default 0.50 per label**, dapat diatur per-label lewat slider **Threshold** di panel kanan dan disimpan ke `thresholds.json`.
 
-Threshold ini dibandingkan dengan `avg_score` (rata-rata hybrid score semua frame) untuk menentukan prediksi video (0 atau 1).
+| Label | Default | Catatan kalibrasi |
+|---|---|---|
+| Boredom | 0.50 | turunkan bila boredom under-detected |
+| Engagement | 0.50 | — |
+| Confusion | 0.50 | dirancang agar cue tangan saja (land 0.34) belum memicu di sekitar ~0.35 |
+| Frustration | 0.50 | dirancang agar 2-tangan saja (land 0.255) belum memicu di sekitar ~0.45 |
 
-> Untuk penjelasan lengkap setiap rumus dengan contoh angka nyata, lihat **[docs/COMPUTATION.md](docs/COMPUTATION.md)**.
+> Untuk penjelasan lengkap setiap rumus dengan contoh angka nyata, lihat **[docs/COMPUTATION.md](docs/COMPUTATION.md)**, dan dasar paper tiap mekanisme di **[docs/ACADEMIC_BASIS.md](docs/ACADEMIC_BASIS.md)**.
 
 ---
 
@@ -409,15 +455,15 @@ Disimpan saat **Proses Video Ini** atau **Batch Semua** pertama kali. Berisi out
       "iris_x": 0.12,
       "iris_y": -0.05,
       "blendshapes": { "browDownLeft": 0.12, "jawOpen": 0.08, "...": "..." },
-      "hand_forehead": 0.0,
-      "hand_chin": 0.0
+      "hand_one": 0.0,
+      "hand_two": 0.0
     }
   ]
 }
 ```
 
-`hand_forehead` = proporsi titik tangan di zona dahi (y ∈ [-0.20, 0.25) dari crop).
-`hand_chin` = proporsi titik tangan di zona pipi/dagu (y ∈ [0.25, 1.20] dari crop).
+`hand_one` = 1.0 jika terdeteksi tepat 1 tangan di area wajah (count-based). Cue LEMAH Confusion via `max(hand_one,hand_two)*hand_conf_w=0.40` — Behera 2020: HoF ↑ saat difficulty ↑ + Mahmoud 2011: "unsure".
+`hand_two` = 1.0 jika terdeteksi ≥2 tangan di area wajah. Cue LEMAH Confusion (HoF) + cue LEMAH Frustration (`hand_frus_w=0.30`) — Grafsgaard 2013b: hand-to-face ↔ self-efficacy rendah.
 
 ### SigLIP Score Cache (`siglip_cache/`)
 
@@ -469,25 +515,35 @@ Labeler-App-Siglip-2/
 ├── core/
 │   ├── siglip_model.py       # Singleton loader SigLIP2 (lazy load, GPU/CPU)
 │   ├── inference.py          # Hybrid scoring: SigLIP × Landmark fusion
-│   ├── landmark_analyzer.py  # MediaPipe: head pose, iris, blendshapes, tangan, viz
-│   ├── face_detector.py      # BlazeFace crop wajah 512×512 + return bbox
+│   ├── landmark_analyzer.py  # MediaPipe: head pose, iris, blendshape, tangan, scoring, viz
+│   ├── action_units.py       # Blendshape/py-feat → AU FACS, baseline-normalized
+│   ├── pyfeat_worker.py      # Worker py-feat (subprocess di .venv-pyfeat, GPU) — detektor AU utama
+│   ├── pyfeat_client.py      # Client cross-venv ke pyfeat_worker (stdin/stdout JSON)
+│   ├── face_detector.py      # BlazeFace crop wajah + return bbox
 │   ├── rules.py              # DEFAULT_RULES + load_rules / save_rules
 │   ├── recalculate.py        # Recalculate batch dari raw_cache + siglip_cache
 │   └── README_SIGLIP.md      # Dokumentasi teknis pipeline inferensi
 │
 ├── ui/
 │   ├── constants.py          # LABELS, LABEL_COLORS, DEFAULT_PROMPT_GROUPS
-│   ├── left_panel.py         # Panel kiri: video player, galeri frame, mode Rules/Gallery
-│   ├── right_panel.py        # Panel kanan: statistik AI+Manual, AI score bars, prompt, threshold
+│   ├── left_panel.py         # Panel kiri: video player, galeri frame (+ marker frame netral)
+│   ├── right_panel.py        # Panel kanan: statistik, AI bars, prompt, threshold, kartu kalibrasi
 │   └── rules_panel.py        # RulesContent (embedded di gallery) + RulesPanel (compat wrapper)
 │
 ├── utils/
-│   ├── io.py                 # Baca/tulis CSV/JSON annotations
+│   ├── io.py                 # Baca/tulis CSV/JSON annotations + thresholds
+│   ├── person_neutral.py     # Kalibrasi per-orang: simpan/baca frame netral (person_neutrals.json)
 │   └── video.py              # Ekstraksi frame, crop, landmark pipeline, simpan cache
 │
 └── docs/
-    ├── RULES_PANEL.md        # Dokumentasi lengkap Rules Editor & semua parameter
-    └── COMPUTATION.md        # Panduan teknis: dari angka MediaPipe ke prediksi akhir
+    ├── ACADEMIC_BASIS.md     # Dasar akademis + verbatim quote tiap mekanisme
+    ├── ALUR_METODE.md        # Alur sinyal → emosi → paper
+    ├── COMPUTATION.md        # Panduan teknis: dari angka MediaPipe ke prediksi akhir
+    ├── DESIGN_RATIONALE.md   # Alasan tiap bobot (kode vs paper)
+    ├── PANDUAN_ANOTASI_MANUAL.md  # Panduan anotator manusia
+    └── RULES_PANEL.md        # Dokumentasi lengkap Rules Editor & semua parameter
+
+(py-feat berjalan di venv terpisah `.venv-pyfeat` — torch+CUDA, di luar pohon ini)
 ```
 
 ---
@@ -507,6 +563,7 @@ Semua output tersimpan di `{folder_dataset}/{OUTPUT_DIR}/` (default: `hasil_labe
 | `skipped_videos.json` | JSON | Daftar video yang di-skip |
 | `thresholds.json` | JSON | Nilai threshold per label yang terakhir disimpan |
 | `rules.json` | JSON | Parameter scoring landmark + hybrid weights (dari Rules Editor) |
+| `person_neutrals.json` | JSON | Kalibrasi per-orang: AU baseline frame netral per siswa (`{uuid: {AU..., _video, _frame}}`) — disimpan di folder dataset |
 | `raw_cache/{safe_name}.json` | JSON | Raw MediaPipe features per frame per video |
 | `siglip_cache/{safe_name}.json` | JSON | SigLIP scores per frame per video |
 | `cropped_faces/clean/` | JPG | Crop wajah bersih 512×512 untuk training |

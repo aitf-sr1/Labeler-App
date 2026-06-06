@@ -10,12 +10,13 @@ Flow:
     compute_emotion_scores(cfg)     siglip_scores
     ↓_______________________________↓
     hybrid_scores → frame_preds → batch_history
+
+ARSITEKTUR: MediaPipe-only — AU dihitung dari blendshape MediaPipe
+(compute_action_units), tidak ada py-feat atau subprocess eksternal.
 """
 
 import os
 import json
-import numpy as np
-
 from .landmark_analyzer import LandmarkResult, compute_emotion_scores
 
 
@@ -26,19 +27,24 @@ def _safe_name(rel_path: str) -> str:
 
 
 def _reconstruct_lr(frame_data: dict) -> LandmarkResult:
-    """Rekonstruksi LandmarkResult dari data cache."""
+    """Rekonstruksi LandmarkResult dari data cache.
+
+    AU dihitung oleh compute_emotion_scores() via compute_action_units(blendshapes)
+    — tidak ada py-feat, tidak ada subprocess eksternal.
+    """
     return LandmarkResult(
-        yaw=frame_data.get("yaw", 0.0),
-        pitch=frame_data.get("pitch", 0.0),
-        roll=frame_data.get("roll", 0.0),
-        iris_x=frame_data.get("iris_x", 0.0),
-        iris_y=frame_data.get("iris_y", 0.0),
-        iris_img_x=frame_data.get("iris_img_x", 0.0),
-        iris_img_y=frame_data.get("iris_img_y", 0.0),
-        blendshapes=frame_data.get("blendshapes", {}),
-        face_found=frame_data.get("face_found", False),
-        hand_forehead=frame_data.get("hand_forehead", 0.0),
-        hand_chin=frame_data.get("hand_chin", 0.0),
+        yaw        = frame_data.get("yaw", 0.0),
+        pitch      = frame_data.get("pitch", 0.0),
+        roll       = frame_data.get("roll", 0.0),
+        iris_x     = frame_data.get("iris_x", 0.0),
+        iris_y     = frame_data.get("iris_y", 0.0),
+        iris_img_x = frame_data.get("iris_img_x", 0.0),
+        iris_img_y = frame_data.get("iris_img_y", 0.0),
+        blendshapes= frame_data.get("blendshapes", {}),
+        face_found = frame_data.get("face_found", False),
+        # Count-based hand (Grafsgaard 2013b). Cache lama mungkin pakai key berbeda → default 0.0.
+        hand_one   = frame_data.get("hand_one", 0.0),
+        hand_two   = frame_data.get("hand_two", 0.0),
     )
 
 
@@ -96,10 +102,21 @@ def recalculate_batch(
         siglip_frames = siglip_data["frames"]
         n_frames      = len(raw_frames)
 
-        # Landmark scores per frame dengan rules baru
+        # Baseline netral per-orang (Bosch 2023 + FACS). dataset_dir = induk raw_cache_dir.
+        # Format MediaPipe AU (AU1, AU2, AU4, ...) — dipakai compute_action_units() untuk
+        # override neutral anchor dengan nilai netral pribadi orang ini.
+        try:
+            from utils.person_neutral import get_person_neutral
+            _pn = get_person_neutral(os.path.dirname(raw_cache_dir), rel_path)
+        except Exception:
+            _pn = None
+
+        # Landmark scores per frame dengan rules baru (MediaPipe blendshape)
         land_scores = []
         for fd in raw_frames:
             lr = _reconstruct_lr(fd)
+            if _pn:
+                lr.person_neutral = _pn
             land_scores.append(compute_emotion_scores(lr, rules))
 
         # Filter dead frames (semua skor ≈ 0 = glitch MediaPipe)
@@ -137,18 +154,6 @@ def recalculate_batch(
                 for f in range(n_frames)
             ]
 
-            # Temporal restlessness bonus untuk Boredom (i==0)
-            if i == 0:
-                yaws = [raw_frames[f]["yaw"] for f in range(n_frames) if raw_frames[f].get("face_found")]
-                if len(yaws) >= 2:
-                    yaw_std = float(np.std(yaws))
-                    std_min   = hcfg["restless_std_min"]
-                    std_range = hcfg["restless_std_range"]
-                    bonus_max = hcfg["restless_bonus_max"]
-                    bonus = min(max((yaw_std - std_min) / std_range, 0.0), 1.0) * bonus_max
-                    if bonus > 0.01:
-                        hybrid_scores = [round(min(s + bonus, 1.0), 4) for s in hybrid_scores]
-
             thr         = thresholds[i]
             frame_preds = [1 if s >= thr else 0 for s in hybrid_scores]
 
@@ -181,30 +186,6 @@ def recalculate_batch(
             }
 
 
-        # ── Single-label dominance gap (spec: most images = 1 label) ─────────
-        dual_label_gap = rules["hybrid"].get("dual_label_gap", 0.12)
-        if dual_label_gap > 0:
-            for f_idx in range(n_frames):
-                active = []
-                for i in range(4):
-                    score = per_label_history[str(i)]["frame_scores"][f_idx]
-                    if score >= thresholds[i]:
-                        active.append((i, score))
-                if len(active) >= 2:
-                    active.sort(key=lambda x: x[1], reverse=True)
-                    top_score = active[0][1]
-                    for label_idx, score in active[1:]:
-                        if top_score - score > dual_label_gap:
-                            per_label_history[str(label_idx)]["frame_preds"][f_idx] = 0
-
-            # Recompute predictions after dominance gap
-            for i in range(4):
-                r_lbl = per_label_history[str(i)]
-                r_lbl["frame_preds"] = [1 if s >= thresholds[i] else 0 for s in r_lbl["frame_scores"]]
-                valid_preds = [p for j, p in enumerate(r_lbl["frame_preds"]) if j not in rejected_set]
-                r_lbl["vote_pos"] = sum(valid_preds)
-                r_lbl["vote_neg"] = len(valid_preds) - r_lbl["vote_pos"]
-                r_lbl["prediction"] = 1 if (len(valid_preds) > 0 and r_lbl["avg_score"] >= thresholds[i]) else 0
 
         # Enforce mutual exclusion pada prediksi FINAL
         # Hanya pasangan yang secara semantik berlawanan langsung.

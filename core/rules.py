@@ -3,6 +3,15 @@ core/rules.py
 
 Konfigurasi parameter kalkulasi landmark emosi.
 Semua konstanta di compute_emotion_scores() dapat diubah dari sini.
+
+ARSITEKTUR PIPELINE (branch feature/mediapipe-only-accurate):
+  MediaPipe FaceLandmarker → blendshape → AU normalisasi → skor landmark
+  MediaPipe HandLandmarker → jumlah tangan di wajah → cue tangan
+  SigLIP2 → skor visual holistik
+  Hybrid = α × SigLIP + β × Landmark
+
+Tidak ada py-feat, tidak ada subprocess eksternal. Semua inferensi sinkron
+dalam satu proses, satu virtual environment.
 """
 
 import os
@@ -20,96 +29,125 @@ DEFAULT_RULES = {
         "iris_blink_zero_th":     0.0,   # 0 = disabled; > 0 → iris_y = 0 sepenuhnya jika blink_corr >= nilai ini (squint fokus ekstrem)
     },
     "boredom": {
+        # DIPERKETAT (lebih sensitif untuk atas/samping; bawah TETAP dikecualikan via gaze_dev_bore):
         "gaze_dead_zone": 5.0,       # gaze_dev < ini = tidak bosan dari gaze
-        "gaze_range": 10.0,          # range gaze di atas dead zone — jenuh di dev=18°
-        "blink_dead_zone": 0.20,     # eyeBlink < ini = tidak dihitung
-        "blink_range": 0.50,         # range blink di atas dead zone
+        "gaze_range": 8.0,           # boredom penuh di dev=13° (dulu 10 → 15°)
+        # AU43 blendshape eyeBlink — ter-normalisasi 0–1 via au["AU43"]
+        "blink_dead_zone": 0.20,     # AU43 < ini = tidak dihitung (dead zone normalisasi)
+        "blink_range": 0.50,         # range AU43 di atas dead zone
         # Craig et al. (2008): AU43 (eye closure) = primary boredom signal
-        "sig_expr_weight": 0.70,     # bobot blink (AU43) dalam expr path
-        "blend_a": 0.85,             # koefisien campuran utama
-        "blend_b": 0.15,             # koefisien campuran sekunder
-        "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk blink gated aktif
-        # Craig et al. (2008): tidak ada AU yang memvalidasi suppressor untuk boredom — hanya AU43
-        "squint_blink_correction": 0.50,  # koreksi teknis: squint sedikit menutup mata → koreksi AU43 reading
-        "fwd_yaw_th":    5.0,  # |yaw| < ini = hadap depan = gaze_bore dimatikan
-        "fwd_yaw_range": 4.0,  # range transisi sebelum bore_gaze penuh
-        "frus_bore_suppress_th": 0.40,  # frus > ini mulai suppress boredom (tegang ≠ bosan)
-        "frus_bore_suppress":    0.45,  # max reduksi boredom oleh frustration — D'Mello 2012: Frus→Bore significant
-        # Craig et al. (2008): AU43 (eye closure) = primary boredom signal, independent of gaze
-        "blink_direct_th": 0.45,    # eyeBlink_corrected > ini → kontribusi langsung ke boredom (AU43, tanpa gaze gate)
-        "blink_direct_w":  0.45,    # bobot kontribusi langsung blink ke boredom (Craig2008: AU43 primary signal)
+        "sig_expr_weight": 0.70,     # bobot AU43 dalam expr path
+        "blend_a": 0.85,
+        "blend_b": 0.15,
+        "expr_gaze_gate_th": 0.35,   # bore_gaze min untuk AU43-gated aktif
+        "fwd_yaw_th":    4.0,        # gaze menjauh >4° mulai picu boredom (dulu 5)
+        "fwd_yaw_range": 4.0,
+        # Craig et al. (2008): AU43 = primary signal, independent of gaze
+        "blink_direct_th": 0.45,
+        "blink_direct_w":  0.45,
     },
     "engagement": {
         # Whitehill et al. (2014): engagement = forward gaze + eye openness (holistic appearance)
         # Level 1: "looking away from computer, eyes completely closed" = NOT engaged
         # Level 2: "eyes barely open, clearly not 'into' the task" = NOT engaged
-        "tegak_dead_zone": 8.0,      # gaze_dev dead zone (°)
-        "tegak_range": 14.0,         # range setelah dead zone
-        "yaw_gate_th": 22.0,         # abs(yaw) mulai suppress engagement (°)
-        "yaw_gate_range": 12.0,      # engagement nol di abs(yaw) ≥ 34°
-        "roll_gate_th": 15.0,        # abs(roll) mulai suppress engagement (°)
-        "roll_gate_range": 10.0,     # engagement nol di abs(roll) ≥ 25°
-        "blink_heavy_th": 0.50,      # AU43 eye closure (Whitehill level 1-2): threshold droopy eyes
-        "blink_heavy_min": 0.30,     # engagement minimum jika droopy penuh
-        "eye_wide_boost": 0.20,      # inverse of "eyes barely open" (Whitehill level 2)
-        "pitch_gate_th": 15.0,       # pitch > ini mulai suppress (Whitehill: "looking away from computer")
-        "pitch_gate_range": 15.0,    # engagement nol di pitch >= th+range
-        # D'Mello & Graesser (2012): Boredom dan Engagement near-mutually exclusive
+        # DIPERKETAT: hadap atas/samping (bukan ke layar) lebih cepat kurangi engagement
+        # (Whitehill 2014 "looking away from computer" = NOT engaged). Nunduk TIDAK dihukum (Sümer 2021).
+        "tegak_dead_zone": 5.0,      # gaze_dev dead zone (°) — dulu 8
+        "tegak_range": 12.0,         # dulu 14
+        "yaw_gate_th": 14.0,         # menoleh samping >14° mulai kurangi engagement — dulu 22
+        "yaw_gate_range": 12.0,      # engagement nol di yaw 26°
+        "roll_gate_th": 15.0,
+        "roll_gate_range": 10.0,
+        # AU43 via au[] — ter-normalisasi 0–1 dari blendshape eyeBlink
+        "blink_heavy_th": 0.50,      # AU43 threshold droopy eyes (Whitehill level 1-2)
+        "blink_heavy_min": 0.30,
+        "pitch_gate_th": 10.0,       # mendongak >10° mulai kurangi engagement (Whitehill) — dulu 15
+        "pitch_gate_range": 15.0,
+        # D'Mello & Graesser (2012) + Gupta et al. (2016) DAiSEE: Bore↔Eng near-mutually exclusive
         "bore_suppress_th": 0.45,
         "bore_eng_suppress": 0.40,
-        # D'Mello & Graesser (2012): "Confusion → Engagement/Flow transition significant" (productive struggle)
-        "conf_eng_suppress_th": 0.50,
-        "conf_eng_suppress":    0.35,
+        # Gupta et al. (2016) DAiSEE: default nonaktif — lihat komentar kode
+        "bore_eng_low_boost": 0.0,
+        "bore_eng_low_th":    0.25,
+    },
+    "action_units": {
+        # Normalisasi baseline-relative blendshape MediaPipe → intensitas AU FACS.
+        # intensity = clamp((raw - neutral)/(active - neutral), 0, 1). Lihat core/action_units.py.
+        # Anchor = kalibrasi empiris dari 21.204 frame raw_cache dataset ini.
+        # neutral ≈ median populasi (otot diam), active ≈ p90–p99 (AU aktif penuh).
+        "AU1_neutral": 0.46, "AU1_active": 0.88,    # browInnerUp (inner brow raise — Frustration AU1)
+        "AU2_neutral": 0.47, "AU2_active": 0.86,    # browOuterUp (outer brow raise — Frustration AU2)
+        # browDown median 0.001 → stretch AGRESIF ke active=0.05 agar AU4 terdeteksi.
+        # noseSneer co-occur booster (×0.3) ditambahkan di _raw_action_units() sebelum normalisasi.
+        "AU4_neutral": 0.001, "AU4_active": 0.05,   # browDown+sneer (Confusion AU4) — stretch agresif
+        "AU7_neutral": 0.30, "AU7_active": 0.52,    # eyeSquint   (lid tightener — Confusion AU7)
+        "AU12_neutral": 0.05, "AU12_active": 0.55,  # mouthSmile  (questioning smile — gate Confusion)
+        "AU14_neutral": 0.002, "AU14_active": 0.08, # mouthDimple (dimpler — Grafsgaard2013 frustration)
+        # AU25+AU26: Namba 2024 — "most significant component" thinking face (Component 2).
+        # MediaPipe menyediakan mouthOpen (≈AU25) dan jawOpen (≈AU26) secara langsung.
+        "AU25_neutral": 0.05, "AU25_active": 0.50,  # mouthOpen  (Lips Part — mulut terbuka sedikit)
+        "AU26_neutral": 0.05, "AU26_active": 0.60,  # jawOpen    (Jaw Drop  — rahang turun)
+        "AU43_neutral": 0.12, "AU43_active": 0.55,  # eyeBlink   (eye closure — Boredom AU43)
     },
     "confusion": {
         # Craig et al. (2008) Table 2: AU4 (brow lowerer) 95%, AU7 (lid tightener) 78%,
-        # AU4+AU7 co-occurrence 73%, AU12 (questioning smile) 95% secondary.
-        # Grafsgaard et al. (2011): AU4 validated via HMM as primary confusion predictor.
-        # NOTE: MediaPipe browDown (AU4) range di video natural: median=0.001, p90=0.033.
-        # Craig 2008 memvalidasi AU4 dari emote-aloud (peak expressions), bukan continuous video.
-        # Threshold dikalibrasi ke range MediaPipe nyata agar AU4 dapat dideteksi.
-        "brow_dn_th": 0.05,          # browDown avg / ini = brow_dn_v (AU4 brow lowerer, Craig2008 95%)
-        "au7_th": 0.15,              # eyeSquint avg min untuk AU7 (lid tightener) co-signal (Craig2008 78%)
-        "au4_au7_co_w": 0.50,        # weight co-occurrence AU4+AU7 (Craig2008 73%)
-        # Craig et al. (2008): AU12 questioning smile co-occurs 95% — gate floor prevents zeroing confusion
-        "smile_conf_gate_th": 0.35,  # mouthSmile >= ini → mulai gate confusion
-        "smile_conf_gate_floor": 0.30,  # confusion tetap ≥30% meski senyum penuh (AU12 co-occurs)
+        # AU4+AU7 co-occurrence 73%. Grafsgaard (2011): AU4 via HMM as primary predictor.
+        "au4_au7_co_w": 0.50,
+        "au7_alone_w": 0.78,
+        # Hand-over-face (any hand) → cue Confusion. Dua paper saling menguatkan:
+        #   Mahmoud 2011: index-finger touching face = 12/15 "thinking" + 2 "unsure" (≈Confusion), KUANTITATIF;
+        #   Dong 2026 (ConfusionBench): hand-to-face (touch chin / press forehead) → "thinking, frustration, hesitation";
+        #   Behera 2020: HoF naik saat difficulty ↑; Mahmoud 2016: HoF = "cognitive mental states".
+        # max(hand_one, hand_two) karena paper tidak bedakan jumlah untuk Confusion.
+        # Dinaikkan 0.40→0.50: basis Mahmoud 2011 KUAT (14/15 segmen hand-to-face = thinking/unsure ≈93%).
+        "hand_conf_w": 0.50,         # cue Confusion KUAT — menambah, belum memicu sendiri
+        # Namba et al. (2024): mulut terbuka (AU25+AU26) = "most significant component" thinking face.
+        # Chain: thinking face (Namba) + thinking = Confusion (D'Mello 2012).
+        # Dinaikkan 0.25→0.35: AU25/AU26 kini tersedia dari MediaPipe mouthOpen/jawOpen secara langsung.
+        "mouth_open_conf_w": 0.35,   # dinaikkan karena AU25/AU26 tersedia langsung (bukan via py-feat)
+        # AU12 questioning smile sebagai gate (bukan sinyal positif) — floor cegah zeroing confusion
+        "smile_conf_gate_th": 0.45,
+        "smile_conf_gate_floor": 0.30,
         "blend_a": 0.85,
         "blend_b": 0.15,
-        # D'Mello & Graesser (2012): "Confusion→Boredom occurred at chance" — boredom suppresses confusion
-        "bore_conf_suppress_bore": 0.40,
     },
     "frustration": {
         # Craig et al. (2008): AU1 (inner brow raise) + AU2 (outer brow raise) = PRIMARY frustration signals (100% coverage)
         # Note: Craig 2008 Table 2 uses non-standard numbering; Grafsgaard 2013 confirms standard FACS: AU1=inner, AU2=outer.
-        # MediaPipe: browInnerUp = AU1 (inner), browOuterUpLeft/Right = AU2 (outer)
-        # KALIBRASI: browInnerUp/browOuterUp median alami = 0.43-0.47 di video natural.
-        # Threshold harus DI ATAS baseline resting state untuk mendeteksi brow raise yang benar-benar elevated.
-        # Data: browInnerUp p75=0.712, browOuterUp p75=0.723 → threshold 0.75 = hanya top 25% yang fire.
-        "brow_outer_up_th": 0.75,    # browOuterUp avg / ini = bou_fr (AU2 outer, Craig2008 primary; dikalibrasi ke p75 natural)
-        "brow_inner_up_th": 0.75,    # browInnerUp / ini = biu_fr (AU1 inner, Craig2008 primary; dikalibrasi ke p75 natural)
-        # brow_raise_direct_w: Craig2008 AU1+AU2 mendapat face weight lebih tinggi dari secondary signals.
-        "brow_raise_direct_w": 0.65, # direct weight untuk AU1+AU2 primary (Craig2008: 100% coverage)
-        # Grafsgaard et al. (2013): AU4 (brow lowering) positively correlated with frustration
-        "brow_dn_th": 0.40,          # browDown avg / ini = br_fr (AU4 — secondary, Grafsgaard 2013)
-        "face_weight": 0.45,         # skala AU4 secondary signal
+        # MediaPipe: browInnerUp = AU1 (inner), browOuterUpLeft/Right = AU2 (outer).
+        # Intensitas AU1/AU2 dihitung baseline-normalized (core/action_units.py): alis "diam"
+        # MediaPipe ~0.46 kini = 0 intensity, sehingga frustration TIDAK lagi over-fire saat netral.
+        # Dinaikkan 0.65→0.70: kompensasi hilangnya py-feat AU4 range (sebelumnya 0.31–0.61),
+        # menguatkan sinyal primer AU1+AU2 sesuai Craig 2008 "100% coverage".
+        "brow_raise_direct_w": 0.70, # dinaikkan: kompensasi MediaPipe-only + Craig2008 100% coverage
+        # Grafsgaard et al. (2013): "Action Unit 4 (brow lowering) was POSITIVELY correlated with
+        # frustration" + AU14 (dimpling) juga positif.
+        # Dinaikkan 0.60→0.65: kompensasi hilangnya py-feat — lebih mengandalkan AU4+AU14 MediaPipe.
+        "face_weight": 0.65,         # dinaikkan: kompensasi MediaPipe-only (Grafsgaard 2013)
+        # Frustration → HANYA 2-tangan (hand_two). Grafsgaard 2013b: two-hands-to-face ↔ self-efficacy
+        # RENDAH (signifikan). Dikuatkan: Nojavanasghari 2017 (Hand2Face) & Dong 2026 (ConfusionBench).
+        "hand_frus_w": 0.30,
         "blend_a": 0.85,
         "blend_b": 0.15,
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        # Whitehill et al. (2014): "static pixels contain bulk of information" → SigLIP primary untuk holistic state.
-        # Confusion: MediaPipe browDown (AU4) jarang aktif di video natural → SigLIP lebih reliable.
-        # Boredom: AU43 (gaze+blink) terukur baik via landmark → land_w tinggi.
-        # Frustration: AU1+AU2 (browRaise) aktif di MediaPipe → land_w tinggi.
-        # Engagement: Whitehill 2014 explicitly prefers holistic appearance → siglip_w lebih tinggi.
-        "siglip_w": [0.30, 0.40, 0.65, 0.30],   # [Bore, Eng, Conf, Frus] — Conf↑0.65: browDown MediaPipe unreliable
-        "land_w":   [0.70, 0.60, 0.35, 0.70],   # Conf↓0.35: AU4 jarang aktif; Bore+Frus↑0.70: AU43+AU1/2 reliable
-        "dual_label_gap": 0.12,       # Min gap antara top vs secondary label untuk mempertahankan dual-label (spec: most images = 1 label)
-        "strict_rules_strength": 0.20, # Kekuatan soft bias dari strict labeling rules (0 = off, 0.20 = moderate)
-        "restless_bonus_max": 0.0,   # disabled — heuristik tanpa basis definisi semantik
-        "restless_std_min": 3.0,
-        "restless_std_range": 7.0,
+        # Prinsip: SigLIP TERTINGGI di Engagement (holistik, Whitehill 2014); emosi AU-diskrit
+        # (Craig 2008) bertumpu landmark MediaPipe TAPI tetap diberi SigLIP sebagai cross-check
+        # independen — berguna saat landmark sulit (oklusi tangan, wajah miring). SigLIP = expression
+        # reader tervalidasi (Zhai 2023); bobotnya = kalibrasi empiris yang SAH (seperti threshold).
+        # Urutan siglip_w (Eng > Conf > Frus > Bore) mencerminkan seberapa holistik tiap emosi:
+        # - Engagement: holistik, tak ada AU dominan → siglip_w tertinggi (0.50).
+        # - Confusion: AU4+AU7 (MediaPipe) primer (0.65) + SigLIP 0.35 (jaring pengaman oklusi).
+        # - Frustration: AU1+2/AU4/AU14 primer (0.70) + SigLIP 0.30 (gestalt stres).
+        # - Boredom: gaze+AU43 primer (0.75) + SigLIP 0.25 (tired/vacant look).
+        "siglip_w": [0.25, 0.50, 0.35, 0.30],   # [Bore, Eng, Conf, Frus]
+        "land_w":   [0.75, 0.50, 0.65, 0.70],
+        # Gaze-attention gate khusus Engagement di inference.py — Whitehill+GazeTutor:
+        # SigLIP tidak tahu arah pandang, gate ini cegah engaged tinggi saat gaze jauh dari layar.
+        "eng_gaze_gate_th":    15.0,  # gaze_dev_eng (°) mulai suppress hybrid score
+        "eng_gaze_gate_range": 15.0,  # nol di th+range (default 30°)
+        "eng_gaze_gate_hard":  0.20,  # max pengurangan skor per frame (0–1)
     },
 }
 
