@@ -1921,23 +1921,21 @@ class VideoLabelerApp:
                     _lines.append(
                         f"  hand   1-hand={_lr.hand_one:.3f}  2-hands={_lr.hand_two:.3f}"
                     )
-                    # ── AU source & nilai (MENTAH py-feat — dipakai untuk baseline per-orang) ──
-                    _src = getattr(_lr, "au_source", "") or "?"
-                    _pf  = getattr(_lr, "pyfeat_aus", None)
-                    if _pf:
-                        _au_str = "  ".join(
-                            f"{_k}={_pf.get(_k, 0.0):.3f}"
-                            for _k in ["AU01","AU02","AU04","AU07","AU12","AU14","AU43","AU25","AU26"]
-                        )
-                        _lines.append(f"  AU[{_src}]  {_au_str}")
-                    else:
-                        from core.action_units import compute_action_units as _cau
-                        _au_mp = _cau(_lr.blendshapes, self.rules)
-                        _au_str = "  ".join(
-                            f"{_k}={_au_mp.get(_k, 0.0):.3f}"
-                            for _k in ["AU1","AU2","AU4","AU7","AU12","AU14","AU43"]
-                        )
-                        _lines.append(f"  AU[{_src}/mediapipe-fallback]  {_au_str}")
+                    # ── AU dihitung dari blendshape MediaPipe (mediapipe-only, TANPA py-feat) ──
+                    # Tampilkan SUMBER blendshape agar bisa diverifikasi: 'mediapipe' (bawaan
+                    # FaceLandmarker) atau 'mp_blendshapes' (model py-feat, jika env BLENDSHAPE_SOURCE diset).
+                    from core.action_units import compute_action_units as _cau
+                    try:
+                        from core.landmark_analyzer import _BLENDSHAPE_SOURCE as _bsrc
+                    except Exception:
+                        _bsrc = "mediapipe"
+                    _au_mp = _cau(_lr.blendshapes, self.rules,
+                                  person_neutral=getattr(_lr, "person_neutral", None))
+                    _au_str = "  ".join(
+                        f"{_k}={_au_mp.get(_k, 0.0):.3f}"
+                        for _k in ["AU1","AU2","AU4","AU7","AU12","AU14","AU25","AU26","AU43"]
+                    )
+                    _lines.append(f"  AU[blendshape={_bsrc}]  {_au_str}")
 
                     # ── Landmark emotion scores ──
                     _lsc = _ces(_lr, self.rules)
@@ -2349,21 +2347,23 @@ class VideoLabelerApp:
                             pass
                         return
 
-                    # Debug ringkas: au_source + pose + AU43 per frame
-                    _src_list = [getattr(lr, "au_source", "?") or "?" for lr in landmark_results]
-                    _pf_ok    = sum(1 for lr in landmark_results if getattr(lr, "pyfeat_aus", None))
+                    # Debug ringkas (mediapipe-only): sumber blendshape + pose + AU43 per frame
+                    from core.action_units import compute_action_units as _cau2
+                    try:
+                        from core.landmark_analyzer import _BLENDSHAPE_SOURCE as _bsrc2
+                    except Exception:
+                        _bsrc2 = "mediapipe"
                     _frame_parts = []
                     for _i, _lr in enumerate(landmark_results):
                         if not _lr.face_found:
                             _frame_parts.append(f"[{_i}] no_face")
                         else:
-                            _pf = getattr(_lr, "pyfeat_aus", None)
-                            _au43 = _pf.get("AU43", 0.0) if _pf else 0.0
+                            _au43 = _cau2(_lr.blendshapes, self.rules,
+                                          person_neutral=getattr(_lr, "person_neutral", None)).get("AU43", 0.0)
                             _frame_parts.append(
-                                f"[{_i}] yaw={_lr.yaw:+.1f}° pitch={_lr.pitch:+.1f}° "
-                                f"AU43={_au43:.3f} src={_src_list[_i]}"
+                                f"[{_i}] yaw={_lr.yaw:+.1f}° pitch={_lr.pitch:+.1f}° AU43={_au43:.3f}"
                             )
-                    print(f"[Batch] {os.path.basename(rel_path):<38} pyfeat={_pf_ok}/{len(landmark_results)}  "
+                    print(f"[Batch] {os.path.basename(rel_path):<38} blendshape={_bsrc2}  "
                           + "  |  ".join(_frame_parts))
 
                     item_ready = {
