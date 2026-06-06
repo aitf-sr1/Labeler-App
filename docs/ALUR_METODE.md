@@ -45,7 +45,7 @@ Aplikasi ini **melabeli emosi belajar siswa dari video, per-frame**, menghasilka
 > "The Facial Action Coding System (Ekman & Friesen, 1978) is an objective method for quantifying facial movement in terms of component actions."
 > — Bartlett et al. (1999)
 
-**Penjelasan:** Emosi diukur lewat **gerakan otot wajah objektif (Action Unit FACS)**, bukan tebakan kategori. Karena blendshape MediaPipe **bukan** AU FACS sungguhan (terbukti lemah untuk AU alis: korelasi AU4 r=0.09 vs detektor FACS), ekstraksi AU untuk **Confusion & Frustration** memakai **MediaPipe FaceLandmarker blendshape** (dikonversi ke AU via normalisasi baseline-relative, kalibrasi stretch agresif AU4). MediaPipe dipakai untuk gaze, AU43-boredom, visualisasi, dan sebagai *fallback*.
+**Penjelasan:** Emosi diukur lewat **gerakan otot wajah objektif (Action Unit FACS)**, bukan tebakan kategori. Karena blendshape MediaPipe **bukan** AU FACS sungguhan (terbukti lemah untuk AU alis: korelasi AU4 r=0.09 vs detektor FACS), ekstraksi AU untuk **Confusion & Frustration** memakai **MediaPipe FaceLandmarker blendshape** (dikonversi ke AU via normalisasi baseline-relative, kalibrasi stretch agresif AU4). MediaPipe juga dipakai untuk gaze, AU43-boredom, dan visualisasi — semua dalam satu proses (TANPA py-feat).
 
 **Di kode:** `core/action_units.py`. Semua AU sinkron dalam satu proses — tidak ada subprocess. *(ACADEMIC_BASIS §2, §3; DESIGN_RATIONALE §16)*
 
@@ -109,11 +109,11 @@ Aplikasi ini **melabeli emosi belajar siswa dari video, per-frame**, menghasilka
 ## Langkah 8 — Yang JUJUR bukan dari paper (limitasi)
 
 Agar tidak over-claim, ini bagian yang **engineering / interpretasi**, bukan ketentuan paper:
-- **Angka** (threshold deteksi, anchor AU, bobot hybrid, dead-zone) = kalibrasi empiris — paper tak memberi angka untuk MediaPipe/py-feat/SigLIP.
+- **Angka** (threshold deteksi, anchor AU, bobot hybrid, dead-zone) = kalibrasi empiris — paper tak memberi angka untuk MediaPipe/SigLIP.
 - **Cross-suppression** — hanya **Bore↔Eng** yang dipertahankan (DAiSEE "complementary" + D'Mello near-exclusive). Conf→Eng / Conf→Bore / Frus→Bore + dominance-gap + strict-rules **DIHAPUS** (tak berdasar / lawan multi-label). Bore↔Eng = operasionalisasi per-frame dari temuan eksklusivitas.
 - **Hand-over-face** — dipetakan ke dua emosi (lihat DESIGN_RATIONALE §4):
-  - **Semua tangan (`max(hand_one,hand_two)`) → cue LEMAH Confusion**: Behera 2020 (*HoF naik saat difficulty ↑*) + D'Mello 2012 (*Confusion = cognitive disequilibrium saat impasses*) + Mahmoud 2016. Dua paper saling menguatkan; Behera & Mahmoud tidak bedakan jumlah tangan.
-  - **2 tangan → cue LEMAH Frustration JUGA**: Grafsgaard 2013b (verbatim: *two-hands ↔ self-efficacy rendah*). 2-tangan boleh contribute ke Confusion DAN Frustration (multi-label).
+  - **Semua tangan (`max(hand_one,hand_two)`) → cue KUAT Confusion**: Behera 2020 (*HoF naik saat difficulty ↑*) + D'Mello 2012 (*Confusion = cognitive disequilibrium saat impasses*) + Mahmoud 2016. Dua paper saling menguatkan; Behera & Mahmoud tidak bedakan jumlah tangan.
+  - **2 tangan → cue pendukung Frustration JUGA**: Grafsgaard 2013b (verbatim: *two-hands ↔ self-efficacy rendah*). 2-tangan boleh contribute ke Confusion DAN Frustration (multi-label).
   - Bobot kecil (0.20) → hanya menambah, tidak memicu sendiri.
 - **Gaze webcam** — konstruk dari eye-tracker (GazeTutor); metode webcam (Sümer) lebih kasar.
 
@@ -127,13 +127,13 @@ Agar tidak over-claim, ini bagian yang **engineering / interpretasi**, bukan ket
 |---|---|---|
 | 4 label emosi | DAiSEE 2016, D'Mello 2012 | Ya: `LABELS` |
 | Multi-label biner (sigmoid) | RAF-ML/DAiSEE + Zhai 2023 | Ya: `torch.sigmoid` per-label |
-| Frustration = AU1+AU2 (+AU4/14) | Craig 2008, Grafsgaard 2013 | Ya: `au["AU1"]·au["AU2"]` py-feat |
-| Confusion = AU4+AU7 (gate AU12) | Craig 2008 | Ya: `au["AU4"]`,`au["AU7"]` py-feat |
+| Frustration = AU1+AU2 (+AU4/14) | Craig 2008, Grafsgaard 2013 | Ya: `au["AU1"]·au["AU2"]` (MediaPipe blendshape→AU) |
+| Confusion = AU4+AU7 (gate AU12) | Craig 2008 | Ya: `au["AU4"]`,`au["AU7"]` (MediaPipe blendshape→AU) |
 | Boredom = AU43 + gaze | Craig 2008 + GazeTutor/Sümer | Ya: `au["AU43"]` MediaPipe eyeBlink + gaze |
 | Engagement = holistik + gaze gate | Whitehill 2014 + GazeTutor | Ya: SigLIP + gaze gate inference + AU43 anti-engagement |
 | AU FACS asli (semua emosi) | Bartlett/Craig (FACS) | Ya: MediaPipe blendshape (baseline-normalized)`au_source`; scoring TIDAK akses blendshape langsung |
-| Hand-over-face (any) → Confusion (lemah) | Behera 2020 (HoF ↑ saat difficulty ↑) + D'Mello 2012 (Confusion=cognitive disequilibrium) + Mahmoud 2016 | Ya: `max(hand_one,hand_two) * hand_conf_w(0.40)` |
-| Hand-over-face: 2-tangan → Frustration (lemah) | Grafsgaard 2013b self-efficacy | Ya: `hand_two * hand_frus_w(0.30)` |
+| Hand-over-face (any) → Confusion (kuat) | Behera 2020 (HoF ↑ saat difficulty ↑) + D'Mello 2012 (Confusion=cognitive disequilibrium) + Mahmoud 2016 | Ya: `max(hand_one,hand_two) * hand_conf_w(0.78)` |
+| Hand-over-face: 2-tangan → Frustration (pendukung) | Grafsgaard 2013b self-efficacy | Ya: `hand_two * hand_frus_w(0.40)` |
 | Gaze gate Engagement di hybrid final | Whitehill 2014 + GazeTutor | Ya: `eng_gaze_gate_*` di inference.py |
 
 **Kesimpulan:** *Apa* yang diukur tiap emosi **sudah mengikuti standar paper**. Mekanisme tak-berdasar (suppress, dominance-gap, strict-rules, restless bonus, akses blendshape langsung, eye_wide) **sudah DIHAPUS**. Yang tersisa sebagai engineering jujur: **angka kalibrasi** (threshold/anchor/bobot) & **gaze webcam** (konstruk dari eye-tracker, metode webcam lebih kasar).

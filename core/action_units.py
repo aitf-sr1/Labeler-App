@@ -73,8 +73,8 @@ AU_NAMES = {
 # Anchor default (neutral, active) — kalibrasi dari 21.204 frame raw_cache.
 # active dipilih di sekitar p90–p99 tiap AU agar hanya aktivasi nyata yang → 1.0.
 DEFAULT_AU_CALIB = {
-    "AU1_neutral": 0.46, "AU1_active": 0.88,   # browInnerUp (median 0.46, p90 0.89)
-    "AU2_neutral": 0.47, "AU2_active": 0.86,   # browOuterUp (median 0.47, p90 0.87)
+    "AU1_neutral": 0.46, "AU1_active": 0.84,   # browInnerUp (median 0.46, p90 0.89) — active↓ utk sensitivitas alis-naik
+    "AU2_neutral": 0.47, "AU2_active": 0.82,   # browOuterUp (median 0.47, p90 0.87) — active↓ utk sensitivitas alis-naik
     # browDown: median 0.001, p99 0.18 — stretch AGRESIF agar AU4 terdeteksi
     # noseSneer co-occur lemah (+0.3) ditambahkan di _raw_action_units()
     "AU4_neutral": 0.001, "AU4_active": 0.05,  # browDown + noseSneer*0.3 (stretch agresif)

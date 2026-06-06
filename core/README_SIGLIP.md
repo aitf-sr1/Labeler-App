@@ -112,8 +112,8 @@ Cache ini memungkinkan Recalculate tanpa re-run SigLIP (model terbesar dalam pip
 | `iris_x` | Offset iris horizontal relatif ke sudut mata (−1..+1) | Boredom, Engagement |
 | `iris_y` | Offset iris vertikal relatif ke sudut mata (−1..+1) | Confusion |
 | Blendshapes | 52 koefisien otot wajah (0..1) dari MediaPipe | Semua label |
-| `hand_one` | 1.0 jika terdeteksi **tepat 1 tangan** di area wajah (count-based) | Confusion (cue LEMAH, `max(hand_one,hand_two)*hand_conf_w=0.40`) — Behera 2020: HoF ↑ saat difficulty ↑ + Mahmoud 2011: "unsure" |
-| `hand_two` | 1.0 jika terdeteksi **≥ 2 tangan** di area wajah (count-based) | Confusion (HoF) **+** Frustration (cue LEMAH, `hand_frus_w=0.30`) — Grafsgaard 2013b: hand-to-face ↔ self-efficacy rendah |
+| `hand_one` | 1.0 jika terdeteksi **tepat 1 tangan** di area wajah (count-based) | Confusion (cue KUAT, `max(hand_one,hand_two)*hand_conf_w=0.78`) — Behera 2020: HoF ↑ saat difficulty ↑ + Mahmoud 2011: "unsure" |
+| `hand_two` | 1.0 jika terdeteksi **≥ 2 tangan** di area wajah (count-based) | Confusion (HoF) **+** Frustration (cue pendukung, `hand_frus_w=0.40`) — Grafsgaard 2013b: hand-to-face ↔ self-efficacy rendah |
 
 ### Koordinat Iris
 
@@ -177,8 +177,8 @@ Threshold diterapkan per frame: `frame_pred = 1 if hybrid_score >= threshold els
 |---|---|---|---|
 | Boredom | 0.25 | 0.75 | gaze (geometrik) + AU43 dominan; SigLIP kecil (tired/vacant) |
 | Engagement | **0.50** | 0.50 | **HOLISTIK** — tak ada AU dominan (Whitehill 2014) → SigLIP tertinggi |
-| Confusion | 0.35 | 0.65 | AU4+AU7 (py-feat) primer + SigLIP jaring pengaman (oklusi tangan) |
-| Frustration | 0.30 | 0.70 | AU1+AU2/AU4/AU14 (py-feat) + tangan primer + SigLIP gestalt stres |
+| Confusion | 0.35 | 0.65 | AU4+AU7 (MediaPipe AU) + tangan/mulut KUAT + SigLIP jaring pengaman (oklusi tangan) |
+| Frustration | 0.30 | 0.70 | AU1+AU2/AU4/AU14 (MediaPipe AU) + tangan primer + SigLIP gestalt stres |
 
 **~~Temporal Restlessness Bonus (Boredom)~~ — DIHAPUS:**  
 Dulu skor Boredom dapat bonus dari std-dev yaw antar frame. **Sudah dibuang** — tidak ada dasar paper (Craig 2008 hanya AU43 untuk Boredom). Tidak ada lagi di kode/rules.

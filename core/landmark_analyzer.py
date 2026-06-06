@@ -573,12 +573,13 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     #   - Dong et al. (2026, ConfusionBench): "Hand-to-face actions such as touching the chin, pressing
     #     the forehead, and covering the mouth may indicate thinking, frustration, or hesitation."
     #   - Behera (2020): HoF ↑ saat difficulty ↑; Mahmoud (2016): HoF = "cognitive mental states".
-    # max(hand_one, hand_two) — paper tidak bedakan jumlah untuk Confusion. Bobot final hand_conf_w=0.40
-    # (basis "unsure" Mahmoud 2011 lebih langsung). Tetap cue LEMAH → menambah, tidak memicu sendiri.
-    # Catatan: deteksi kita count-based, tak bisa bedakan jari-aktif (kognitif) vs bersandar-pasif (rileks).
-    sig_hand_conf = max(r.hand_one, r.hand_two) * ccfg.get("hand_conf_w", 0.40)
+    # max(hand_one, hand_two) — paper tidak bedakan jumlah untuk Confusion. Bobot final hand_conf_w=0.78
+    # (= au7_alone_w): Mahmoud 2011 coverage 14/15 ≈ 93% ≥ AU7 (78%) → hand = cue KUAT, setara AU diskrit.
+    # Catatan: deteksi count-based, tak bisa bedakan jari-aktif (kognitif) vs bersandar-pasif (rileks) →
+    # anotator manusia menilai posisi (dagu vs dahi) saat review; skor otomatis sengaja kuat agar tidak under-detect.
+    sig_hand_conf = max(r.hand_one, r.hand_two) * ccfg.get("hand_conf_w", 0.78)
 
-    # MOUTH OPEN (AU25 Lips Part + AU26 Jaw Drop) → cue LEMAH Confusion.
+    # MOUTH OPEN (AU25 Lips Part + AU26 Jaw Drop) → cue KUAT Confusion (Namba "most significant").
     # Chain dua paper:
     #   Namba et al. (2024): "Component 2 indicated opening the mouth (AU25, AU26)... can be
     #   considered the most significant component" saat menjawab pertanyaan sulit (thinking face).
@@ -589,10 +590,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     au26_v = au.get("AU26", 0.0)
     au25_au26_co = (au25_v * au26_v) ** 0.5          # keduanya aktif bersamaan
     au25_alone   = max(au25_v, au26_v)               # salah satu saja sudah cukup (lemah)
-    mouth_open_w = ccfg.get("mouth_open_conf_w", 0.25)
+    mouth_open_w = ccfg.get("mouth_open_conf_w", 0.78)
     sig_mouth_conf = max(au25_au26_co, au25_alone * 0.5) * mouth_open_w
 
-    # base_conf: AU4 (95%) ATAU AU7 (78%) ATAU AU4+AU7 (73%) ATAU HoF (lemah) ATAU mulut terbuka (lemah)
+    # base_conf = max() dari 5 cue setara-kuat: AU4 (95%), AU7 (78%, w0.78), AU4+AU7 (73%),
+    # HoF/tangan (Mahmoud 93%, w0.78), mulut-mangap (Namba "most significant", w0.78).
+    # Tangan & mulut kini SETARA AU7 (bukan lagi cue lemah) → confusion tidak under-detect.
     base_conf = max(brow_dn_v, au7_sig, au4_au7_sig, sig_hand_conf, sig_mouth_conf)
     conf = _clamp(base_conf * ccfg["blend_a"] + max(brow_dn_v, au7_v) * ccfg["blend_b"], 0, 1)
 
@@ -644,9 +647,9 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     #   - Nojavanasghari et al. (2017, Hand2Face): "hand over face occlusions can provide additional
     #     information for recognition of... frustration and boredom."
     #   - Dong et al. (2026, ConfusionBench): hand-to-face → "thinking, frustration, or hesitation".
-    # Cue LEMAH (hand_frus_w 0.20) → hanya MENAMBAH, tidak memicu sendiri. 1-tangan TIDAK ke Frustration
+    # Cue pendukung (hand_frus_w 0.40) → MENAMBAH, tidak memicu sendiri. 1-tangan TIDAK ke Frustration
     # (Grafsgaard 2013b: 1-tangan = "thoughtful/less-negative", spesifik 2-tangan untuk self-efficacy).
-    sig_hand_frus  = r.hand_two * fcfg.get("hand_frus_w", 0.30)
+    sig_hand_frus  = r.hand_two * fcfg.get("hand_frus_w", 0.40)
     sig_wajah_frus = _clamp(max(sig_brow_raise, sig_bou_alone, sig_legacy, sig_hand_frus), 0, 1)
 
     base_frus = sig_wajah_frus

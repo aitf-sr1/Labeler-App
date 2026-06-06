@@ -353,7 +353,7 @@ Setelah menemukan bahwa Craig 2008 tidak menemukan sinyal mulut yang signifikan 
 - Namba meneliti 40 partisipan yang menjawab pertanyaan sulit vs tidak berpikir (counting) — ekspresi diukur objektif dengan OpenFace
 - Hasil: mulut terbuka (Component 2) adalah komponen **paling signifikan** saat berpikir menjawab pertanyaan sulit
 - Chain ke sistem: *thinking face* (Namba) + *thinking/impasse = Confusion* (D'Mello 2012) → AU25+AU26 = cue Confusion
-- **Di kode:** `sig_mouth_conf = max(au25_au26_co, au25_alone*0.5) * mouth_open_conf_w(0.25)` → Confusion cue lemah (tidak bisa memicu sendiri)
+- **Di kode:** `sig_mouth_conf = max(au25_au26_co, au25_alone*0.5) * mouth_open_conf_w(0.78)` → Confusion cue kuat (tidak bisa memicu sendiri)
 
 > **Jembatan → 6. BOREDOM:** Confusion masih aktif memproses (bahkan boleh co-exist dengan Engagement). Kebalikan dari keterlibatan aktif itu adalah penarikan diri pasif — Boredom.
 
@@ -367,7 +367,7 @@ Setelah menemukan bahwa Craig 2008 tidak menemukan sinyal mulut yang signifikan 
 
 — Craig et al. (2008). (p. 784)  [PDF](../../paper/Craig%202008%20-%20Emote%20Aloud%20during%20Learning%20with%20AutoTutor%20%28FACS%29.pdf#page=8)
 
-**Penjelasan:** **AU43** = mata menutup / kelopak turun berat — ekspresi mengantuk atau mata berat. Craig menemukan ini satu-satunya AU yang signifikan untuk boredom. AU lain (gerakan mulut seperti menguap, dll.) disebut "non-significant trends" — artinya tidak cukup kuat untuk dijadikan sinyal. **Di kode:** `blink_corrected = au["AU43"]` dari blendshape `eyeBlinkLeft/Right` MediaPipe (baseline-normalized via `compute_action_units()`). Yawn (`jawOpen`) sengaja *tidak* dipakai sebagai sinyal Boredom primer karena Craig tidak memvalidasinya — meskipun `jawOpen` (AU26) tersedia dan dipakai sebagai cue Confusion lemah (Namba 2024).
+**Penjelasan:** **AU43** = mata menutup / kelopak turun berat — ekspresi mengantuk atau mata berat. Craig menemukan ini satu-satunya AU yang signifikan untuk boredom. AU lain (gerakan mulut seperti menguap, dll.) disebut "non-significant trends" — artinya tidak cukup kuat untuk dijadikan sinyal. **Di kode:** `blink_corrected = au["AU43"]` dari blendshape `eyeBlinkLeft/Right` MediaPipe (baseline-normalized via `compute_action_units()`). Yawn (`jawOpen`) sengaja *tidak* dipakai sebagai sinyal Boredom primer karena Craig tidak memvalidasinya — meskipun `jawOpen` (AU26) tersedia dan dipakai sebagai cue Confusion kuat (Namba 2024).
 
 ---
 
@@ -551,7 +551,7 @@ Dua verbatim berikut saling menguatkan argumen:
 
 — D'Mello & Graesser (2012). (p. 146) — *impasse/materi sulit = Confusion*.  [PDF](../../paper/DMello%20Graesser%202012%20-%20Dynamics%20of%20Affective%20States%20during%20Complex%20Learning.pdf#page=2)
 
-**Penjelasan chain:** Behera: *HoF naik saat difficulty naik*. D'Mello: *difficulty/impasse = Confusion*. Gabungan: HoF naik saat Confusion meningkat → HoF = cue lemah Confusion. Argumentasi dua langkah ini valid secara akademis karena tiap paper mendukung bagiannya masing-masing. **Di kode:** `sig_hand_conf = max(r.hand_one, r.hand_two) * ccfg["hand_conf_w"]` → Confusion. `max` karena Behera & Mahmoud tidak membedakan jumlah tangan.
+**Penjelasan chain:** Behera: *HoF naik saat difficulty naik*. D'Mello: *difficulty/impasse = Confusion*. Gabungan: HoF naik saat Confusion meningkat → HoF = cue kuat Confusion. Argumentasi dua langkah ini valid secara akademis karena tiap paper mendukung bagiannya masing-masing. **Di kode:** `sig_hand_conf = max(r.hand_one, r.hand_two) * ccfg["hand_conf_w"]` → Confusion. `max` karena Behera & Mahmoud tidak membedakan jumlah tangan.
 
 ---
 
@@ -586,8 +586,8 @@ Dua verbatim berikut saling menguatkan argumen:
 **Penjelasan:** Hand2Face (2017) dan ConfusionBench (2026) mengkonfirmasi hand-over-face berkaitan dengan **frustration** (juga boredom). Ini menguatkan pemetaan tangan→Frustration di luar Grafsgaard 2013b. Tetapi sistem ini **membatasi** kontribusi Frustration ke **2-tangan saja** (yang punya temuan paling spesifik: self-efficacy rendah, Grafsgaard 2013b) — 1-tangan hanya ke Confusion (thoughtful/unsure).
 
 **Di kode:**
-- **Confusion**: `sig_hand_conf = max(hand_one, hand_two) * hand_conf_w(0.40)` — semua tangan, dinaikkan karena basis "unsure" Mahmoud 2011 langsung.
-- **Frustration**: `sig_hand_frus = hand_two * hand_frus_w(0.30)` — **HANYA 2-tangan** (Grafsgaard 2013b self-efficacy, dikuatkan Hand2Face/ConfusionBench).
+- **Confusion**: `sig_hand_conf = max(hand_one, hand_two) * hand_conf_w(0.78)` — semua tangan, dinaikkan karena basis "unsure" Mahmoud 2011 langsung.
+- **Frustration**: `sig_hand_frus = hand_two * hand_frus_w(0.40)` — **HANYA 2-tangan** (Grafsgaard 2013b self-efficacy, dikuatkan Hand2Face/ConfusionBench).
 - Semua cue → hanya menambah, tidak memicu sendiri.
 
 > **Jembatan → 9. Dataset Referensi:** Sinyal lengkap sekarang: AU wajah + gaze + tangan. Pada dataset nyata seperti apa pendekatan ini berpijak? DAiSEE — e-learning in-the-wild.

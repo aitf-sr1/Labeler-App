@@ -32,7 +32,7 @@ Namun Whitehill et al. (2014) menemukan bahwa untuk **Engagement**, penampilan w
 # bertumpu MediaPipe AU (baseline-normalized) TAPI tetap diberi SigLIP sbg cross-check.
 ```
 
-**Prinsip:** SigLIP **tertinggi di Engagement** (satu-satunya emosi holistik tanpa AU dominan — Whitehill 2014). Tiga emosi lain punya **AU diskrit** (Craig 2008) → bertumpu **py-feat (AU FACS) + MediaPipe**, tapi **tetap diberi SigLIP** sebagai *cross-check independen*. Ini **ada dasarnya**: SigLIP = expression reader tervalidasi (Zhai 2023), dan D'Mello 2009 memakai *"facial features"* untuk **keempat** emosi (§8). Nilai bobotnya = kalibrasi empiris yang sah (status sama dengan threshold), **bukan** mekanisme tak-berdasar seperti restless bonus.
+**Prinsip:** SigLIP **tertinggi di Engagement** (satu-satunya emosi holistik tanpa AU dominan — Whitehill 2014). Tiga emosi lain punya **AU diskrit** (Craig 2008) → bertumpu **AU MediaPipe (blendshape→AU FACS, baseline-normalized) + cue tangan/mulut**, tapi **tetap diberi SigLIP** sebagai *cross-check independen*. Ini **ada dasarnya**: SigLIP = expression reader tervalidasi (Zhai 2023), dan D'Mello 2009 memakai *"facial features"* untuk **keempat** emosi (§8). Nilai bobotnya = kalibrasi empiris yang sah (status sama dengan threshold), **bukan** mekanisme tak-berdasar seperti restless bonus.
 
 ### Engagement — SigLIP 50%, Landmark 50% (SigLIP tertinggi)
 
@@ -78,17 +78,16 @@ AU1+AU2/AU4/AU14 (MediaPipe blendshape, baseline-normalized) = **primer** (land_
 
 **Kenapa geometric mean `(A × B)^0.5`?** Ini mengimplementasikan syarat co-occurrence secara matematika: sinyal hanya tinggi jika **keduanya** aktif. Jika salah satu lemah (misal outer=0.8, inner=0.1), hasilnya 0.28 — jauh lebih rendah dari rata-rata (0.45). Ini sesuai temuan paper bahwa kedua AU *selalu muncul bersama* dalam frustration, bukan satu saja.
 
-**Kenapa `brow_raise_direct_w = 0.65` sedikit lebih tinggi dari `face_weight = 0.60`?**
+**Kenapa `brow_raise_direct_w = 0.85` jauh lebih tinggi dari `face_weight = 0.65`?**
 
-Keduanya kini sinyal **primer** Frustration, tapi tier-nya beda tipis:
-- `brow_raise_direct_w = 0.65` → AU1+AU2 (inner+outer brow raise), coverage **100%** di Craig 2008 Table 2 → tier tertinggi.
-- `face_weight = 0.60` → AU4 (brow lowerer) + AU14 (dimpler), dinaikkan dari sekunder ke **PRIMER** mengikuti Grafsgaard et al. (2013) yang menemukan AU4/AU14 sebagai prediktor afek-belajar negatif yang kuat. Coverage Craig sedikit di bawah AU1+AU2, sehingga bobotnya 0.60 (sedikit di bawah 0.65), bukan lagi 0.45.
+- `brow_raise_direct_w = 0.85` → AU1+AU2 (inner+outer brow raise), coverage **100%** di Craig 2008 Table 2 → sinyal **PRIMER** Frustration, bobot tertinggi. Dinaikkan dari 0.70 (kompensasi MediaPipe-only + mengangkat frustrasi yang sebelumnya kurang terdeteksi).
+- `face_weight = 0.65` → AU4 (brow lowerer) + AU14 (dimpler), sinyal **pendukung** mengikuti Grafsgaard et al. (2013) yang menemukan AU4/AU14 sebagai korelat positif frustrasi. Di bawah AU1+AU2 karena AU4 lemah-terukur di MediaPipe (browDown median 0.001).
 
 Sinyal legacy lain (nose sneer, cheek squint) yang tidak muncul di Craig Table 2 sebagai sinyal primer frustration tetap berbobot lebih rendah.
 
 ---
 
-## 4. Hand Signals — cue LEMAH untuk Confusion (HoF) DAN Frustration (2-tangan)
+## 4. Hand Signals — cue KUAT untuk Confusion (HoF) DAN Frustration (2-tangan)
 
 > **KOREKSI:** Versi lama bagian ini menyatakan "tidak ada paper yang memvalidasi posisi tangan". **Itu keliru.** Proceedings ACII 2011 (LNCS 6974 — PDF yang sama dengan paper Grafsgaard confusion) memuat:
 > - **Mahmoud, Baltrušaitis, Robinson & Riek (2011), "3D Corpus of Spontaneous Complex Mental States"** — analisis **kuantitatif** hand-over-face: *"hand-over-face gestures appeared in 20.8% of the segments (94 segments)"*, dikodekan per **hand shape, action, dan facial region occluded**, dikaitkan dengan **complex mental states**.
@@ -96,21 +95,23 @@ Sinyal legacy lain (nose sneer, cheek squint) yang tidak muncul di Craig Table 2
 
 **Jadi hand-over-face PUNYA dasar paper** sebagai cue afektif/kognitif (sebelumnya Craig FACS-wajah + D'Mello "gross body language = seat-pressure pad" memang tidak mencakup tangan — Mahmoud-lah yang menutup celah ini).
 
-**⚠️ Catatan konteks (jangan force-fit):** state yang dianalisis Mahmoud = **complex mental states** taksonomi Baron-Cohen (thinking, unsure, interested, dll.), pada sesi computer-based + dyadic — **bukan persis** 4 affect belajar (boredom/confusion/frustration/engagement). Hand-over-face paling kuat terkait **state kognitif/"thinking"**. Maka pemetaan ke emosi-belajar di bawah sengaja dibikin **cue LEMAH** (bobot kecil, tidak memicu sendiri), karena:
-- *Keberadaan* sinyal tangan = berdasar paper (Mahmoud).
-- *Pemetaan spesifik* gesture→emosi-belajar = **interpretasi**, harus dikalibrasi/divalidasi, bukan langsung dari Mahmoud → maka bobotnya kecil.
+**⚠️ Catatan konteks (jangan force-fit):** state yang dianalisis Mahmoud = **complex mental states** taksonomi Baron-Cohen (thinking, unsure, interested, dll.), pada sesi computer-based + dyadic — **bukan persis** 4 affect belajar (boredom/confusion/frustration/engagement). Hand-over-face paling kuat terkait **state kognitif/"thinking"**. Konsekuensi desain:
+- *Keberadaan* sinyal tangan = berdasar paper (Mahmoud: 14/15 segmen index-finger = thinking/unsure ≈ **93% coverage**).
+- *Pemetaan spesifik* gesture→emosi-belajar = interpretasi; deteksi kita **count-based** (tak bisa bedakan jari-aktif kognitif vs bersandar-pasif). **Ambiguitas posisi ini diselesaikan oleh anotator manusia** saat review (lihat PANDUAN: dagu→Confusion, dahi/2-tangan→Frustration).
 
-**Dukungan konteks-belajar (jembatan ke emosi-belajar):** Behera et al. (2020, IJAIED) menemukan **HoF naik saat difficulty ↑** (beban kognitif) → menjembatani HoF ke **Confusion** (D'Mello 2012: confusion = cognitive disequilibrium saat materi sulit). Grafsgaard et al. (2013) "Embodied Affect in Tutorial Dialogue" menemukan **two-hands-to-face lebih sering pada siswa dengan self-efficacy rendah** (≈ Frustration) → menjembatani 2-tangan ke **Frustration**. Pemetaan final ada di bawah; keduanya tetap **cue LEMAH**.
+**Keputusan: cue KUAT, bukan lemah.** Karena coverage Mahmoud (93%) bahkan **lebih tinggi dari AU7 (78%)**, dan Confusion adalah emosi yang paling sering **under-detected**, bobot tangan dinaikkan **0.40→0.78 = setara `au7_alone_w`** (sinyal AU diskrit terkuat). Tangan jadi cue first-class, bukan sekadar penambah kecil.
+
+**Dukungan konteks-belajar (jembatan ke emosi-belajar):** Behera et al. (2020, IJAIED) menemukan **HoF naik saat difficulty ↑** (beban kognitif) → menjembatani HoF ke **Confusion** (D'Mello 2012: confusion = cognitive disequilibrium saat materi sulit). Grafsgaard et al. (2013) "Embodied Affect in Tutorial Dialogue" menemukan **two-hands-to-face lebih sering pada siswa dengan self-efficacy rendah** (≈ Frustration) → menjembatani 2-tangan ke **Frustration**.
 
 **Pemetaan tangan ke emosi (keputusan akhir, argumentasi dua paper):**
 
-**HoF — `max(hand_one, hand_two)` → cue LEMAH Confusion** (beban kognitif):
+**HoF — `max(hand_one, hand_two)` → cue KUAT Confusion** (beban kognitif):
 - Dua paper saling menguatkan: **Behera 2020** (*"HoF naik saat difficulty ↑"*) + **D'Mello 2012** (*"Confusion = cognitive disequilibrium saat menghadapi impasses/materi sulit"*). Behera & Mahmoud 2016 tidak membedakan jumlah tangan → pakai `max(hand_one, hand_two)`.
-- Cue LEMAH (`hand_conf_w=0.40`) → hanya menambah, tidak memicu sendiri. Memungkinkan co-occur Engagement+Confusion (*productive confusion*).
+- Cue KUAT (`hand_conf_w=0.78`, setara AU7) → kontribusi besar. Landmark-alone ≈ 0.66 (di bawah threshold 0.5 setelah hybrid), jadi masih **belum memicu sendiri** tapi mendekati — cukup kuat agar Confusion tidak under-detect. Tetap memungkinkan co-occur Engagement+Confusion (*productive confusion*).
 
-**`hand_two` (≥2 tangan) → cue LEMAH Frustration** (tambahan dari Confusion):
+**`hand_two` (≥2 tangan) → cue pendukung Frustration** (tambahan dari Confusion):
 - **Grafsgaard 2013b** (verbatim langsung): *"two-hands-to-face gestures occurred significantly more frequently among students with low self-efficacy."* Low self-efficacy ≈ Frustration D'Mello.
-- `hand_frus_w=0.30` (lemah). 2-tangan boleh co-occur ke Confusion DAN Frustration (multi-label).
+- `hand_frus_w=0.40` (pendukung). 2-tangan boleh co-occur ke Confusion DAN Frustration (multi-label).
 
 Set `hand_conf_w=0` / `hand_frus_w=0` untuk menonaktifkan. Tangan tetap dideteksi + tampil di viz.
 
@@ -131,7 +132,7 @@ Set `hand_conf_w=0` / `hand_frus_w=0` untuk menonaktifkan. Tangan tetap dideteks
 
 > "Confusion displayed associations with AUs 4, 7, and 12. Action units 4 and 7 occur simultaneously and the presence of AU7 (tightened lids) tends to trigger AU4 (lowered brow)." *(p. 784)*
 
-**Kenapa `au4_au7_co_w = 0.50`?** Co-occurrence coverage 73% (tidak 100% seperti frustration). Maka bobotnya lebih rendah (0.50) dibanding brow_raise_direct_w Frustration (0.65). AU4 tetap memiliki bobot sendiri (95% coverage), sehingga co-occurrence adalah sinyal tambahan di atas sinyal AU4 individual.
+**Kenapa `au4_au7_co_w = 0.50`?** Co-occurrence coverage 73% (tidak 100% seperti frustration). Maka bobotnya lebih rendah (0.50) dibanding brow_raise_direct_w Frustration (0.85). AU4 tetap memiliki bobot sendiri (95% coverage), sehingga co-occurrence adalah sinyal tambahan di atas sinyal AU4 individual.
 
 **Kenapa AU7 juga dipakai STANDALONE (`au7_alone_w = 0.78`)?**
 
@@ -326,7 +327,7 @@ Tapi setelah dua langkah ini, **"parameter ukur" sistem adalah intensitas AU FAC
 | Sinyal | Paper Basis | Coverage | Implementasi |
 |---|---|---|---|
 | **MediaPipe blendshape → AU FACS (semua emosi)** | Craig 2008 + ARKit↔FACS mapping | stretch agresif + per-person calib | `core/action_units.py`, anchor `rules.py["action_units"]` |
-| AU1 (inner) + AU2 (outer) Frustration | Craig 2008 Table 2 | 100% | `au["AU1"]·au["AU2"]` geometric mean + `brow_raise_direct_w=0.65` |
+| AU1 (inner) + AU2 (outer) Frustration | Craig 2008 Table 2 | 100% | `au["AU1"]·au["AU2"]` geometric mean + `brow_raise_direct_w=0.85` |
 | AU4 (brow lowerer) + AU14 (dimpler) Frustration **PRIMER** | Grafsgaard 2013 | positif korelasi | `au["AU4"]/au["AU14"] * face_weight=0.65` (dinaikkan) |
 | AU4 (brow lowerer) Confusion | Craig 2008 Table 2 + Grafsgaard 2011 | 95% | `au["AU4"]` (browDown lemah di MediaPipe → andalkan AU7+SigLIP) |
 | AU7 (lid tightener) Confusion — **standalone** | Craig 2008 Table 2 | 78% | `au["AU7"] * au7_alone_w=0.78` (bukan co-occurrence saja) |
@@ -342,8 +343,8 @@ Tapi setelah dua langkah ini, **"parameter ukur" sistem adalah intensitas AU FAC
 | Confusion 35/65, Frustration 30/70, Boredom 25/75 — landmark/AU primer + SigLIP cross-check | AU diskrit (Craig) via MediaPipe baseline-normalized; SigLIP jaring pengaman | - | `siglip_w=[.25,.50,.35,.30]` |
 | Engagement hybrid 50/50 — SigLIP **tertinggi** (holistik) | Whitehill 2014: tak ada AU dominan, "static pixels" | r=0.85 | `siglip_w[1]=0.50, land_w[1]=0.50` |
 | 4 emosi (bukan 6 basic) | DAiSEE 2016, D'Mello 2009 | - | Label 0=Bore, 1=Eng, 2=Conf, 3=Frus |
-| HoF (any hand) → cue LEMAH Confusion | Behera 2020 + D'Mello 2012 + Mahmoud 2016 | kuantitatif | `sig_hand_conf = max(hand_one,hand_two) * hand_conf_w(0.50)` (dinaikkan) |
-| 2-tangan → cue LEMAH Frustration | Grafsgaard 2013b (2-tangan ↔ self-efficacy rendah) | signifikan | `sig_hand_frus = hand_two * hand_frus_w(0.30)` |
+| HoF (any hand) → cue KUAT Confusion | Behera 2020 + D'Mello 2012 + Mahmoud 2016 | kuantitatif | `sig_hand_conf = max(hand_one,hand_two) * hand_conf_w(0.78)` (dinaikkan) |
+| 2-tangan → cue pendukung Frustration | Grafsgaard 2013b (2-tangan ↔ self-efficacy rendah) | signifikan | `sig_hand_frus = hand_two * hand_frus_w(0.40)` |
 | Gaze gate Engagement final | Whitehill 2014 ("looking away from computer" = not engaged) + GazeTutor 2012 | - | `eng_gaze_gate_*` di inference.py hybrid; SigLIP tidak tahu arah pandang |
 | Chin-resting boredom: tidak dipakai | Tidak divalidasi utk boredom (Craig hanya AU43) | - | tidak diimplementasikan |
 | Gaze konstruk (away→bored/disengaged) | GazeTutor 2012 + Whitehill 2014 | - | `gaze_dev_bore`, `gaze_dev_eng` |
@@ -385,10 +386,10 @@ Setiap **sinyal/parameter ukur** punya landasan paper (lihat tabel di atas). Yan
 - Stretch agresif: `AU4_neutral=0.001, AU4_active=0.05` → deviasi kecil terdeteksi.
 - noseSneer co-occur booster ×0.3 → sinyal AU4 implisit diperkuat.
 - Per-person neutral (`person_neutral`, Bosch 2023): browDown baseline tiap orang berbeda → kalibrasi per-individu menghilangkan bias struktural.
-- `brow_raise_direct_w=0.70` (dinaikkan): kompensasi tidak adanya py-feat, menguatkan AU1+AU2 primer Craig 2008.
+- `brow_raise_direct_w=0.85` (dinaikkan): kompensasi tidak adanya py-feat, menguatkan AU1+AU2 primer Craig 2008.
 - `face_weight=0.65` (dinaikkan): kompensasi AU4 MediaPipe, menguatkan Grafsgaard 2013 AU4/AU14.
 
-**Tambahan AU25/AU26 (Namba 2024):** mouthOpen (≈AU25) dan jawOpen (≈AU26) kini tersedia langsung dari MediaPipe — sebelumnya hanya via py-feat. Keduanya dipakai sebagai cue Confusion lemah.
+**Tambahan AU25/AU26 (Namba 2024):** mouthOpen (≈AU25) dan jawOpen (≈AU26) kini tersedia langsung dari MediaPipe — sebelumnya hanya via py-feat. Keduanya dipakai sebagai cue Confusion kuat.
 
 **Basis paper tetap tidak berubah:** AU yang diukur = AU FACS dari Craig 2008 + Grafsgaard 2011/2013 (tidak berubah). MediaPipe mengukurnya via blendshape→AU mapping yang dinormalisasi — aproksimasi yang jauh lebih cepat dan stabil.
 

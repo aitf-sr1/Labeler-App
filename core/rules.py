@@ -75,8 +75,10 @@ DEFAULT_RULES = {
         # intensity = clamp((raw - neutral)/(active - neutral), 0, 1). Lihat core/action_units.py.
         # Anchor = kalibrasi empiris dari 21.204 frame raw_cache dataset ini.
         # neutral ≈ median populasi (otot diam), active ≈ p90–p99 (AU aktif penuh).
-        "AU1_neutral": 0.46, "AU1_active": 0.88,    # browInnerUp (inner brow raise — Frustration AU1)
-        "AU2_neutral": 0.47, "AU2_active": 0.86,    # browOuterUp (outer brow raise — Frustration AU2)
+        # AU1/AU2 active diturunkan 0.88→0.84 / 0.86→0.82 → alis-naik lebih sensitif (intensity penuh
+        # tercapai lebih cepat) memperkuat deteksi Frustration. Neutral tetap (otot diam ≈0.46 = 0 intensity).
+        "AU1_neutral": 0.46, "AU1_active": 0.84,    # browInnerUp (inner brow raise — Frustration AU1)
+        "AU2_neutral": 0.47, "AU2_active": 0.82,    # browOuterUp (outer brow raise — Frustration AU2)
         # browDown median 0.001 → stretch AGRESIF ke active=0.05 agar AU4 terdeteksi.
         # noseSneer co-occur booster (×0.3) ditambahkan di _raw_action_units() sebelum normalisasi.
         "AU4_neutral": 0.001, "AU4_active": 0.05,   # browDown+sneer (Confusion AU4) — stretch agresif
@@ -99,12 +101,14 @@ DEFAULT_RULES = {
         #   Dong 2026 (ConfusionBench): hand-to-face (touch chin / press forehead) → "thinking, frustration, hesitation";
         #   Behera 2020: HoF naik saat difficulty ↑; Mahmoud 2016: HoF = "cognitive mental states".
         # max(hand_one, hand_two) karena paper tidak bedakan jumlah untuk Confusion.
-        # Dinaikkan 0.40→0.50: basis Mahmoud 2011 KUAT (14/15 segmen hand-to-face = thinking/unsure ≈93%).
-        "hand_conf_w": 0.50,         # cue Confusion KUAT — menambah, belum memicu sendiri
+        # Dinaikkan 0.40→0.50→0.78 = SETARA au7_alone_w (sinyal AU diskrit terkuat). Basis: Mahmoud 2011
+        # coverage 14/15 ≈ 93% bahkan LEBIH tinggi dari AU7 (78%) → hand layak jadi cue KUAT, bukan lemah.
+        "hand_conf_w": 0.78,         # cue Confusion KUAT (≈ AU7) — Mahmoud 2011 93%
         # Namba et al. (2024): mulut terbuka (AU25+AU26) = "most significant component" thinking face.
         # Chain: thinking face (Namba) + thinking = Confusion (D'Mello 2012).
-        # Dinaikkan 0.25→0.35: AU25/AU26 kini tersedia dari MediaPipe mouthOpen/jawOpen secara langsung.
-        "mouth_open_conf_w": 0.35,   # dinaikkan karena AU25/AU26 tersedia langsung (bukan via py-feat)
+        # Dinaikkan 0.25→0.35→0.78 = SETARA au7_alone_w. Basis: Namba "most significant" → cue KUAT, bukan lemah.
+        # Dilindungi geometric-mean AU25·AU26 (butuh lips-part + jaw-drop) → tidak fire dari mulut sedikit gerak.
+        "mouth_open_conf_w": 0.78,   # cue Confusion KUAT (≈ AU7) — Namba 2024 "most significant component"
         # AU12 questioning smile sebagai gate (bukan sinyal positif) — floor cegah zeroing confusion
         "smile_conf_gate_th": 0.45,
         "smile_conf_gate_floor": 0.30,
@@ -119,14 +123,18 @@ DEFAULT_RULES = {
         # MediaPipe ~0.46 kini = 0 intensity, sehingga frustration TIDAK lagi over-fire saat netral.
         # Dinaikkan 0.65→0.70: kompensasi hilangnya py-feat AU4 range (sebelumnya 0.31–0.61),
         # menguatkan sinyal primer AU1+AU2 sesuai Craig 2008 "100% coverage".
-        "brow_raise_direct_w": 0.70, # dinaikkan: kompensasi MediaPipe-only + Craig2008 100% coverage
+        # Dinaikkan 0.65→0.70→0.85: AU1+AU2 = sinyal PRIMER dgn coverage 100% (Craig 2008 — basis
+        # terkuat yg mungkin) → layak jadi bobot tertinggi. Kompensasi MediaPipe-only + memperjelas
+        # frustrasi yg sebelumnya kurang terdeteksi (alis-naik kini jadi pemicu kuat).
+        "brow_raise_direct_w": 0.85, # AU1+AU2 primer, Craig2008 100% coverage → bobot tertinggi
         # Grafsgaard et al. (2013): "Action Unit 4 (brow lowering) was POSITIVELY correlated with
         # frustration" + AU14 (dimpling) juga positif.
         # Dinaikkan 0.60→0.65: kompensasi hilangnya py-feat — lebih mengandalkan AU4+AU14 MediaPipe.
-        "face_weight": 0.65,         # dinaikkan: kompensasi MediaPipe-only (Grafsgaard 2013)
+        "face_weight": 0.65,         # AU4/AU14 pendukung (Grafsgaard 2013)
         # Frustration → HANYA 2-tangan (hand_two). Grafsgaard 2013b: two-hands-to-face ↔ self-efficacy
         # RENDAH (signifikan). Dikuatkan: Nojavanasghari 2017 (Hand2Face) & Dong 2026 (ConfusionBench).
-        "hand_frus_w": 0.30,
+        # Dinaikkan 0.30→0.40: konsisten dgn penguatan cue tangan (sinyal pendukung frustrasi).
+        "hand_frus_w": 0.40,
         "blend_a": 0.85,
         "blend_b": 0.15,
     },

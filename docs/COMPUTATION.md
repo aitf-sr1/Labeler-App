@@ -270,10 +270,10 @@ Jika terdeteksi 1 tangan:
 
 Jika terdeteksi 2 tangan (atau lebih):
   → hand_one = 0.0
-  → hand_two = 1.0  (paper: two-hands ↔ self-efficacy rendah → cue LEMAH Frustration, hand_frus_w=0.30)
+  → hand_two = 1.0  (paper: two-hands ↔ self-efficacy rendah → cue pendukung Frustration, hand_frus_w=0.40)
 ```
 
-> **Catatan pemetaan (penting):** Grafsgaard 2013b menyebut one-hand-to-face = *"thoughtful state / less negative affect"* (mengarah Engagement/berpikir, BUKAN Confusion) dan two-hands ↔ *self-efficacy rendah*. Maka **hand_one TIDAK dipakai untuk Confusion** (itu force-fit), dan **hand_two hanya cue LEMAH Frustration** (tidak memicu sendiri). Lihat DESIGN_RATIONALE §4 & ACADEMIC_BASIS §8.6.
+> **Catatan pemetaan (penting):** Grafsgaard 2013b menyebut one-hand-to-face = *"thoughtful state / less negative affect"* (mengarah Engagement/berpikir, BUKAN Confusion) dan two-hands ↔ *self-efficacy rendah*. Maka **hand_one TIDAK dipakai untuk Confusion** (itu force-fit), dan **hand_two hanya cue pendukung Frustration** (tidak memicu sendiri). Lihat DESIGN_RATIONALE §4 & ACADEMIC_BASIS §8.6.
 
 ### Cara Menghitung Skor Tangan (count-based)
 
@@ -296,7 +296,7 @@ else:
 Penyimpanan di LandmarkResult:
 ```python
 lr.hand_one = 1.0  # tepat 1 tangan (TIDAK dipakai scoring — "thoughtful", ambigu)
-lr.hand_two = 0.0  # < 2 tangan  (jika ≥2 → 1.0, cue LEMAH Frustration via hand_frus_w=0.30)
+lr.hand_two = 0.0  # < 2 tangan  (jika ≥2 → 1.0, cue pendukung Frustration via hand_frus_w=0.40)
 ```
 
 Filter keamanan: jika titik tangan yang jatuh dekat wajah terlalu sedikit (`in_crop < 3`), semua skor tangan di-reset ke 0 untuk menghindari false detection dari tangan yang lewat sekilas di pinggir frame.
@@ -1172,8 +1172,8 @@ Temuan utama dari Table 2 (basis implementasi pada branch `paper/craig2008-au-ma
 | **Boredom** | AU43 (eye closure) | 40% | `eyeBlinkLeft/Right` (independen dari gaze) |
 
 **Catatan desain** (revisi terbaru):
-- **Sumber AU primer (Confusion/Frustration) = py-feat (AU FACS asli).** Validasi menunjukkan AU-dari-blendshape MediaPipe lemah untuk AU brow (AU4 r=0.09, AU7 r=0.01 vs py-feat) → ekstraksi AU dipindah ke py-feat lewat worker subprocess (`core/pyfeat_*.py`). MediaPipe tetap untuk Boredom (AU43, r=0.51) + gaze + viz. Lihat DESIGN_RATIONALE **§16**.
-- **AU dari blendshape (fallback + Boredom) baseline-normalized** lewat `core/action_units.py` — blendshape mentah MediaPipe (baseline tinggi: browInnerUp/Up ~0.46, browDown ~0.001) dikonversi ke intensitas AU 0–1 relatif netral. Dipakai bila py-feat tak tersedia. Contoh perhitungan numerik di bawah (yang masih memakai `brow_dn_th`/pembagi langsung) adalah metode **lama**.
+- **Sumber AU (semua emosi) = MediaPipe blendshape → AU FACS** (baseline-normalized, `core/action_units.py`). Arsitektur **MediaPipe-only**, TANPA py-feat (dipilih karena py-feat berat/lambat). Keterbatasan: AU4 (browDown) lemah-terukur (median 0.001) → dikompensasi stretch agresif + cue tangan/mulut KUAT (0.78). MediaPipe baik untuk AU43 (eye-closure, r=0.51), AU1/AU2 (brow-raise), AU7 (squint), AU25/AU26 (mouth). Lihat DESIGN_RATIONALE **§16**.
+- **AU dari blendshape (SATU-SATUNYA sumber AU — semua emosi) baseline-normalized** lewat `core/action_units.py` — blendshape mentah MediaPipe (baseline tinggi: browInnerUp/Up ~0.46, browDown ~0.001) dikonversi ke intensitas AU 0–1 relatif netral. Arsitektur MediaPipe-only (TANPA py-feat). Contoh perhitungan numerik di bawah (yang masih memakai `brow_dn_th`/pembagi langsung) adalah metode **lama**.
 - Frustration: `browInnerUp` (AU1) + `browOuterUp` (AU2) sinyal **primer** (Craig 100%). Baseline ~0.46 kini = 0 intensity sehingga tidak over-fire.
 - Confusion: AU7 dipakai **standalone** (Craig 78%), bukan hanya co-occurrence — krusial karena browDown (AU4) nyaris mati di MediaPipe.
 - AU12: **koreksi** — bukan 95% (95% itu AU4); AU12 sinyal sekunder lemah lintas-emosi → dipakai sebagai *gate* saja.

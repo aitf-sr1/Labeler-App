@@ -163,7 +163,7 @@ Bukan sekadar "tidak tahu" — confusion adalah kondisi aktif mencoba **memprose
 - Alis turun **DAN** kelopak menyipit bersamaan = sinyal confusion paling kuat
 - Ini ekspresi "mengernyit fokus mencoba memahami sesuatu"
 
-### Ciri Tambahan (cue lemah, menguatkan bukan memicu sendiri):
+### Ciri Tambahan (cue KUAT — setara sinyal AU utama, tetap idealnya disertai sinyal lain):
 
 **D. Mulut sedikit terbuka (AU25+AU26)**
 > *"Component 2 indicated opening the mouth (AU25, AU26)... can be considered the most significant component"* saat menjawab pertanyaan sulit.
@@ -171,7 +171,7 @@ Bukan sekadar "tidak tahu" — confusion adalah kondisi aktif mencoba **memprose
 
 - Bibir terbuka sedikit atau rahang sedikit turun
 - Terlihat saat orang **berpikir keras** menjawab pertanyaan sulit
-- Hanya sebagai penguat — confusion tidak dinilai dari ini saja
+- Cue **KUAT** (Namba 2024: "komponen paling signifikan" thinking face, `mouth_open_conf_w=0.78`) — tapi pertimbangkan konteks (mulut mangap bisa juga sebab lain)
 
 **E. Tangan di wajah — POSISI yang menandakan Confusion**
 > *"There is a prominent increase in hand-over-face gestures when the difficulty level of the given exercise increases."* (sulit 30.46% vs mudah 23.79%)
@@ -260,7 +260,7 @@ Frustrasi muncul saat siswa **stuck dan tidak bisa maju** — berbeda dari confu
 - **Kedua tangan** ke wajah / **menutupi wajah** (facepalm, menutup mata, menopang kepala dengan dua tangan) → low self-efficacy ≈ frustrasi (Grafsgaard 2013b)
 - Bedanya dengan Confusion: lebih **menekan/menutup** dan cenderung **2 tangan**, bukan sentuhan ringan 1 jari.
 
-> ⚠️ **Catatan untuk anotator:** sama seperti Confusion, detektor otomatis hanya menghitung jumlah tangan (2-tangan → cue Frustration lemah). Posisi "menekan dahi / menutup wajah" hanya bisa kamu nilai secara manual.
+> ⚠️ **Catatan untuk anotator:** sama seperti Confusion, detektor otomatis hanya menghitung jumlah tangan (2-tangan → cue Frustration pendukung). Posisi "menekan dahi / menutup wajah" hanya bisa kamu nilai secara manual.
 
 - Tetap **menguatkan**, tidak cukup sendiri (idealnya disertai alis naik AU1+AU2 atau ekspresi distressed).
 
@@ -378,5 +378,5 @@ Berdasarkan DESIGN_RATIONALE §15 dan §17:
 2. **Gaze dari webcam** lebih kasar dari eye-tracker (Sümer 2021: metode webcam sebagai pendekatan)
 3. **Variasi individual** — Bosch (2023) menemukan ekspresi frustrasi sangat bervariasi antar individu
 4. **Wajah datar** — siswa yang terlibat bisa terlihat flat/datar (Whitehill: engagement tidak selalu ekspresif)
-5. **AU dari py-feat** = FACS asli tapi masih bisa salah pada wajah dari sisi, terlalu jauh, atau terhalang sebagian
+5. **AU dari MediaPipe blendshape** = perkiraan FACS (ARKit↔FACS), bisa salah pada wajah dari sisi, terlalu jauh, atau terhalang sebagian
 6. **Confusion + Engagement bisa co-occur** — ini normal dan diharapkan (*productive confusion*)
