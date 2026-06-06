@@ -376,9 +376,11 @@ Confusion/Frustration tidak bisa dibaca dari arah kepala saja; keduanya butuh **
 | AU12 | lip corner (smile) | **gate** Confusion (lintas-emosi, bukan sinyal positif) |
 | AU43 | eye closure | **Boredom** — `blink_direct_w=0.45` |
 
-**Sumber AU (satu-satunya — MediaPipe-only):** blendshape ARKit MediaPipe → AU FACS, dihitung **sinkron** di `core/action_units.py` (browInnerUp→AU1, browOuterUp→AU2, browDown→AU4, eyeSquint→AU7, mouthSmile→AU12, mouthDimple→AU14, mouthOpen→AU25, jawOpen→AU26, eyeBlink→AU43). **Tidak ada py-feat** — dipilih karena py-feat berat & lambat; MediaPipe jauh lebih cepat.
+**Sumber AU (satu-satunya — MediaPipe-only):** blendshape ARKit MediaPipe → AU FACS, dihitung **sinkron** di `core/action_units.py` (browInnerUp→AU1, browOuterUp→AU2, browDown→AU4, eyeSquint→AU7, mouthSmile→AU12, mouthDimple→AU14, **jawOpen→AU25 & AU26**, eyeBlink→AU43). **Tidak ada py-feat** — dipilih karena py-feat berat & lambat; MediaPipe jauh lebih cepat. *(Catatan: ARKit tak punya blendshape "mouthOpen"/"lips part" terpisah → AU25 & AU26 sama-sama dari `jawOpen`.)*
 
-> **Catatan kejujuran (keterbatasan MediaPipe→AU):** blendshape MediaPipe = perkiraan AU (berdasar penamaan ARKit↔FACS), **bukan** detektor terlatih FACS. Korespondensinya **bagus** untuk AU43 (eye-closure), AU1/AU2 (brow-raise), AU7 (squint), AU25/AU26 (mouth) — tapi **lemah** untuk AU4 (browDown median 0.001, nyaris mati). Karena itu desain **diperkuat justru pada cue yang MediaPipe ukur dengan baik** (alis-naik, squint, tangan, mulut) untuk mengkompensasi AU4 yang lemah. Itu sebabnya `hand_conf_w` & `mouth_open_conf_w` dinaikkan ke 0.78.
+> **Catatan kejujuran (keterbatasan MediaPipe→AU):** blendshape MediaPipe = perkiraan AU (berdasar penamaan ARKit↔FACS), **bukan** detektor terlatih FACS. Korespondensinya **bagus** untuk AU43 (eye-closure), AU1/AU2 (brow-raise), AU7 (squint), AU25/AU26 (mouth via jawOpen) — tapi **lemah** untuk AU4 (browDown median 0.001, nyaris mati). Karena itu desain **diperkuat justru pada cue yang MediaPipe ukur dengan baik** (alis-naik, squint, tangan, mulut) untuk mengkompensasi AU4 yang lemah. Itu sebabnya `hand_conf_w` & `mouth_open_conf_w` dinaikkan ke 0.78.
+
+> **Opsi sumber blendshape alternatif:** set env **`BLENDSHAPE_SOURCE=mp_blendshapes`** untuk memakai model **py-feat `mp_blendshapes`** (MLP-Mixer mesh→52 blendshape) sebagai ganti blendshape bawaan MediaPipe. Di-vendor standalone (`core/mp_blendshapes.py`, hanya `torch`+`huggingface_hub`, **tanpa** install py-feat penuh; weights 1.8 MB auto-download dari HF). Default `mediapipe`. Untuk eksperimen A/B — keduanya 52 blendshape ARKit dari mesh yang sama.
 
 AU dinormalisasi terhadap baseline: `intensity = clamp((raw − neutral) / (active − neutral), 0, 1)`. Bila siswa punya **frame netral** yang ditandai (kalibrasi per-orang, Bosch 2023), `neutral` diambil dari frame itu; jika tidak, dipakai baseline populasi.
 
@@ -517,6 +519,7 @@ Labeler-App-Siglip-2/
 │   ├── inference.py          # Hybrid scoring: SigLIP × Landmark fusion
 │   ├── landmark_analyzer.py  # MediaPipe: head pose, iris, blendshape, tangan, scoring, viz
 │   ├── action_units.py       # Blendshape MediaPipe → AU FACS, baseline-normalized (TANPA py-feat)
+│   ├── mp_blendshapes.py     # OPSIONAL: model py-feat mp_blendshapes (MLP-Mixer mesh→52 blendshape, standalone torch); toggle BLENDSHAPE_SOURCE
 │   ├── face_detector.py      # BlazeFace crop wajah + return bbox
 │   ├── rules.py              # DEFAULT_RULES + load_rules / save_rules
 │   ├── recalculate.py        # Recalculate batch dari raw_cache + siglip_cache

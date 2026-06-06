@@ -26,6 +26,13 @@ import numpy as np
 
 from .action_units import compute_action_units, AU_NAMES
 
+# Sumber blendshape (env BLENDSHAPE_SOURCE):
+#   "mediapipe"      (default) = blendshape bawaan MediaPipe FaceLandmarker (gratis, sudah keluar)
+#   "mp_blendshapes"           = model py-feat mp_blendshapes (MLP-Mixer mesh→52 blendshape, standalone)
+# Keduanya menghasilkan 52 blendshape ARKit yang sama-sama "longgar" terhadap FACS;
+# toggle ini untuk eksperimen A/B (lihat core/mp_blendshapes.py + DESIGN_RATIONALE §16).
+_BLENDSHAPE_SOURCE = os.getenv("BLENDSHAPE_SOURCE", "mediapipe").strip().lower()
+
 # ── Model URLs & cache ──────────────────────────────────────────────────────
 _LANDMARKER_URL  = (
     "https://storage.googleapis.com/mediapipe-models/"
@@ -331,6 +338,13 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
 
     lms = res.face_landmarks[0]
     bs  = {b.category_name: round(b.score, 4) for b in res.face_blendshapes[0]}
+    # Opsi: ganti sumber blendshape ke model py-feat mp_blendshapes (env BLENDSHAPE_SOURCE).
+    # Output kompatibel (52 nama ARKit yang sama) → langsung dipakai oleh action_units.py.
+    if _BLENDSHAPE_SOURCE == "mp_blendshapes":
+        from .mp_blendshapes import compute_blendshapes as _mp_bs
+        _alt = _mp_bs(lms)
+        if _alt:
+            bs = {k: round(v, 4) for k, v in _alt.items()}
     yaw, pitch, roll = _rotation_matrix_to_euler(res.facial_transformation_matrixes[0])
 
     lx, ly, lxi, lyi = _iris_offset(lms, _L_IRIS, _L_INNER, _L_OUTER, _L_TOP, _L_BOT, w, h)

@@ -103,7 +103,11 @@ def _raw_action_units(blendshapes: dict) -> dict:
         "AU7":  (g("eyeSquintLeft")   + g("eyeSquintRight"))   / 2,
         "AU12": max(g("mouthSmileLeft"), g("mouthSmileRight")),
         "AU14": (g("mouthDimpleLeft") + g("mouthDimpleRight")) / 2,
-        "AU25": g("mouthOpen"),   # Lips Part — Namba 2024 thinking face Component 2
+        # PERBAIKAN: blendshape ARKit/MediaPipe TIDAK punya "mouthOpen" (52 nama resmi: lihat
+        # MP_BLENDSHAPE_NAMES) — key lama g("mouthOpen") selalu 0 → AU25 mati & mouth-cue setengah jalan.
+        # Tidak ada "lips part" terpisah di ARKit; jawOpen = sinyal mouth-open yang benar → dipakai
+        # sebagai proxy AU25 (lips part) DAN AU26 (jaw drop). Namba 2024: keduanya = mulut terbuka (thinking face).
+        "AU25": g("jawOpen"),     # Lips Part (proxy via jawOpen — ARKit tak punya lips-part terpisah)
         "AU26": g("jawOpen"),     # Jaw Drop  — Namba 2024 thinking face Component 2
         "AU43": (g("eyeBlinkLeft")    + g("eyeBlinkRight"))    / 2,
     }
