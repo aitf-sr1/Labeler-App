@@ -382,10 +382,18 @@ Setiap **sinyal/parameter ukur** punya landasan paper (lihat tabel di atas). Yan
 
 **Arsitektur branch ini:** `core/action_units.py` `compute_action_units(blendshapes, cfg, person_neutral)` — satu fungsi sinkron, satu proses, nol subprocess.
 
-**Masalah py-feat (yang diatasi):**
+**⚠️ Klarifikasi: "MediaPipe lebih baru" ≠ "lebih akurat untuk AU".** Ini bukan soal umur tool, tapi soal *untuk apa tiap tool dilatih*:
+- **py-feat = SPESIALIS AU.** Dilatih langsung pada data wajah yang otot-ototnya **dikode FACS oleh manusia** → outputnya benar-benar "intensitas AU4 = sekian". Lebih presisi untuk AU otot halus (mis. kerut alis AU4).
+- **MediaPipe = tool GENERAL face-mesh.** Dilatih untuk **geometri wajah** (478 titik, pose, iris) dan menghasilkan **52 blendshape ARKit** — blendshape itu aslinya untuk **animasi avatar/Animoji**, BUKAN pengkodean FACS. Kita **pinjam** namanya sebagai proksi AU (browDown≈AU4). Jadi walau lebih baru, MediaPipe **tidak dioptimalkan** untuk mengukur intensitas AU FACS.
+
+**Akibatnya akurasinya PARSIAL** (bukan jelek, tapi tidak merata):
+- **Sangat akurat** untuk yang memang tugasnya: **geometri** — head pose, **gaze/iris** (→ Boredom & Engagement solid), dan fitur **besar**: eye-closure (AU43 r=0.51), mouth-open (AU25/26), brow-raise (AU1/2).
+- **Lemah** untuk otot **halus**: AU4 kerut-alis (median 0.001, nyaris mati).
+
+**Masalah py-feat (kenapa tetap ditinggalkan):**
 - py-feat (numpy<2) & SigLIP (numpy 2) konflik dependency → subprocess terpisah, latency, fragile.
-- py-feat berat (~2GB), instalasi sulit, sering gagal di environment baru.
-- Akurasi AU4 py-feat memang lebih tinggi (median 0.31) vs MediaPipe (median 0.001), tapi overhead-nya tidak sebanding untuk use-case labeling offline.
+- py-feat berat (~2GB), instalasi sulit, sering gagal di environment baru → **lambat**.
+- **Pada frame buram/resolusi rendah** (224px webcam), keunggulan presisi py-feat **sebagian besar hilang** — otot alis halus sulit dibaca siapa pun dari gambar buram (garbage-in). Jadi selisih akurasi nyata py-feat vs MediaPipe **di data ini kecil**, sementara py-feat jauh lebih lambat → **MediaPipe-only = trade-off yang tepat**, dengan kelemahan AU4 ditutup oleh cue tangan/mulut/alis-naik yang kasar & robust terhadap blur.
 
 **Kompensasi MediaPipe-only untuk AU4 lemah:**
 - Stretch agresif: `AU4_neutral=0.001, AU4_active=0.05` → deviasi kecil terdeteksi.
