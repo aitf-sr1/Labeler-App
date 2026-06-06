@@ -406,6 +406,15 @@ Setiap **sinyal/parameter ukur** punya landasan paper (lihat tabel di atas). Yan
 
 **Basis paper tetap tidak berubah:** AU yang diukur = AU FACS dari Craig 2008 + Grafsgaard 2011/2013 (tidak berubah). MediaPipe mengukurnya via blendshape→AU mapping yang dinormalisasi — aproksimasi yang jauh lebih cepat dan stabil.
 
+**Korroborasi (py-feat sendiri mengakui bridge ini):** Py-Feat — pustaka FACS itu sendiri — merilis model `mp_blendshapes` (Hugging Face) yang memetakan **146 dari 478 titik Face Mesh MediaPipe → 52 blendshape** yang merepresentasikan pergerakan otot FACS **"secara longgar" (loosely)**. Artinya jembatan *MediaPipe → blendshape → AU FACS* yang kita pakai **bukan karangan**: bahkan otoritas FACS (Py-Feat) menyediakannya secara resmi. Dua implikasi: (1) pendekatan kita **tervalidasi pihak ketiga**; (2) kata **"longgar"** dari Py-Feat sendiri = konsisten dengan "akurasi parsial" — ini memang **aproksimasi FACS, bukan FACS persis** (jujur, bukan over-claim).
+
+**Justifikasi: kenapa MediaPipe-only sah, bahkan bisa LEBIH baik untuk tugas ini.** Validitas labeling datang dari **patokannya** (pemetaan emosi→AU FACS dari paper), **bukan** dari merek alat pengukur. py-feat & MediaPipe **menargetkan 9 AU yang sama persis** (AU1/2/4/7/12/14/25/26/43) → *patokan identik* → label sah dengan tool mana pun. Tiga hal membuat pipeline MediaPipe-only ini **bisa unggul** untuk use-case ini:
+1. **Kalibrasi per-orang (Bosch 2023).** AU di sini dihitung sebagai **deviasi dari frame netral PRIBADI** tiap siswa, bukan dari raw AU global. py-feat *default* memberi AU mentah (baseline populasi). Karena "tiap orang beda baseline" (alis natural tinggi/rendah), normalisasi per-orang **menghilangkan bias antar-individu** → bisa **lebih adil/akurat** daripada raw py-feat untuk tugas pelabelan.
+2. **Satu tool untuk semua.** MediaPipe sekaligus memberi **geometri** (gaze/pose/iris) yang dipakai Boredom & Engagement — yang py-feat **tidak** sediakan. Jadi MediaPipe menutup lebih banyak kebutuhan sistem.
+3. **Robust pada gambar buram + cepat.** Lihat §klarifikasi di atas — pada frame resolusi rendah, keunggulan presisi py-feat sebagian besar hilang, sementara MediaPipe jauh lebih ringan.
+
+**Konsekuensi untuk PANDUAN anotasi manual:** patokan manual **tidak berubah** sama sekali — anotator tetap menilai dari **AU yang sama** (alis turun=AU4→Confusion, alis naik=AU1+AU2→Frustration, mata menutup=AU43→Boredom, dst). Manusia melihat **wajah**, bukan py-feat vs MediaPipe → PANDUAN_ANOTASI_MANUAL.md identik tool apa pun.
+
 ---
 
 ## 17. Audit Kesesuaian Konteks Paper (jangan force-fit)
