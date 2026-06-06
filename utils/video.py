@@ -75,7 +75,7 @@ def prepare_cropped_frames(
     """
     from core.landmark_analyzer import (
         analyze_frame, compute_emotion_scores, draw_landmark_viz,
-        detect_hands_from_full_frame, LandmarkResult
+        detect_hands_from_full_frame, LandmarkResult, _BLENDSHAPE_SOURCE as _cur_bsrc
     )
 
     rel_path       = os.path.relpath(video_path, root_folder)
@@ -109,9 +109,22 @@ def prepare_cropped_frames(
     else:
         cache_path = None
 
+    # Sumber blendshape cache vs sekarang: kalau beda (mis. ganti ke mp_blendshapes),
+    # JANGAN pakai fast-path → paksa re-proses agar blendshape dihitung ulang dgn sumber baru.
+    # Cache lama tanpa field ini dianggap "mediapipe" (default lama).
+    _cached_bsrc = None
+    if cache_path and os.path.exists(cache_path):
+        try:
+            import json as _json
+            with open(cache_path) as _fp:
+                _cached_bsrc = _json.load(_fp).get("blendshape_source", "mediapipe")
+        except Exception:
+            _cached_bsrc = None
+
     if (len(clean_files) == _N_FRAMES
             and len(viz_files) == _N_FRAMES
-            and cache_path and os.path.exists(cache_path)):
+            and cache_path and os.path.exists(cache_path)
+            and _cached_bsrc == _cur_bsrc):
         try:
             import json
             pil_images     = [Image.open(f).convert("RGB") for f in clean_files]
@@ -282,10 +295,11 @@ def prepare_cropped_frames(
                 })
             with open(cache_path, "w") as fp:
                 json.dump({
-                    "video_rel":    rel_path,
-                    "generated_at": datetime.datetime.now().isoformat(),
-                    "pipeline":     "mediapipe-only",
-                    "frames":       frames_data,
+                    "video_rel":        rel_path,
+                    "generated_at":     datetime.datetime.now().isoformat(),
+                    "pipeline":         "mediapipe-only",
+                    "blendshape_source": _cur_bsrc,   # 'mediapipe' | 'mp_blendshapes' — utk cache invalidation
+                    "frames":           frames_data,
                 }, fp, indent=2)
         except Exception as e:
             print(f"[Raw Cache] Gagal simpan {rel_path}: {e}")
