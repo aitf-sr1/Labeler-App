@@ -99,7 +99,12 @@ Sinyal legacy lain (nose sneer, cheek squint) yang tidak muncul di Craig Table 2
 - *Keberadaan* sinyal tangan = berdasar paper (Mahmoud: 14/15 segmen index-finger = thinking/unsure ≈ **93% coverage**).
 - *Pemetaan spesifik* gesture→emosi-belajar = interpretasi; deteksi kita **count-based** (tak bisa bedakan jari-aktif kognitif vs bersandar-pasif). **Ambiguitas posisi ini diselesaikan oleh anotator manusia** saat review (lihat PANDUAN: dagu→Confusion, dahi/2-tangan→Frustration).
 
-**Keputusan: cue KUAT, bukan lemah.** Karena coverage Mahmoud (93%) bahkan **lebih tinggi dari AU7 (78%)**, dan Confusion adalah emosi yang paling sering **under-detected**, bobot tangan dinaikkan **0.40→0.78 = setara `au7_alone_w`** (sinyal AU diskrit terkuat). Tangan jadi cue first-class, bukan sekadar penambah kecil.
+**Keputusan: cue KUAT, bukan lemah** — didorong **tiga alasan yang konvergen** (satu dari paper, dua engineering jujur):
+1. **Dasar paper (kekuatan sinyal):** coverage Mahmoud (93%) bahkan **lebih tinggi dari AU7 (78%)**, dan mulut-mangap = "most significant component" thinking face (Namba 2024). Jadi tangan & mulut memang cue yang **kuat menurut paper**, bukan dilebih-lebihkan.
+2. **Keterbatasan MediaPipe (engineering):** AU4/brow-furrow nyaris mati di MediaPipe (median 0.001) → tidak bisa hanya mengandalkan alis untuk Confusion.
+3. **Kualitas gambar (engineering):** frame video **beresolusi rendah/agak buram** (crop 224px dari webcam) → gerakan alis halus sulit terbaca **bahkan oleh mata manusia**, sedangkan **keberadaan tangan & mulut-terbuka adalah fitur KASAR yang tetap terlihat** meski buram. Maka masuk akal memberi bobot besar ke fitur yang robust terhadap blur.
+
+Ketiganya menunjuk arah sama → bobot tangan & mulut dinaikkan **0.40/0.35 → 0.78 = setara `au7_alone_w`** (sinyal AU diskrit terkuat). Catatan kejujuran: poin 1 adalah *basis paper*; poin 2–3 adalah *alasan kalibrasi* (kenapa di-weight sebesar itu) — kalibrasi memang bukan dari paper (sama statusnya dengan threshold), dan itu sah.
 
 **Dukungan konteks-belajar (jembatan ke emosi-belajar):** Behera et al. (2020, IJAIED) menemukan **HoF naik saat difficulty ↑** (beban kognitif) → menjembatani HoF ke **Confusion** (D'Mello 2012: confusion = cognitive disequilibrium saat materi sulit). Grafsgaard et al. (2013) "Embodied Affect in Tutorial Dialogue" menemukan **two-hands-to-face lebih sering pada siswa dengan self-efficacy rendah** (≈ Frustration) → menjembatani 2-tangan ke **Frustration**.
 
