@@ -33,6 +33,7 @@ Keempat-empatnya digabung lewat **Hybrid Scoring** (lihat [§5](#5-cara-kerja-si
 
 | Dokumen | Isi |
 |---|---|
+| [docs/SETUP.md](docs/SETUP.md) | **Panduan setup dari nol**: prasyarat, buat venv, `pip install -r requirements.txt`, konfigurasi `.env`, menjalankan app, setup opsional LivePortrait, troubleshooting. |
 | [docs/ACADEMIC_BASIS.md](docs/ACADEMIC_BASIS.md) | **Dasar akademis** tiap mekanisme: verbatim quote dari paper + penjelasan (FACS/AU, gaze, tangan, kalibrasi per-orang, co-occurrence). |
 | [docs/ALUR_METODE.md](docs/ALUR_METODE.md) | Alur metode end-to-end: sinyal apa → emosi apa → paper mana, beserta bobotnya. |
 | [docs/COMPUTATION.md](docs/COMPUTATION.md) | Panduan teknis lengkap: dari angka mentah MediaPipe → rumus per-emosi → SigLIP → hybrid → prediksi. Dilengkapi contoh angka nyata dan referensi akademis. |

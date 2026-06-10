@@ -102,9 +102,9 @@ class LPPanel:
     thread latar, lalu hasilnya dikirim balik ke panel ini.
     """
 
-    def __init__(self, induk, app):
-        self.induk = induk
-        self.app   = app
+    def __init__(self, parent, app):
+        self.parent = parent
+        self.app    = app
         self._sudah_dibangun = False
 
         # --- Sumber (frame netral yang diubah) ---
@@ -179,7 +179,7 @@ class LPPanel:
         for emosi in LABELS:
             self.pilihan_driving[emosi] = tk.StringVar(value="Semua")
 
-        area = ctk.CTkScrollableFrame(self.induk, fg_color=("#f3f4f6", "#161622"),
+        area = ctk.CTkScrollableFrame(self.parent, fg_color=("#f3f4f6", "#161622"),
                                       corner_radius=0)
         area.pack(fill="both", expand=True)
         _aktifkan_scroll_mouse(area)

@@ -1,9 +1,43 @@
-fastapi
-uvicorn
-torch
-transformers
-opencv-python
-Pillow
-numpy
-mediapipe
-python-dotenv
+# ============================================================================
+# Labeler App — dependensi untuk MENJALANKAN aplikasi desktop (python app.py).
+# Pasang semua sekaligus:
+#     pip install -r requirements.txt
+#
+# CATATAN PENTING soal PyTorch + GPU (CUDA):
+#   Baris `torch`/`torchvision` di bawah memasang versi CPU/terbaru dari PyPI.
+#   Untuk GPU NVIDIA, pasang torch sesuai CUDA Anda DULU (lihat docs/SETUP.md),
+#   mis.:  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   lalu jalankan `pip install -r requirements.txt` untuk sisanya.
+#
+# Augmentasi LivePortrait (panel "LP Transform") butuh ENV TERPISAH (.venv-lp).
+# Jangan campur ke sini — lihat docs/SETUP.md bagian "Augmentasi LivePortrait".
+# ============================================================================
+
+# --- Antarmuka (GUI desktop) ---
+customtkinter>=5.2.2          # framework UI (WAJIB; tanpa ini app tidak jalan)
+
+# --- Penglihatan komputer / wajah ---
+opencv-python>=4.10           # baca video, crop wajah, gambar viz (modul cv2)
+mediapipe>=0.10.30            # FaceLandmarker + HandLandmarker (geometri wajah, AU)
+Pillow>=10.0                  # konversi gambar untuk ditampilkan di Tkinter
+
+# --- Numerik / data ---
+numpy>=1.26                   # array (mediapipe 0.10.x kompatibel numpy 2.x)
+pandas>=2.0                   # baca/tulis CSV anotasi & Label2d
+
+# --- Model bahasa-visual (SigLIP2) ---
+torch>=2.3                    # backend SigLIP2 (lihat catatan CUDA di atas)
+torchvision>=0.18             # pelengkap torch untuk image processor
+transformers>=4.49            # memuat google/siglip2-base-patch16-224
+sentencepiece>=0.2            # tokenizer teks SigLIP
+protobuf>=4.0                 # dibutuhkan mediapipe & transformers
+accelerate>=0.30              # penempatan model ke GPU/CPU otomatis
+
+# --- Konfigurasi ---
+python-dotenv>=1.0            # membaca file .env
+
+# --- (Opsional) layanan API terpisah: main.py / ai_service.py ---
+# Tidak diperlukan untuk menjalankan aplikasi desktop. Aktifkan bila memakai API.
+# fastapi>=0.110
+# uvicorn>=0.29
+# pydantic>=2.0
