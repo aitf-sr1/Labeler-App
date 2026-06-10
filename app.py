@@ -129,9 +129,13 @@ class VideoLabelerApp:
         self._lp_worker_proc   = None    # subprocess LP persisten (model load sekali)
         self._lp_worker_lock   = threading.Lock()
         self._lp_busy          = False   # cegah proses LP tumpang-tindih (anti pile-up)
-        # Cache hasil LP per frame sumber → tampil lagi saat balik ke frame itu (maks 8).
-        self._lp_result_cache  = {}      # (vid_idx, fi) -> {"emo","result","driving"}
+        # Cache hasil LP per frame sumber → tampil lagi saat balik ke frame itu.
+        # Hanya menyimpan PATH video output + driving (hemat RAM), maks 32 entri.
+        self._lp_result_cache  = {}      # (vid_idx, fi) -> {"emo","video","driving"}
         self._lp_result_cache_order = []
+        # Satu lock untuk SEMUA baca-ubah-tulis file lp_labels / lp_ai_labels / lp_review
+        # (UI thread dan worker batch menulis file yang sama → tanpa lock, update bisa hilang).
+        self._lp_json_lock     = threading.RLock()
 
         self._build_ui()
         # Initialize inline rules content in left panel (needs threshold_vars from right panel)
@@ -690,8 +694,7 @@ class VideoLabelerApp:
         if not self.video_files:
             return
         import re as _re
-        rel_to_idx = {os.path.relpath(v, self.root_folder).replace("\\", "/"): i
-                      for i, v in enumerate(self.video_files)}
+        rel_to_idx = self._rel_to_idx()
         targets = []   # (video_index, frame_idx)
         for img in self.augment_marks.get("reference_images", []):
             m = _re.match(r"cropped_faces/clean/(.+)/frame_(\d+)\.jpg$", img.replace("\\", "/"))
@@ -720,8 +723,7 @@ class VideoLabelerApp:
         if not self.video_files:
             return
         import re as _re
-        rel_to_idx = {os.path.relpath(v, self.root_folder).replace("\\", "/"): i
-                      for i, v in enumerate(self.video_files)}
+        rel_to_idx = self._rel_to_idx()
         targets = []
         for l in LABELS:
             for img in self.augment_marks.get("driving_images", {}).get(l, []):
@@ -761,13 +763,16 @@ class VideoLabelerApp:
             os.path.relpath(self.video_files[self.current_index], self.root_folder)
         )
 
+    def _rel_to_idx(self) -> dict:
+        """Peta path-relatif video (pemisah '/') → index di self.video_files.
+        Dipakai bersama oleh navigasi referensi, driving, dan LP."""
+        return {os.path.relpath(v, self.root_folder).replace("\\", "/"): i
+                for i, v in enumerate(self.video_files)}
+
     def _lp_targets(self):
         """Daftar (vid_idx, frame_idx) untuk semua frame bertanda LP, terurut."""
         import re as _re
-        rel_to_idx = {
-            os.path.relpath(v, self.root_folder).replace("\\", "/"): i
-            for i, v in enumerate(self.video_files)
-        }
+        rel_to_idx = self._rel_to_idx()
         targets = []
         for img in self.augment_marks.get("lp_transform_frames", []):
             m = _re.match(r"cropped_faces/clean/(.+)/frame_(\d+)\.jpg$",
@@ -838,28 +843,45 @@ class VideoLabelerApp:
         # Tampilkan lagi hasil yang sudah pernah diproses untuk frame ini (dari cache)
         self._lp_restore_cached_result((vid_idx, fi))
 
-    def _lp_cache_result(self, key, emo, result_frames, driving_frames):
-        """Simpan hasil LP per frame sumber (maks 8 entri, FIFO)."""
-        self._lp_result_cache[key] = {"emo": emo, "result": result_frames, "driving": driving_frames}
+    def _lp_cache_result(self, key, emo, video_path, driving_path):
+        """Catat hasil LP per frame sumber. Yang disimpan hanya PATH video output +
+        driving (RAM nyaris nol) — frame di-decode ulang dari disk saat dibutuhkan."""
+        self._lp_result_cache[key] = {"emo": emo, "video": video_path, "driving": driving_path}
         if key in self._lp_result_cache_order:
             self._lp_result_cache_order.remove(key)
         self._lp_result_cache_order.append(key)
-        while len(self._lp_result_cache_order) > 8:
+        while len(self._lp_result_cache_order) > 32:
             tua = self._lp_result_cache_order.pop(0)
             self._lp_result_cache.pop(tua, None)
 
     def _lp_restore_cached_result(self, key):
-        """Muat ulang hasil LP frame ini ke panel bila ada di cache."""
+        """Tampilkan kembali hasil LP frame ini bila pernah diproses.
+        Decode video di THREAD LATAR supaya pindah-pindah frame tetap mulus."""
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if not lp or not getattr(lp, "_built", False):
             return
         data = self._lp_result_cache.get(key)
-        if not data:
+        if not data or not os.path.exists(data.get("video", "")):
             return
-        lp.set_driving_frames(data["driving"], data["emo"])
-        lp.set_result_frames(data["result"], data["emo"])
-        lp.update_progress(f"Hasil tersimpan ditampilkan ({data['emo']}, {len(data['result'])} frame).",
-                           "#10b981")
+        lp.start_loading("Memuat hasil yang sudah pernah diproses")
+
+        def _worker(d=data, k=key):
+            from ui.lp_panel import _decode_video
+            res_frames = _decode_video(d["video"])
+            drv_frames = _decode_video(d["driving"])
+
+            def _terapkan():
+                if self._lp_current_source != k:
+                    lp.stop_loading("")          # user sudah pindah frame — jangan timpa
+                    return
+                lp.set_driving_frames(drv_frames, d["emo"])
+                lp.set_result_frames(res_frames, d["emo"])
+                lp.stop_loading(
+                    f"Hasil sebelumnya ditampilkan ({d['emo']}, {len(res_frames)} frame).",
+                    "#10b981")
+            self.root.after(0, _terapkan)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _lp_clear_all_marks(self):
         """Hapus SEMUA frame yang ditandai LP Transform (setelah konfirmasi)."""
@@ -950,11 +972,13 @@ class VideoLabelerApp:
 
     @staticmethod
     def _lp_face_uuid(face_path: str) -> str:
-        """UUID unik per foto wajah baru (prefix 'newface-' agar bisa difilter saat merge)."""
-        import re as _re
+        """UUID unik per foto wajah baru (prefix 'newface-' agar bisa difilter saat merge).
+        Diberi hash pendek dari path supaya 'a b.jpg' vs 'a-b.jpg' tidak dianggap orang sama."""
+        import re as _re, hashlib as _hl
         stem = os.path.splitext(os.path.basename(face_path))[0]
-        bersih = _re.sub(r'[^0-9a-zA-Z]+', '-', stem).strip('-').lower()[:32] or "x"
-        return f"newface-{bersih}"
+        bersih = _re.sub(r'[^0-9a-zA-Z]+', '-', stem).strip('-').lower()[:28] or "x"
+        sidik = _hl.md5(face_path.encode("utf-8")).hexdigest()[:6]
+        return f"newface-{bersih}-{sidik}"
 
     def _lp_process_faces(self):
         """Proses foto wajah terpilih: tiap foto = ORANG BARU. Pakai emosi + driving +
@@ -1036,19 +1060,22 @@ class VideoLabelerApp:
     def _lp_base_flags(self) -> list:
         return os.getenv("LP_EXTRA_FLAGS", "").split()
 
-    @staticmethod
-    def _lp_pipe_readline(pipe, timeout: float):
-        """readline dengan timeout (anti-hang). None bila timeout/EOF."""
-        import select
-        try:
-            r, _, _ = select.select([pipe], [], [], timeout)
-        except Exception:
-            # select gagal (mis. Windows pipe) → blocking readline biasa
-            return pipe.readline() or None
-        if not r:
-            return None
-        line = pipe.readline()
-        return line or None
+    def _lp_pipe_readline(self, pipe, timeout: float):
+        """readline dengan timeout (anti-hang), dicek per detik supaya tombol Batal
+        tetap berfungsi bahkan saat menunggu model load. None bila timeout/EOF/batal."""
+        import select, time as _t
+        batas = _t.time() + timeout
+        while _t.time() < batas:
+            if self._lp_cancel_flag:
+                return None
+            try:
+                r, _, _ = select.select([pipe], [], [], 1.0)
+            except Exception:
+                # select gagal (mis. pipe Windows) → blocking readline biasa
+                return pipe.readline() or None
+            if r:
+                return pipe.readline() or None
+        return None
 
     def _lp_ensure_worker(self) -> bool:
         """Pastikan worker LP hidup (model sudah di-load). Return True bila siap."""
@@ -1120,7 +1147,8 @@ class VideoLabelerApp:
             pass
 
     def _lp_infer(self, src: str, drv: str, out: str) -> str | None:
-        """Inferensi LP: pakai worker persisten (cepat); fallback subprocess sekali jalan."""
+        """Inferensi LP: pakai worker persisten (cepat); fallback subprocess sekali jalan.
+        Menghormati tombol Batal: berhenti tanpa fallback bila user membatalkan."""
         with self._lp_worker_lock:
             try:
                 if self._lp_ensure_worker():
@@ -1128,6 +1156,8 @@ class VideoLabelerApp:
             except Exception as e:
                 print(f"[LP worker] error, fallback ke subprocess sekali jalan: {e}")
                 self._lp_kill_worker()
+        if self._lp_cancel_flag:
+            raise RuntimeError("dibatalkan oleh user")
         return self._lp_run_subprocess(src, drv, out)
 
     def _lp_sync_source_for_current(self):
@@ -1241,8 +1271,11 @@ class VideoLabelerApp:
         self._lp_set_source_preview()
         if not self._lp_begin(lp):
             return
-        lp.start_loading(f"Memproses {emo} (driving {os.path.basename(drv_path)}) — "
-                         f"model di-load sekali, mohon tunggu")
+        # Jelaskan bila >1 emosi dipilih: tombol ini memproses SATU emosi (yang pertama);
+        # emosi lain ikut saat Batch — supaya user tidak mengira semuanya diproses diam-diam.
+        info_lain = (f" — {len(emos) - 1} emosi lain ikut saat Batch" if len(emos) > 1 else "")
+        lp.start_loading(f"Memproses {emo} (driving {os.path.basename(drv_path)})"
+                         f"{info_lain} — model di-load sekali, mohon tunggu")
 
         def _worker(sp=src_path, dp=drv_path, od=out_dir, e=emo, src=(vid_idx, fi)):
             from ui.lp_panel import _decode_video
@@ -1254,8 +1287,8 @@ class VideoLabelerApp:
                     return
                 res_frames = _decode_video(out_vid)        # full-res (untuk disimpan)
                 drv_frames = _decode_video(dp)             # preview driving
-                def on_done(rf=res_frames, df=drv_frames, emo2=e, key=src):
-                    self._lp_cache_result(key, emo2, rf, df)
+                def on_done(rf=res_frames, df=drv_frames, emo2=e, key=src, ov=out_vid, dpp=dp):
+                    self._lp_cache_result(key, emo2, ov, dpp)   # simpan PATH saja (hemat RAM)
                     lp.set_driving_frames(df, emo2)
                     lp.set_result_frames(rf, emo2)
                     lp.stop_loading(
@@ -1352,12 +1385,16 @@ class VideoLabelerApp:
         threading.Thread(target=_worker, daemon=True).start()
 
     def _lp_cancel(self):
-        """Batalkan proses LP yang sedang berjalan."""
+        """Minta proses LP berhenti. PENTING: _lp_busy TIDAK dibersihkan di sini —
+        worker yang sedang jalan yang membersihkannya saat benar-benar berhenti,
+        supaya tidak ada dua proses tumpang-tindih setelah klik Batal."""
         self._lp_cancel_flag = True
-        self._lp_busy = False
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if lp:
-            lp.stop_loading("Dibatalkan (job berjalan akan selesai dulu)", "#9ca3af")
+            if self._lp_busy:
+                lp.start_loading("Dibatalkan — menyelesaikan job yang sedang berjalan")
+            else:
+                lp.stop_loading("Tidak ada proses yang berjalan.", "#9ca3af")
 
     def _lp_write_frames(self, frames: list, emo: str, rel: str, fi: int, drv_stem: str = "",
                          uuid_override: str = "", stem_override: str = "") -> int:
@@ -1380,16 +1417,18 @@ class VideoLabelerApp:
                                uuid or "unknown", emo)
         os.makedirs(out_dir, exist_ok=True)
         tag = ("_" + drv_stem) if drv_stem else ""
-        labels = self._lp_load_labels()
-        saved = 0
+        # Tulis gambar dulu (di luar lock — IO berat), baru update file label sekaligus.
+        rel_baru = []
         for idx, fr in frames:
             fp = os.path.join(out_dir, f"{stem}{tag}_lp{idx:03d}.jpg")
             _cv2.imwrite(fp, fr)
-            rel_gen = os.path.relpath(fp, gen_dir).replace("\\", "/") if gen_dir else fp
-            labels[rel_gen] = self._lp_default_label(emo)
-            saved += 1
-        self._lp_save_labels(labels)
-        return saved
+            rel_baru.append(os.path.relpath(fp, gen_dir).replace("\\", "/") if gen_dir else fp)
+        with self._lp_json_lock:
+            labels = self._lp_load_labels()
+            for rel_gen in rel_baru:
+                labels[rel_gen] = self._lp_default_label(emo)
+            self._lp_save_labels(labels)
+        return len(rel_baru)
 
     def _lp_save_frames(self, frames: list, emo: str):
         """Simpan frame hasil (interaktif) memakai sumber aktif."""
@@ -1431,7 +1470,7 @@ class VideoLabelerApp:
             with open(p, "w") as f:
                 _json.dump({"rejected": sorted(rejected)}, f, indent=2)
         except Exception as e:
-            print(f"[LP Review] gagal simpan: {e}")
+            self._lp_report_error(f"GAGAL menyimpan status tolak/terima: {e}")
 
     def _lp_generated_dir(self) -> str | None:
         if not self.path_json_augment:
@@ -1440,7 +1479,8 @@ class VideoLabelerApp:
                             "augmented", "liveportrait_app")
 
     def _lp_list_generated(self) -> list:
-        """List (abs_path, emo) semua jpg hasil generate, terurut."""
+        """List (abs_path, emo) semua jpg hasil generate, terurut.
+        Folder _trash/ (gambar yang dibuang) tidak ikut."""
         import glob as _glob
         d = self._lp_generated_dir()
         if not d or not os.path.isdir(d):
@@ -1448,6 +1488,8 @@ class VideoLabelerApp:
         out = []
         for p in sorted(_glob.glob(os.path.join(d, "**", "*.jpg"), recursive=True)):
             parts = p.replace("\\", "/").split("/")
+            if "_trash" in parts:
+                continue
             emo = next((x for x in parts if x in LABELS), "?")
             out.append((p, emo))
         return out
@@ -1488,14 +1530,16 @@ class VideoLabelerApp:
         threading.Thread(target=_worker, daemon=True).start()
 
     def _lp_toggle_reject(self, path: str):
+        """Tolak/terima satu gambar hasil (klik 2x). Aman lintas-thread (lock)."""
         gen_dir = self._lp_generated_dir() or ""
         rel = os.path.relpath(path, gen_dir).replace("\\", "/")
-        rejected = self._lp_load_review()
-        if rel in rejected:
-            rejected.discard(rel)
-        else:
-            rejected.add(rel)
-        self._lp_save_review(rejected)
+        with self._lp_json_lock:
+            rejected = self._lp_load_review()
+            if rel in rejected:
+                rejected.discard(rel)
+            else:
+                rejected.add(rel)
+            self._lp_save_review(rejected)
         self._lp_refresh_review()
 
     # ── Label hasil LP (untuk QA sebelum merge) ──────────────────────────────
@@ -1515,6 +1559,13 @@ class VideoLabelerApp:
                 pass
         return {}
 
+    def _lp_report_error(self, pesan: str):
+        """Tampilkan error ke label status panel LP — jangan diam-diam (hanya print)."""
+        print(f"[LP] {pesan}")
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if lp and getattr(lp, "_built", False):
+            self.root.after(0, lambda: lp.update_progress(pesan[:160], "#ef4444"))
+
     def _lp_save_labels(self, labels: dict):
         import json as _json
         p = self._lp_labels_path()
@@ -1524,7 +1575,7 @@ class VideoLabelerApp:
             with open(p, "w") as f:
                 _json.dump(labels, f, indent=2)
         except Exception as e:
-            print(f"[LP Label] gagal simpan: {e}")
+            self._lp_report_error(f"GAGAL menyimpan label: {e}")
 
     @staticmethod
     def _lp_default_label(emo: str) -> dict:
@@ -1556,17 +1607,18 @@ class VideoLabelerApp:
             with open(p, "w") as f:
                 _json.dump(labels, f, indent=2)
         except Exception as e:
-            print(f"[LP AI Label] gagal simpan: {e}")
+            self._lp_report_error(f"GAGAL menyimpan hasil deteksi AI: {e}")
 
     def _lp_set_label(self, gen_rel: str, label: str, value: int):
         """Toggle satu label manual untuk satu gambar hasil (dengan mutual exclusion)."""
-        labels = self._lp_load_labels()
-        cur = labels.get(gen_rel) or {l: 0 for l in LABELS}
-        cur[label] = int(value)
-        if int(value) == 1 and label in MUTUAL_EXCLUSIVE:
-            cur[MUTUAL_EXCLUSIVE[label]] = 0
-        labels[gen_rel] = cur
-        self._lp_save_labels(labels)
+        with self._lp_json_lock:
+            labels = self._lp_load_labels()
+            cur = labels.get(gen_rel) or {l: 0 for l in LABELS}
+            cur[label] = int(value)
+            if int(value) == 1 and label in MUTUAL_EXCLUSIVE:
+                cur[MUTUAL_EXCLUSIVE[label]] = 0
+            labels[gen_rel] = cur
+            self._lp_save_labels(labels)
         self._lp_refresh_review()
 
     def _lp_label_all_ai(self):
@@ -1584,31 +1636,50 @@ class VideoLabelerApp:
             lp.update_progress("Belum ada gambar hasil untuk dilabel", "#f59e0b")
             return
         gen_dir = self._lp_generated_dir() or ""
+        # INKREMENTAL: hanya label gambar yang BELUM punya hasil AI → run ulang cepat.
+        sudah = self._lp_load_ai_labels()
+        antrian = [(p, e) for p, e in gen
+                   if os.path.relpath(p, gen_dir).replace("\\", "/") not in sudah]
+        dilewati = len(gen) - len(antrian)
+        if not antrian:
+            lp.update_progress(
+                f"Semua {len(gen)} hasil sudah berlabel AI. Hapus lp_ai_labels.json untuk ulang.",
+                "#10b981")
+            self._lp_refresh_review()
+            return
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
         self._lp_busy = True
-        lp.start_loading(f"Deteksi AI {len(gen)} hasil (SigLIP+MediaPipe)")
+        lp.start_loading(f"Deteksi AI {len(antrian)} hasil baru"
+                         + (f" ({dilewati} sudah berlabel, dilewati)" if dilewati else ""))
 
         def _worker():
             import cv2 as _cv2
+            from concurrent.futures import ThreadPoolExecutor
             from PIL import Image as _Image
             from core.inference import run_siglip_on_frames
             from core.landmark_analyzer import analyze_frame
             ai_labels = self._lp_load_ai_labels()
             done = 0
-            BATCH = 8
+            BATCH = 16   # batch GPU lebih besar = lebih sedikit forward-pass = lebih cepat
+
+            def _baca(item):
+                # imread melepas GIL → aman & efektif diparalelkan (IO-bound)
+                return item[0], _cv2.imread(item[0])
+
             try:
-                for s in range(0, len(gen), BATCH):
+                pembaca = ThreadPoolExecutor(max_workers=4)
+                for s in range(0, len(antrian), BATCH):
                     if self._lp_cancel_flag:
                         break
-                    chunk = gen[s:s + BATCH]
+                    chunk = antrian[s:s + BATCH]
+                    terbaca = list(pembaca.map(_baca, chunk))
                     pil_imgs, lms, rels = [], [], []
-                    for path, _emo in chunk:
-                        bgr = _cv2.imread(path)
+                    for path, bgr in terbaca:
                         if bgr is None:
                             continue
                         rgb = _cv2.cvtColor(bgr, _cv2.COLOR_BGR2RGB)
                         pil_imgs.append(_Image.fromarray(rgb))
-                        lms.append(analyze_frame(bgr))
+                        lms.append(analyze_frame(bgr))   # MediaPipe: sengaja sekuensial (1 instans)
                         rels.append(os.path.relpath(path, gen_dir).replace("\\", "/"))
                     if not pil_imgs:
                         continue
@@ -1625,9 +1696,11 @@ class VideoLabelerApp:
                                 lab[b] = 0
                         ai_labels[rel] = lab
                         done += 1
-                    self.root.after(0, lambda d=done, t=len(gen):
+                    self.root.after(0, lambda d=done, t=len(antrian):
                                     lp.start_loading(f"Deteksi AI {d}/{t}"))
-                self._lp_save_ai_labels(ai_labels)
+                pembaca.shutdown(wait=False)
+                with self._lp_json_lock:
+                    self._lp_save_ai_labels(ai_labels)
                 def _fin(d=done):
                     self._lp_busy = False
                     lp.stop_loading(f"Deteksi AI selesai: {d} gambar. Bandingkan dengan label "
@@ -1659,33 +1732,69 @@ class VideoLabelerApp:
                 return parts[i + 1].startswith("newface-")
         return False
 
+    _LP_NAMA_MODE = {"base": "Tanpa LP", "lp": "Dengan LP",
+                     "lp_new": "Dengan LP + Dataset Baru"}
+
     def _lp_merge_into_label2d(self):
-        """Buat dataset gabungan sesuai KOMPOSISI yang dipilih (radio di panel):
-          - base   : dataset asli saja (tanpa augmentasi LP)
-          - lp     : asli + hasil LP dari frame video dataset
-          - lp_new : asli + hasil LP video + hasil LP dataset wajah baru
-        Output non-destruktif ke Label2d_merged_{mode}/ (val/test disalin apa adanya,
-        kolom 'synthetic' ditambah). Label2d asli tidak diubah. Bisa di-undo."""
+        """(UI) Buat dataset gabungan sesuai komposisi radio. Validasi cepat di sini,
+        kerja berat (glob ribuan file + tulis CSV) di THREAD LATAR supaya UI tak beku."""
         if not self.path_json_frames or not self.path_json_augment:
             messagebox.showinfo("Buat Dataset", "Buka folder dataset terlebih dahulu.")
             return
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         mode = lp.get_merge_mode() if lp else "lp"
-        import csv as _csv
+        # Split dasar dibuat di UI thread (sekali, kasus pertama saja) karena
+        # _split_dataset_2d membaca widget tkinter — tidak aman dari thread lain.
         base = self._lp_label2d_base()
         if not os.path.exists(os.path.join(base, "train.csv")):
             self._split_dataset_2d(silent=True, force_default=True)
-        if not os.path.exists(os.path.join(base, "train.csv")):
-            messagebox.showinfo("Buat Dataset",
-                "Label2d dasar belum ada. Buat split 2D dulu (panel kanan), lalu coba lagi.")
-            return
+        if lp:
+            lp.start_loading(f"Menyusun dataset '{self._LP_NAMA_MODE[mode]}'")
 
-        # Kumpulkan baris augmentasi sesuai komposisi
+        def _worker(m=mode):
+            try:
+                hasil = self._lp_build_merged_dataset(m)
+            except ValueError as ex:           # kondisi user (bukan bug) → info biasa
+                pesan = str(ex)
+                self.root.after(0, lambda p=pesan: (
+                    lp.stop_loading(p, "#f59e0b") if lp else None,
+                    messagebox.showinfo("Buat Dataset", p)))
+                return
+            except Exception as ex:
+                pesan = f"Gagal membuat dataset: {str(ex)[:200]}"
+                self.root.after(0, lambda p=pesan: (
+                    lp.stop_loading(p, "#ef4444") if lp else None,
+                    messagebox.showerror("Buat Dataset", p)))
+                return
+
+            def _selesai(h=hasil):
+                if lp:
+                    lp.stop_loading(
+                        f"Dataset '{h['nama_mode']}' dibuat: {os.path.basename(h['out'])}",
+                        "#10b981")
+                messagebox.showinfo("Dataset Dibuat", h["ringkasan"])
+            self.root.after(0, _selesai)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _lp_build_merged_dataset(self, mode: str) -> dict:
+        """(Logika murni, TANPA UI — bisa diuji terpisah) Susun Label2d_merged_{mode}:
+          - base   : dataset asli saja
+          - lp     : asli + hasil LP dari frame video dataset
+          - lp_new : asli + hasil LP video + hasil LP dataset wajah baru
+        Non-destruktif: val/test disalin, kolom 'synthetic' ditambah, Label2d asli utuh.
+        Raise ValueError dengan pesan ramah bila prasyarat tak terpenuhi."""
+        import csv as _csv, json as _json
+        base = self._lp_label2d_base()
+        if not os.path.exists(os.path.join(base, "train.csv")):
+            raise ValueError("Label2d dasar belum ada. Buat split 2D dulu (panel kanan).")
+
         aug_rows = []
         if mode in ("lp", "lp_new"):
-            rejected = self._lp_load_review()
-            labels   = self._lp_load_labels()
-            gen_dir  = self._lp_generated_dir() or ""
+            with self._lp_json_lock:
+                rejected = self._lp_load_review()
+                labels   = self._lp_load_labels()
+            gen_dir    = self._lp_generated_dir() or ""
             result_dir = os.path.dirname(self.path_json_augment)
             for path, emo in self._lp_list_generated():
                 if mode == "lp" and self._lp_path_is_newface(path):
@@ -1699,15 +1808,14 @@ class VideoLabelerApp:
                 rel_ds = os.path.relpath(path, result_dir).replace("\\", "/")
                 aug_rows.append((rel_ds, lab))
             if not aug_rows:
-                messagebox.showinfo("Buat Dataset",
-                    "Tidak ada gambar hasil (diterima + berlabel) untuk komposisi ini.\n"
+                raise ValueError(
+                    "Tidak ada gambar hasil (diterima + berlabel) untuk komposisi ini. "
                     "Proses LP / dataset wajah dulu, atau pilih komposisi 'Tanpa LP'.")
-                return
 
         out = self._lp_merge_dir(mode)
         os.makedirs(out, exist_ok=True)
 
-        def _copy_with_synth(split):
+        def _salin_dengan_kolom_synthetic(split):
             src = os.path.join(base, f"{split}.csv")
             if not os.path.exists(src):
                 return 0
@@ -1720,11 +1828,9 @@ class VideoLabelerApp:
                     w.writerow(r + ["0"])
             return len(rows) - 1
 
-        n_val  = _copy_with_synth("val")
-        n_test = _copy_with_synth("test")
-        # train: base (+ augmented bila ada)
-        src = os.path.join(base, "train.csv")
-        with open(src, newline="") as f:
+        n_val  = _salin_dengan_kolom_synthetic("val")
+        n_test = _salin_dengan_kolom_synthetic("test")
+        with open(os.path.join(base, "train.csv"), newline="") as f:
             rows = list(_csv.reader(f))
         with open(os.path.join(out, "train.csv"), "w", newline="") as f:
             w = _csv.writer(f)
@@ -1735,22 +1841,19 @@ class VideoLabelerApp:
                 w.writerow([rel_ds] + [lab[l] for l in LABELS] + ["1"])
         n_train_base = len(rows) - 1
 
-        import json as _json
         with open(os.path.join(out, "lp_merge_manifest.json"), "w") as f:
             _json.dump({"mode": mode, "base": base,
                         "added_train": [r for r, _ in aug_rows], "n_aug": len(aug_rows)},
                        f, indent=2)
 
-        nama_mode = {"base": "Tanpa LP", "lp": "Dengan LP",
-                     "lp_new": "Dengan LP + Dataset Baru"}[mode]
-        messagebox.showinfo("Dataset Dibuat",
+        nama_mode = self._LP_NAMA_MODE[mode]
+        ringkasan = (
             f"Komposisi: {nama_mode}\nOutput: {out}\n\n"
             f"train: {n_train_base} asli + {len(aug_rows)} sintetik = {n_train_base + len(aug_rows)}\n"
             f"val: {n_val}   test: {n_test}\n\n"
             f"Kolom 'synthetic' = 1 untuk hasil LP. Klik 'Undo' untuk hapus folder ini.")
-        if lp:
-            lp.update_progress(f"Dataset '{nama_mode}' dibuat: {os.path.basename(out)}", "#10b981")
         print(f"[LP Merge] mode={mode} {len(aug_rows)} sintetik → {out}")
+        return {"out": out, "nama_mode": nama_mode, "ringkasan": ringkasan}
 
     def _lp_undo_merge(self):
         """Batalkan/ hapus folder dataset gabungan (Label2d_merged_*). Label2d asli aman."""
@@ -1770,29 +1873,38 @@ class VideoLabelerApp:
         print(f"[LP Merge] undo: {len(folders)} folder Label2d_merged_* dihapus.")
 
     def _lp_delete_rejected(self):
-        rejected = self._lp_load_review()
+        """Buang gambar yang ditolak ke folder _trash/ (BUKAN hapus permanen) —
+        user bisa memulihkan manual bila berubah pikiran (prinsip undo/recovery)."""
+        with self._lp_json_lock:
+            rejected = self._lp_load_review()
         if not rejected:
             messagebox.showinfo("Tinjau Hasil", "Tidak ada gambar yang ditolak.")
             return
-        if not messagebox.askyesno(
-                "Hapus yang Ditolak",
-                f"Hapus permanen {len(rejected)} gambar hasil yang ditolak dari disk?"):
-            return
         gen_dir = self._lp_generated_dir() or ""
+        trash_dir = os.path.join(gen_dir, "_trash")
+        if not messagebox.askyesno(
+                "Buang yang Ditolak",
+                f"Pindahkan {len(rejected)} gambar ditolak ke folder _trash?\n\n"
+                f"{trash_dir}\n\n(Tidak dihapus permanen — bisa dipulihkan manual.)"):
+            return
+        import shutil
         n = 0
         for rel in list(rejected):
-            fp = os.path.join(gen_dir, rel.replace("/", os.sep))
+            sumber = os.path.join(gen_dir, rel.replace("/", os.sep))
+            tujuan = os.path.join(trash_dir, rel.replace("/", os.sep))
             try:
-                if os.path.exists(fp):
-                    os.remove(fp)
+                if os.path.exists(sumber):
+                    os.makedirs(os.path.dirname(tujuan), exist_ok=True)
+                    shutil.move(sumber, tujuan)
                 n += 1
             except Exception as e:
-                print(f"[LP Review] gagal hapus {fp}: {e}")
-        self._lp_save_review(set())
+                self._lp_report_error(f"Gagal memindah {rel}: {e}")
+        with self._lp_json_lock:
+            self._lp_save_review(set())
         self._lp_refresh_review()
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if lp:
-            lp.update_progress(f"{n} gambar ditolak dihapus dari disk", "#10b981")
+            lp.update_progress(f"{n} gambar ditolak dipindah ke _trash (bisa dipulihkan).", "#10b981")
 
     def _on_manual_check(self, frame_idx: int, label: str, value: bool):
         """Dipanggil saat user centang/uncentang checkbox manual label."""
@@ -2132,14 +2244,15 @@ class VideoLabelerApp:
 
     def seek_to_frame(self, frame_idx: int):
         """
-        Seek video ke frame yang mewakili posisi thumbnail ke-frame_idx (0-15).
+        Seek video ke POSISI ASLI thumbnail ke-frame_idx (0 atau 1).
 
-        Args:
-            frame_idx: Index thumbnail (0-15), bukan frame absolut.
+        Thumbnail diekstrak pada 25% dan 75% durasi video — rumus (2i+1)/(2N) di
+        utils/video.py — jadi seek harus memakai rumus yang SAMA supaya gambar yang
+        tampil di player cocok dengan thumbnail yang diklik.
         """
         import cv2
         if not self.cap or not self.video_files: return
-        target = int(self.total_frames * frame_idx / 4)
+        target = int(self.total_frames * (2 * frame_idx + 1) / 4)
         self.current_frame = self.play_start_frame = target
         self.play_start_time = time.time()
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, target)

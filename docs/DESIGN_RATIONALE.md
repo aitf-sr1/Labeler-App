@@ -38,7 +38,7 @@ Namun Whitehill et al. (2014) menemukan bahwa untuk **Engagement**, penampilan w
 
 **Alasan:** Whitehill et al. (2014) menunjukkan engagement dideteksi dari penampilan **holistik** wajah (static pixels), bukan AU tertentu. Inilah satu-satunya emosi tanpa AU diskrit → SigLIP berperan paling besar.
 
-> "Furthermore, we found that engagement labels of 10-second video clips can be reliably predicted from the average labels of their constituent frames (Pearson r = 0.85), suggesting that static expressions contain the bulk of the information about engagement used by observers." *(abstract)*
+> "Furthermore, we found that engagement labels of 10-second video clips can be reliably predicted from the average labels of their constituent frames (Pearson r = 0.85), suggesting that static expressions contain the bulk of the information used by observers."
 
 Craig et al. (2008) tidak menemukan AU primer untuk Engagement → justru ini alasan SigLIP-nya tertinggi (0.50). Landmark tetap 0.50 karena gaze (Whitehill level 1: "looking away") di-gate setelah scoring.
 

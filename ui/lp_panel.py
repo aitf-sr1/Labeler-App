@@ -138,6 +138,7 @@ class LPPanel:
         self.grid_wajah       = None
         self._ref_thumb_wajah = []
         self._thumb_wajah_cache = {}               # {path: thumb_bgr} agar toggle tak decode ulang
+        self.label_ringkasan_wajah = None          # ringkasan setelan dekat tombol proses wajah
 
         # Chip label AI (read-only) di pemeriksa hasil
         self.chip_ai_periksa = {}
@@ -214,7 +215,12 @@ class LPPanel:
         self._bangun_dataset_wajah(area)
         self._bangun_tinjau_label(area)
 
+        # Ringkasan setelan ikut berubah saat dropdown driving diganti
+        for emosi in LABELS:
+            self.pilihan_driving[emosi].trace_add("write", self._segarkan_ringkasan)
+
         self._pindai_folder_driving()   # isi menu driving otomatis
+        self._segarkan_ringkasan()
 
     def _bangun_header_sumber(self, induk):
         kartu = ctk.CTkFrame(induk, fg_color=("#fef3c7", "#1c1400"), corner_radius=10)
@@ -437,6 +443,13 @@ class LPPanel:
                                             text_color=("#6b7280", "#9ca3af"))
         self.label_jml_wajah.pack(side="left", padx=(8, 0))
 
+        # Ringkasan setelan aktif — supaya user TIDAK perlu scroll ke atas untuk
+        # mengecek emosi/driving/frame sebelum memproses wajah.
+        self.label_ringkasan_wajah = ctk.CTkLabel(
+            induk, text="", font=("Poppins", 8),
+            text_color=("#d97706", "#fbbf24"), anchor="w", justify="left", wraplength=680)
+        self.label_ringkasan_wajah.pack(fill="x", padx=14, pady=(0, 2))
+
         self.grid_wajah = ctk.CTkFrame(induk, fg_color="transparent")
         self.grid_wajah.pack(fill="both", expand=True, padx=10, pady=(2, 8))
 
@@ -450,7 +463,7 @@ class LPPanel:
         ctk.CTkButton(bar, text="Deteksi AI Semua", height=28, width=130, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#6366f1", hover_color="#4f46e5",
                       command=self.app._lp_label_all_ai).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(bar, text="Hapus Ditolak", height=28, width=120, corner_radius=8,
+        ctk.CTkButton(bar, text="Buang Ditolak → _trash", height=28, width=156, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#ef4444", hover_color="#dc2626",
                       command=self.app._lp_delete_rejected).pack(side="left", padx=(0, 6))
         ctk.CTkLabel(
@@ -653,6 +666,7 @@ class LPPanel:
             self.label_frame_terpilih.configure(
                 text=f"Frame tertanda ({len(self.frame_terpilih)}): {urut}")
         self._geser_slider(self.index_hasil)
+        self._segarkan_ringkasan()
 
     def _simpan_frame_tertanda(self):
         if not self.frame_hasil:
@@ -908,6 +922,7 @@ class LPPanel:
             self.menu_driving[emosi].configure(values=nilai)
             if self.pilihan_driving[emosi].get() not in nilai:
                 self.pilihan_driving[emosi].set(nilai[0])
+        self._segarkan_ringkasan()
 
     def reset(self):
         """Kosongkan state kerja (pilihan emosi, frame tertanda, hasil) — tanpa hapus file."""
@@ -960,6 +975,7 @@ class LPPanel:
             tombol.configure(fg_color=warna, text_color="#0b0b12", border_color=warna)
         else:
             tombol.configure(fg_color="transparent", text_color=warna, border_color=warna)
+        self._segarkan_ringkasan()
 
     # ── Dataset wajah baru ──────────────────────────────────────────────────────
 
@@ -1002,6 +1018,27 @@ class LPPanel:
     def _segarkan_label_wajah(self):
         if hasattr(self, "label_jml_wajah"):
             self.label_jml_wajah.configure(text=f"{len(self.wajah_terpilih)} dipilih")
+
+    def _segarkan_ringkasan(self, *_):
+        """Perbarui baris ringkasan setelan aktif (emosi · driving · frame hasil)."""
+        if not self.label_ringkasan_wajah:
+            return
+        terpilih = self.get_selected_emotions()
+        emos = ", ".join(e[:4] for e in terpilih) or "— (belum dipilih)"
+        bagian_driving = []
+        for e in terpilih:
+            pilih = self.pilihan_driving[e].get()
+            jumlah = len(self.video_driving.get(e, []))
+            if pilih in ("Semua", "(tidak ada)", ""):
+                bagian_driving.append(f"{e[:4]}→Semua({jumlah})")
+            else:
+                bagian_driving.append(f"{e[:4]}→{pilih}")
+        driving = "  ".join(bagian_driving) or "—"
+        frame_hasil = (", ".join(str(i + 1) for i in sorted(self.frame_terpilih))
+                       if self.frame_terpilih else f"{self.get_target_n()} merata")
+        self.label_ringkasan_wajah.configure(
+            text=f"Setelan aktif — Emosi: {emos}   ·   Driving: {driving}   ·   "
+                 f"Frame hasil: {frame_hasil}")
 
     def render_faces(self, item_wajah: list, dari_cache: bool = False):
         """Render grid thumbnail wajah. item: (path, terpilih, thumb_bgr).

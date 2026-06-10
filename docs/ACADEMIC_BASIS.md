@@ -146,7 +146,7 @@ AU25+AU26 → Confusion   ←   jawOpen                      (Namba 2024)
 
 ---
 
-> "subjective labeling of expressions has been shown to be less reliable than objective coding for finding relationships between facial expression and other state variables."
+> "subjective labeling of expressions has also been shown to be less reliable than objective coding for finding relationships between facial expression and other state variables."
 
 — Bartlett et al. (2006). (p. 22)  [PDF](../../paper/22-%20Bartlett%202006%20-%20Automatic%20Recognition%20of%20Facial%20Actions%20in%20Spontaneous%20Expressions.pdf#page=1)
 
@@ -368,11 +368,11 @@ Catatan penting: paper D'Mello mengukur **transisi temporal** (urutan emosi sela
 
 ---
 
-> "Predicting Facial Indicators of Confusion with Hidden Markov Models... AU4 was the most predictive of confusion in a learning context."
+> "Confusion has been correlated with facial action unit 4 (AU4, "Brow Lowerer") in multiple studies"
 
 — Grafsgaard, J.F., Boyer, K.E., & Lester, J.C. (2011). *Predicting Facial Indicators of Confusion with Hidden Markov Models.* ACII 2011. (p. 1)  [PDF](../../paper/17-%20Grafsgaard%202011%20-%20Predicting%20Facial%20Indicators%20of%20Confusion%20with%20Hidden%20Markov%20Models.pdf#page=1)
 
-**Penjelasan:** Grafsgaard 2011 secara independen memvalidasi AU4 (alis turun) sebagai prediktor terkuat untuk confusion dalam konteks belajar — menggunakan Hidden Markov Model (HMM) pada data video nyata. Ini menguatkan Craig 2008 dari sudut pendekatan machine learning yang berbeda.
+**Penjelasan:** Grafsgaard 2011 secara independen mengaitkan AU4 (alis turun) dengan confusion dalam konteks belajar — menggunakan Hidden Markov Model (HMM) pada data video tutoring nyata, paper ini "utilizes these findings to predict student confusion as evidenced by student AU4". Ini menguatkan Craig 2008 dari sudut pendekatan machine learning yang berbeda. (Catatan: versi lama dokumen ini mengutip kalimat parafrase "AU4 was the most predictive…" yang BUKAN verbatim paper — sudah diganti dengan kalimat asli di atas.)
 
 ---
 
@@ -390,9 +390,9 @@ Catatan penting: paper D'Mello mengukur **transisi temporal** (urutan emosi sela
 
 Setelah menemukan bahwa Craig 2008 tidak menemukan sinyal mulut yang signifikan untuk emosi belajar, paper baru ini mengisi celah tersebut secara langsung:
 
-> "Component 2 indicated opening the mouth (AU25, AU26)... can be considered the most significant component, but it has not been previously reported in the relevant literature."
+> "The results of Component 2 indicated opening the mouth (AU25, AU26)... Opening the mouth (Component 2) is a novel form that has not been previously reported in the relevant literature. From a data-driven perspective based on effect sizes, this movement can be considered the most significant component"
 
-> "the situation in which participants had to think and answer questions induced... opening of the mouth (Component 2), blinking (Component 3), furrowing (Component 4)."
+> "thinking situations elicited opening of the mouth (Component 2), blinking (Component 3), furrowing (Component 4), and smiling (Component 5)"
 
 — Namba, S., Sato, W., Namba, S., Diel, A., Ishi, C., & Minato, T. (2024). *How an Android Expresses "Now Loading…": Examining the Properties of Thinking Faces.* International Journal of Social Robotics, 16, 1861–1877.  [PDF](../../paper/05-%20Namba%202024%20-%20How%20an%20Android%20Expresses%20Thinking%20Face%20Examining%20Properties%20of%20Thinking%20Faces.pdf#page=1)
 
