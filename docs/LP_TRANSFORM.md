@@ -119,9 +119,11 @@ lebih umum / tidak overfit:
   - **Label final manual** (pill, bisa diklik) — yang dipakai saat buat dataset.
   Ini membantu memastikan tidak ada emosi lain selain yang diinginkan.
 - **Deteksi AI Semua** mengisi chip AI untuk semua hasil (disimpan di `lp_ai_labels.json`,
-  terpisah dari label final manual `lp_labels.json`).
-- Klik **2×** gambar = **tolak/terima** (merah = ditolak, tidak ikut dataset). **Hapus Ditolak**
-  menghapus file yang ditolak dari disk.
+  terpisah dari label final manual `lp_labels.json`). Berjalan **inkremental** — gambar yang
+  sudah berlabel AI dilewati, jadi menjalankan ulang cepat.
+- Klik **2×** gambar = **tolak/terima** (merah = ditolak, tidak ikut dataset). **Buang Ditolak →
+  _trash** memindahkan gambar yang ditolak ke folder `_trash/` (BUKAN hapus permanen — bisa
+  dipulihkan manual bila berubah pikiran).
 
 ---
 

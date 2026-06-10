@@ -82,7 +82,7 @@ Siswa terlihat **lelah/malas karena tidak tertarik** — bukan sedih, bukan meng
 ## 2. ENGAGEMENT (Keterlibatan/Fokus)
 
 ### Definisi (D'Mello & Graesser 2012)
-> *"Engagement/flow — a state of interest that results from involvement in an activity."*
+> **Engagement/flow** = *"state of interest that results from involvement in an activity"*
 
 ### Definisi level (Whitehill 2014)
 > *"3: Engaged in task – student requires no admonition to 'stay on task'."*

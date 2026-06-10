@@ -529,24 +529,31 @@ Labeler-App-Siglip-2/
 │
 ├── ui/
 │   ├── constants.py          # LABELS, LABEL_COLORS, DEFAULT_PROMPT_GROUPS
-│   ├── left_panel.py         # Panel kiri: video player, galeri frame (+ marker frame netral)
+│   ├── left_panel.py         # Panel kiri: video player, galeri frame (+ marker frame netral, tab LP)
 │   ├── right_panel.py        # Panel kanan: statistik, AI bars, prompt, threshold, kartu kalibrasi
-│   └── rules_panel.py        # RulesContent (embedded di gallery) + RulesPanel (compat wrapper)
+│   ├── rules_panel.py        # RulesContent (embedded di gallery) + RulesPanel (compat wrapper)
+│   └── lp_panel.py           # Panel LP Transform (augmentasi LivePortrait di app) — lihat docs/LP_TRANSFORM.md
 │
 ├── utils/
 │   ├── io.py                 # Baca/tulis CSV/JSON annotations + thresholds
 │   ├── person_neutral.py     # Kalibrasi per-orang: simpan/baca frame netral (person_neutrals.json)
 │   └── video.py              # Ekstraksi frame, crop, landmark pipeline, simpan cache
 │
+├── tests/
+│   └── test_smoke_gui.py     # Smoke test GUI (bangun app + panel LP headless, cegah regresi)
+│
 └── docs/
+    ├── SETUP.md              # Panduan setup dari nol: venv, pip install, .env, jalankan
     ├── ACADEMIC_BASIS.md     # Dasar akademis + verbatim quote tiap mekanisme
     ├── ALUR_METODE.md        # Alur sinyal → emosi → paper
     ├── COMPUTATION.md        # Panduan teknis: dari angka MediaPipe ke prediksi akhir
     ├── DESIGN_RATIONALE.md   # Alasan tiap bobot (kode vs paper)
     ├── PANDUAN_ANOTASI_MANUAL.md  # Panduan anotator manusia
-    └── RULES_PANEL.md        # Dokumentasi lengkap Rules Editor & semua parameter
+    ├── RULES_PANEL.md        # Dokumentasi lengkap Rules Editor & semua parameter
+    └── LP_TRANSFORM.md       # Panel LP Transform: alur augmentasi, dataset baru, merge/undo
 
-(Arsitektur MediaPipe-only: TIDAK ada py-feat, tidak ada .venv-pyfeat, tidak ada subprocess.)
+# Augmentasi LP memakai worker terpisah 4-Create/lp_worker.py di .venv-lp (di luar repo app).
+# Inti pelabelan tetap MediaPipe-only: TIDAK ada py-feat di pipeline inferensi.
 ```
 
 ---
