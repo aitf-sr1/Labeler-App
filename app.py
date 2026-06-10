@@ -129,6 +129,9 @@ class VideoLabelerApp:
         self._lp_worker_proc   = None    # subprocess LP persisten (model load sekali)
         self._lp_worker_lock   = threading.Lock()
         self._lp_busy          = False   # cegah proses LP tumpang-tindih (anti pile-up)
+        # Cache hasil LP per frame sumber → tampil lagi saat balik ke frame itu (maks 8).
+        self._lp_result_cache  = {}      # (vid_idx, fi) -> {"emo","result","driving"}
+        self._lp_result_cache_order = []
 
         self._build_ui()
         # Initialize inline rules content in left panel (needs threshold_vars from right panel)
@@ -828,8 +831,56 @@ class VideoLabelerApp:
             bgr = _cv2.imread(sp)
             if bgr is not None:
                 lp.set_source_frame(bgr, uuid or "", fi)
-                return
-        lp.set_source_label(uuid or "", fi)
+            else:
+                lp.set_source_label(uuid or "", fi)
+        else:
+            lp.set_source_label(uuid or "", fi)
+        # Tampilkan lagi hasil yang sudah pernah diproses untuk frame ini (dari cache)
+        self._lp_restore_cached_result((vid_idx, fi))
+
+    def _lp_cache_result(self, key, emo, result_frames, driving_frames):
+        """Simpan hasil LP per frame sumber (maks 8 entri, FIFO)."""
+        self._lp_result_cache[key] = {"emo": emo, "result": result_frames, "driving": driving_frames}
+        if key in self._lp_result_cache_order:
+            self._lp_result_cache_order.remove(key)
+        self._lp_result_cache_order.append(key)
+        while len(self._lp_result_cache_order) > 8:
+            tua = self._lp_result_cache_order.pop(0)
+            self._lp_result_cache.pop(tua, None)
+
+    def _lp_restore_cached_result(self, key):
+        """Muat ulang hasil LP frame ini ke panel bila ada di cache."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if not lp or not getattr(lp, "_built", False):
+            return
+        data = self._lp_result_cache.get(key)
+        if not data:
+            return
+        lp.set_driving_frames(data["driving"], data["emo"])
+        lp.set_result_frames(data["result"], data["emo"])
+        lp.update_progress(f"Hasil tersimpan ditampilkan ({data['emo']}, {len(data['result'])} frame).",
+                           "#10b981")
+
+    def _lp_clear_all_marks(self):
+        """Hapus SEMUA frame yang ditandai LP Transform (setelah konfirmasi)."""
+        n = len(self.augment_marks.get("lp_transform_frames", []))
+        if n == 0:
+            lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+            if lp:
+                lp.update_progress("Belum ada tanda LP untuk dihapus", "#fbbf24")
+            return
+        if not messagebox.askyesno("Hapus Semua Tanda LP",
+                                   f"Hapus semua {n} tanda 'LP Transform'? (gambar hasil TIDAK terhapus)"):
+            return
+        self.augment_marks["lp_transform_frames"] = []
+        self._lp_current_source = None
+        self._save_augment_marks()
+        if self.video_files:
+            self._refresh_augment_widgets(
+                os.path.relpath(self.video_files[self.current_index], self.root_folder))
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if lp:
+            lp.update_progress(f"{n} tanda LP dihapus.", "#10b981")
 
     # ── Driving folder ───────────────────────────────────────────────────────
     _LP_EMO_ALIASES = {
@@ -862,6 +913,124 @@ class VideoLabelerApp:
         for l in LABELS:
             mapping[l] = sorted(mapping[l], key=_key)
         return mapping
+
+    # ── Dataset wajah baru (tiap foto = 1 orang baru, untuk menambah ragam orang) ──
+    def _lp_scan_faces(self, folder: str) -> list:
+        """Daftar path semua gambar wajah di folder (jpg/png/…), terurut."""
+        import glob as _glob
+        imgs = []
+        if folder and os.path.isdir(folder):
+            for ext in ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.webp",
+                        "*.JPG", "*.JPEG", "*.PNG"):
+                imgs += _glob.glob(os.path.join(folder, ext))
+        return sorted(set(imgs))
+
+    def _lp_refresh_faces(self):
+        """Decode thumbnail wajah di thread latar (anti-lag), lalu render ke grid panel."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if not lp or not lp._built:
+            return
+        paths = self._lp_scan_faces(lp.get_face_folder())
+        lp.update_progress(f"Memuat {len(paths)} foto wajah…", "#6b7280")
+
+        def _worker():
+            import cv2 as _cv2
+            items = []
+            for p in paths[:300]:
+                bgr = _cv2.imread(p)
+                if bgr is None:
+                    continue
+                items.append((p, False, _cv2.resize(bgr, (120, 120))))
+            self.root.after(0, lambda it=items: (
+                lp.render_faces(it),
+                lp.update_progress(
+                    f"{len(it)} foto wajah dimuat — centang yang ingin diproses.", "#10b981")))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    @staticmethod
+    def _lp_face_uuid(face_path: str) -> str:
+        """UUID unik per foto wajah baru (prefix 'newface-' agar bisa difilter saat merge)."""
+        import re as _re
+        stem = os.path.splitext(os.path.basename(face_path))[0]
+        bersih = _re.sub(r'[^0-9a-zA-Z]+', '-', stem).strip('-').lower()[:32] or "x"
+        return f"newface-{bersih}"
+
+    def _lp_process_faces(self):
+        """Proses foto wajah terpilih: tiap foto = ORANG BARU. Pakai emosi + driving +
+        frame index (picked/N) yang sama seperti alur LP biasa."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if not lp:
+            return
+        if not lp._built:
+            lp.build()
+        faces = lp.get_selected_faces()
+        if not faces:
+            lp.update_progress("Centang dulu foto wajah yang ingin diproses", "#f59e0b")
+            return
+        emos = lp.get_selected_emotions()
+        if not emos:
+            lp.update_progress("Pilih minimal satu emosi (pill) dulu", "#f59e0b")
+            return
+        result_dir = os.path.dirname(self.path_json_augment) if self.path_json_augment else ""
+        if not result_dir:
+            lp.update_progress("Buka folder dataset terlebih dahulu", "#ef4444")
+            return
+        picked = lp.get_picked_indices()
+        n_even = lp.get_target_n()
+        plan = []
+        for face in faces:
+            for emo in emos:
+                for drv in lp.get_driving_list(emo):
+                    plan.append((face, emo, drv))
+        if not plan:
+            lp.update_progress("Tidak ada video driving untuk emosi terpilih (Pindai folder driving)",
+                               "#ef4444")
+            return
+        if not self._lp_begin(lp):
+            return
+        lp.start_loading(f"Proses {len(plan)} job wajah baru")
+
+        def _worker(jobs=plan, picks=picked, ndump=n_even):
+            from ui.lp_panel import _decode_video
+            done = 0
+            for k, (face, emo, drv) in enumerate(jobs, 1):
+                if self._lp_cancel_flag:
+                    break
+                uuid = self._lp_face_uuid(face)
+                drv_stem = os.path.splitext(os.path.basename(drv))[0]
+                out_d = os.path.join(result_dir, "augmented", "liveportrait_app",
+                                     uuid, emo, drv_stem)
+                stem = os.path.splitext(os.path.basename(face))[0][:14]
+                self.root.after(0, lambda m=f"Wajah {k}/{len(jobs)} · {stem} · {emo}":
+                                lp.start_loading(m))
+                try:
+                    out_vid = self._lp_infer(face, drv, out_d)
+                    if not out_vid:
+                        continue
+                    frames = _decode_video(out_vid)
+                    if not frames:
+                        continue
+                    total = len(frames)
+                    if picks:
+                        idxs = [i for i in picks if i < total]
+                    else:
+                        idxs = sorted({int(round(i * (total - 1) / max(ndump - 1, 1)))
+                                       for i in range(ndump)})
+                    sel = [(i, frames[i]) for i in idxs if i < total]
+                    self._lp_write_frames(sel, emo, "", 0, drv_stem,
+                                          uuid_override=uuid, stem_override=uuid)
+                    done += 1
+                except Exception as ex:
+                    print(f"[LP Face] {face} {emo} {drv_stem}: {ex}")
+
+            def _fin(d=done, t=len(jobs)):
+                self._lp_busy = False
+                lp.stop_loading(f"Wajah baru selesai: {d}/{t} job. Cek di 'Tinjau & Label'.", "#10b981")
+                self._lp_refresh_review()
+            self.root.after(0, _fin)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ── Worker LP persisten (model di-load SEKALI → tak ada lag reload tiap frame) ──
     def _lp_base_flags(self) -> list:
@@ -1072,29 +1241,29 @@ class VideoLabelerApp:
         self._lp_set_source_preview()
         if not self._lp_begin(lp):
             return
-        lp.update_progress(f"Memproses {emo} (driving {os.path.basename(drv_path)})… "
-                           f"(model di-load sekali, sabar di awal)", "#f59e0b")
+        lp.start_loading(f"Memproses {emo} (driving {os.path.basename(drv_path)}) — "
+                         f"model di-load sekali, mohon tunggu")
 
-        def _worker(sp=src_path, dp=drv_path, od=out_dir, e=emo):
+        def _worker(sp=src_path, dp=drv_path, od=out_dir, e=emo, src=(vid_idx, fi)):
             from ui.lp_panel import _decode_video
             try:
                 out_vid = self._lp_infer(sp, dp, od)
                 if not out_vid:
-                    self.root.after(0, lambda: lp.update_progress(
+                    self.root.after(0, lambda: lp.stop_loading(
                         "LP tidak menghasilkan video output", "#ef4444"))
                     return
                 res_frames = _decode_video(out_vid)        # full-res (untuk disimpan)
                 drv_frames = _decode_video(dp)             # preview driving
-                def on_done(rf=res_frames, df=drv_frames, emo2=e):
+                def on_done(rf=res_frames, df=drv_frames, emo2=e, key=src):
+                    self._lp_cache_result(key, emo2, rf, df)
                     lp.set_driving_frames(df, emo2)
                     lp.set_result_frames(rf, emo2)
-                    lp.update_progress(
-                        f"Selesai · {emo2} · {len(rf)} frame. Tandai frame (Tandai Frame) lalu Simpan.",
-                        "#10b981")
+                    lp.stop_loading(
+                        f"Selesai · {emo2} · {len(rf)} frame. Tandai frame lalu Simpan.", "#10b981")
                 self.root.after(0, on_done)
             except Exception as ex:
                 err = str(ex)[:160]
-                self.root.after(0, lambda: lp.update_progress(f"Error: {err}", "#ef4444"))
+                self.root.after(0, lambda: lp.stop_loading(f"Error: {err}", "#ef4444"))
             finally:
                 self._lp_busy = False
 
@@ -1136,7 +1305,7 @@ class VideoLabelerApp:
         mode = (f"frame {[i+1 for i in picked]}" if picked else f"{n_even} frame merata")
         if not self._lp_begin(lp):
             return
-        lp.update_progress(f"Batch {len(plan)} job · ekstrak {mode}…", "#f59e0b")
+        lp.start_loading(f"Batch {len(plan)} job · ekstrak {mode}")
 
         def _worker(jobs=plan, picks=picked, ndump=n_even):
             done = 0
@@ -1152,8 +1321,8 @@ class VideoLabelerApp:
                 drv_stem = os.path.splitext(os.path.basename(drv))[0]
                 out_d = os.path.join(result_dir, "augmented", "liveportrait_app",
                                      uuid or "unknown", emo, drv_stem)
-                self.root.after(0, lambda m=f"Batch {k}/{len(jobs)} · {(uuid or '?')[:6]} · {emo}…":
-                                lp.update_progress(m, "#f59e0b"))
+                self.root.after(0, lambda m=f"Batch {k}/{len(jobs)} · {(uuid or '?')[:6]} · {emo}":
+                                lp.start_loading(m))
                 try:
                     out_vid = self._lp_infer(sp, drv, out_d)
                     if not out_vid:
@@ -1176,7 +1345,7 @@ class VideoLabelerApp:
 
             def _fin(d=done, t=len(jobs)):
                 self._lp_busy = False
-                lp.update_progress(f"Batch selesai: {d}/{t} job. Cek di 'Tinjau & Label'.", "#10b981")
+                lp.stop_loading(f"Batch selesai: {d}/{t} job. Cek di 'Tinjau & Label'.", "#10b981")
                 self._lp_refresh_review()
             self.root.after(0, _fin)
 
@@ -1188,19 +1357,25 @@ class VideoLabelerApp:
         self._lp_busy = False
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if lp:
-            lp.update_progress("Dibatalkan (job berjalan akan selesai dulu)", "#9ca3af")
+            lp.stop_loading("Dibatalkan (job berjalan akan selesai dulu)", "#9ca3af")
 
-    def _lp_write_frames(self, frames: list, emo: str, rel: str, fi: int, drv_stem: str = "") -> int:
+    def _lp_write_frames(self, frames: list, emo: str, rel: str, fi: int, drv_stem: str = "",
+                         uuid_override: str = "", stem_override: str = "") -> int:
         """Tulis daftar (idx, bgr) ke augmented/liveportrait_app/{uuid}/{emo}/ +
-        catat label default (emo target=1) di lp_labels.json untuk dicek sebelum merge."""
+        catat label default (emo target=1) di lp_labels.json untuk dicek sebelum merge.
+
+        uuid_override/stem_override dipakai untuk sumber 'dataset wajah baru' (tiap foto =
+        orang baru, tidak punya rel video)."""
         import cv2 as _cv2
         if not self.path_json_augment:
             return 0
-        base = os.path.splitext(rel)[0]
-        uuid = self._person_of(rel)
+        uuid = uuid_override or self._person_of(rel)
+        if stem_override:
+            stem = stem_override
+        else:
+            stem = os.path.splitext(rel)[0].replace("/", "__") + f"_f{fi:02d}"
         result_dir = os.path.dirname(self.path_json_augment)
         gen_dir = self._lp_generated_dir() or ""
-        stem = base.replace("/", "__") + f"_f{fi:02d}"
         out_dir = os.path.join(result_dir, "augmented", "liveportrait_app",
                                uuid or "unknown", emo)
         os.makedirs(out_dir, exist_ok=True)
@@ -1288,8 +1463,9 @@ class VideoLabelerApp:
 
         def _worker():
             import cv2 as _cv2
-            rejected = self._lp_load_review()
-            labels   = self._lp_load_labels()
+            rejected  = self._lp_load_review()
+            labels    = self._lp_load_labels()
+            ai_labels = self._lp_load_ai_labels()
             MAX = 300                          # batasi agar UI tetap ringan
             items = []
             for path, emo in gen[:MAX]:
@@ -1299,7 +1475,8 @@ class VideoLabelerApp:
                     continue
                 thumb = _cv2.resize(bgr, (160, 160))
                 lab = labels.get(rel) or self._lp_default_label(emo)
-                items.append((path, emo, rel in rejected, lab, thumb))
+                ai_lab = ai_labels.get(rel, {})
+                items.append((path, emo, rel in rejected, lab, ai_lab, thumb))
             extra = max(0, len(gen) - MAX)
             self.root.after(0, lambda it=items, ex=extra: (
                 lp.render_review(it),
@@ -1353,6 +1530,34 @@ class VideoLabelerApp:
     def _lp_default_label(emo: str) -> dict:
         return {l: (1 if l == emo else 0) for l in LABELS}
 
+    def _lp_ai_labels_path(self) -> str | None:
+        """File terpisah untuk hasil DETEKSI AI (dibandingkan dgn label manual final)."""
+        if not self.path_json_augment:
+            return None
+        return os.path.join(os.path.dirname(self.path_json_augment), "lp_ai_labels.json")
+
+    def _lp_load_ai_labels(self) -> dict:
+        import json as _json
+        p = self._lp_ai_labels_path()
+        if p and os.path.exists(p):
+            try:
+                with open(p) as f:
+                    return _json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _lp_save_ai_labels(self, labels: dict):
+        import json as _json
+        p = self._lp_ai_labels_path()
+        if not p:
+            return
+        try:
+            with open(p, "w") as f:
+                _json.dump(labels, f, indent=2)
+        except Exception as e:
+            print(f"[LP AI Label] gagal simpan: {e}")
+
     def _lp_set_label(self, gen_rel: str, label: str, value: int):
         """Toggle satu label manual untuk satu gambar hasil (dengan mutual exclusion)."""
         labels = self._lp_load_labels()
@@ -1365,8 +1570,9 @@ class VideoLabelerApp:
         self._lp_refresh_review()
 
     def _lp_label_all_ai(self):
-        """Label SEMUA gambar hasil pakai SigLIP+MediaPipe (sama seperti menu utama),
-        di thread latar. Hasil ditulis ke lp_labels.json untuk dicek sebelum merge."""
+        """Deteksi emosi SEMUA gambar hasil pakai SigLIP+MediaPipe (penggaris yang sama
+        dengan menu utama), di thread latar. Hasil DISIMPAN TERPISAH (lp_ai_labels.json)
+        sebagai pembanding label manual final — user bisa cek bila ada emosi tak diinginkan."""
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if not lp:
             return
@@ -1380,14 +1586,14 @@ class VideoLabelerApp:
         gen_dir = self._lp_generated_dir() or ""
         prompts, ths = self.right_panel.get_prompts_and_thresholds()
         self._lp_busy = True
-        lp.update_progress(f"Melabel {len(gen)} hasil dengan AI (SigLIP+MediaPipe)…", "#f59e0b")
+        lp.start_loading(f"Deteksi AI {len(gen)} hasil (SigLIP+MediaPipe)")
 
         def _worker():
             import cv2 as _cv2
             from PIL import Image as _Image
             from core.inference import run_siglip_on_frames
             from core.landmark_analyzer import analyze_frame
-            labels = self._lp_load_labels()
+            ai_labels = self._lp_load_ai_labels()
             done = 0
             BATCH = 8
             try:
@@ -1417,20 +1623,21 @@ class VideoLabelerApp:
                         for a, b in [("Boredom", "Engagement"), ("Confusion", "Frustration")]:
                             if lab[a] == 1 and lab[b] == 1:
                                 lab[b] = 0
-                        labels[rel] = lab
+                        ai_labels[rel] = lab
                         done += 1
                     self.root.after(0, lambda d=done, t=len(gen):
-                                    lp.update_progress(f"Melabel AI… {d}/{t}", "#f59e0b"))
-                self._lp_save_labels(labels)
+                                    lp.start_loading(f"Deteksi AI {d}/{t}"))
+                self._lp_save_ai_labels(ai_labels)
                 def _fin(d=done):
                     self._lp_busy = False
-                    lp.update_progress(f"Label AI selesai: {d} gambar. Cek lalu Merge.", "#10b981")
+                    lp.stop_loading(f"Deteksi AI selesai: {d} gambar. Bandingkan dengan label "
+                                    f"manual di pemeriksa, lalu Merge.", "#10b981")
                     self._lp_refresh_review()
                 self.root.after(0, _fin)
             except Exception as ex:
                 err = str(ex)[:160]
                 self._lp_busy = False
-                self.root.after(0, lambda: lp.update_progress(f"Error label AI: {err}", "#ef4444"))
+                self.root.after(0, lambda: lp.stop_loading(f"Error deteksi AI: {err}", "#ef4444"))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1438,44 +1645,66 @@ class VideoLabelerApp:
     def _lp_label2d_base(self) -> str:
         return os.path.join(os.path.dirname(self.path_json_frames), "Label2d")
 
-    def _lp_merge_dir(self) -> str:
-        return os.path.join(os.path.dirname(self.path_json_frames), "Label2d_lp_merged")
+    def _lp_merge_dir(self, mode: str = "lp") -> str:
+        """Folder output per komposisi: base / lp / lp_new (disimpan terpisah)."""
+        return os.path.join(os.path.dirname(self.path_json_frames), f"Label2d_merged_{mode}")
+
+    @staticmethod
+    def _lp_path_is_newface(path: str) -> bool:
+        """True bila gambar hasil berasal dari 'dataset wajah baru' (uuid prefix newface-)."""
+        parts = path.replace("\\", "/").split("/")
+        if "liveportrait_app" in parts:
+            i = parts.index("liveportrait_app")
+            if i + 1 < len(parts):
+                return parts[i + 1].startswith("newface-")
+        return False
 
     def _lp_merge_into_label2d(self):
-        """Gabungkan gambar hasil (diterima) + label-nya ke split train Label2d.
-        Output non-destruktif ke Label2d_lp_merged/ (val/test disalin apa adanya,
-        kolom 'synthetic' ditambah). Bisa di-undo."""
+        """Buat dataset gabungan sesuai KOMPOSISI yang dipilih (radio di panel):
+          - base   : dataset asli saja (tanpa augmentasi LP)
+          - lp     : asli + hasil LP dari frame video dataset
+          - lp_new : asli + hasil LP video + hasil LP dataset wajah baru
+        Output non-destruktif ke Label2d_merged_{mode}/ (val/test disalin apa adanya,
+        kolom 'synthetic' ditambah). Label2d asli tidak diubah. Bisa di-undo."""
         if not self.path_json_frames or not self.path_json_augment:
-            messagebox.showinfo("Merge", "Buka folder dataset terlebih dahulu.")
+            messagebox.showinfo("Buat Dataset", "Buka folder dataset terlebih dahulu.")
             return
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        mode = lp.get_merge_mode() if lp else "lp"
         import csv as _csv
         base = self._lp_label2d_base()
         if not os.path.exists(os.path.join(base, "train.csv")):
             self._split_dataset_2d(silent=True, force_default=True)
         if not os.path.exists(os.path.join(base, "train.csv")):
-            messagebox.showinfo("Merge",
-                "Label2d dasar belum ada. Buat split 2D dulu (panel kanan), lalu Merge.")
+            messagebox.showinfo("Buat Dataset",
+                "Label2d dasar belum ada. Buat split 2D dulu (panel kanan), lalu coba lagi.")
             return
 
-        rejected = self._lp_load_review()
-        labels   = self._lp_load_labels()
-        gen_dir  = self._lp_generated_dir() or ""
-        result_dir = os.path.dirname(self.path_json_augment)
+        # Kumpulkan baris augmentasi sesuai komposisi
         aug_rows = []
-        for path, emo in self._lp_list_generated():
-            rel_gen = os.path.relpath(path, gen_dir).replace("\\", "/")
-            if rel_gen in rejected:
-                continue
-            lab = labels.get(rel_gen) or self._lp_default_label(emo)
-            if sum(lab.get(l, 0) for l in LABELS) == 0:
-                continue   # tak ada label positif → lewati
-            rel_ds = os.path.relpath(path, result_dir).replace("\\", "/")
-            aug_rows.append((rel_ds, lab))
-        if not aug_rows:
-            messagebox.showinfo("Merge", "Tidak ada gambar hasil yang diterima + berlabel untuk merge.")
-            return
+        if mode in ("lp", "lp_new"):
+            rejected = self._lp_load_review()
+            labels   = self._lp_load_labels()
+            gen_dir  = self._lp_generated_dir() or ""
+            result_dir = os.path.dirname(self.path_json_augment)
+            for path, emo in self._lp_list_generated():
+                if mode == "lp" and self._lp_path_is_newface(path):
+                    continue   # mode 'lp' tidak ikutkan dataset wajah baru
+                rel_gen = os.path.relpath(path, gen_dir).replace("\\", "/")
+                if rel_gen in rejected:
+                    continue
+                lab = labels.get(rel_gen) or self._lp_default_label(emo)
+                if sum(lab.get(l, 0) for l in LABELS) == 0:
+                    continue   # tak ada label positif → lewati
+                rel_ds = os.path.relpath(path, result_dir).replace("\\", "/")
+                aug_rows.append((rel_ds, lab))
+            if not aug_rows:
+                messagebox.showinfo("Buat Dataset",
+                    "Tidak ada gambar hasil (diterima + berlabel) untuk komposisi ini.\n"
+                    "Proses LP / dataset wajah dulu, atau pilih komposisi 'Tanpa LP'.")
+                return
 
-        out = self._lp_merge_dir()
+        out = self._lp_merge_dir(mode)
         os.makedirs(out, exist_ok=True)
 
         def _copy_with_synth(split):
@@ -1493,7 +1722,7 @@ class VideoLabelerApp:
 
         n_val  = _copy_with_synth("val")
         n_test = _copy_with_synth("test")
-        # train: base + augmented
+        # train: base (+ augmented bila ada)
         src = os.path.join(base, "train.csv")
         with open(src, newline="") as f:
             rows = list(_csv.reader(f))
@@ -1508,29 +1737,37 @@ class VideoLabelerApp:
 
         import json as _json
         with open(os.path.join(out, "lp_merge_manifest.json"), "w") as f:
-            _json.dump({"base": base, "added_train": [r for r, _ in aug_rows],
-                        "n_aug": len(aug_rows)}, f, indent=2)
+            _json.dump({"mode": mode, "base": base,
+                        "added_train": [r for r, _ in aug_rows], "n_aug": len(aug_rows)},
+                       f, indent=2)
 
-        messagebox.showinfo("Merge Selesai",
-            f"Output: {out}\n\n"
+        nama_mode = {"base": "Tanpa LP", "lp": "Dengan LP",
+                     "lp_new": "Dengan LP + Dataset Baru"}[mode]
+        messagebox.showinfo("Dataset Dibuat",
+            f"Komposisi: {nama_mode}\nOutput: {out}\n\n"
             f"train: {n_train_base} asli + {len(aug_rows)} sintetik = {n_train_base + len(aug_rows)}\n"
             f"val: {n_val}   test: {n_test}\n\n"
-            f"Kolom 'synthetic' = 1 untuk hasil LP. Klik 'Undo Merge' bila berubah pikiran.")
-        print(f"[LP Merge] {len(aug_rows)} sintetik → {out}")
+            f"Kolom 'synthetic' = 1 untuk hasil LP. Klik 'Undo' untuk hapus folder ini.")
+        if lp:
+            lp.update_progress(f"Dataset '{nama_mode}' dibuat: {os.path.basename(out)}", "#10b981")
+        print(f"[LP Merge] mode={mode} {len(aug_rows)} sintetik → {out}")
 
     def _lp_undo_merge(self):
-        """Batalkan merge: hapus folder Label2d_lp_merged (Label2d asli tak tersentuh)."""
-        out = self._lp_merge_dir()
-        if not os.path.exists(out):
-            messagebox.showinfo("Undo Merge", "Belum ada hasil merge (Label2d_lp_merged).")
+        """Batalkan/ hapus folder dataset gabungan (Label2d_merged_*). Label2d asli aman."""
+        import glob as _glob, shutil
+        cari = os.path.join(os.path.dirname(self.path_json_frames), "Label2d_merged_*")
+        folders = sorted(_glob.glob(cari))
+        if not folders:
+            messagebox.showinfo("Undo", "Belum ada folder dataset gabungan (Label2d_merged_*).")
             return
-        if not messagebox.askyesno("Undo Merge",
-                f"Hapus folder hasil merge?\n{out}\n\n(Label2d asli TIDAK terhapus.)"):
+        daftar = "\n".join("  • " + os.path.basename(f) for f in folders)
+        if not messagebox.askyesno("Undo / Hapus Dataset Gabungan",
+                f"Hapus folder dataset gabungan berikut?\n\n{daftar}\n\n(Label2d asli TIDAK terhapus.)"):
             return
-        import shutil
-        shutil.rmtree(out, ignore_errors=True)
-        messagebox.showinfo("Undo Merge", "Merge dibatalkan — Label2d_lp_merged dihapus.")
-        print("[LP Merge] undo: Label2d_lp_merged dihapus.")
+        for f in folders:
+            shutil.rmtree(f, ignore_errors=True)
+        messagebox.showinfo("Undo", f"{len(folders)} folder dataset gabungan dihapus.")
+        print(f"[LP Merge] undo: {len(folders)} folder Label2d_merged_* dihapus.")
 
     def _lp_delete_rejected(self):
         rejected = self._lp_load_review()

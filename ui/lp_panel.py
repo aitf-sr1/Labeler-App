@@ -33,9 +33,9 @@ from PIL import Image, ImageTk
 from .constants import LABELS, LABEL_COLORS
 
 WARNA_LP = "#f59e0b"            # amber — warna khas fitur LP Transform
-UKURAN_PRATINJAU = 300         # sisi kotak gambar pratinjau (besar agar mudah dicek)
-UKURAN_THUMBNAIL = 160         # sisi thumbnail di grid tinjau
-UKURAN_PEMERIKSA = 340         # sisi gambar besar di pemeriksa hasil
+UKURAN_PRATINJAU = 268         # sisi kotak gambar pratinjau (3 berjajar; pas di lebar panel)
+UKURAN_THUMBNAIL = 150         # sisi thumbnail di grid tinjau
+UKURAN_PEMERIKSA = 340         # sisi gambar BESAR di pemeriksa (untuk cek detail)
 MAX_FRAME_DECODE = 600         # batas jumlah frame yang dimuat ke memori
 
 
@@ -123,6 +123,25 @@ class LPPanel:
         # Gambar BGR yang sedang tampil di tiap kolom pratinjau (untuk tombol Unduh)
         self.bgr_tampil = [None, None, None]   # 0=sumber, 1=driving, 2=hasil
 
+        # Indikator loading (animasi titik saat proses berjalan, biar tahu tidak hang)
+        self._loading_aktif = False
+        self._loading_teks  = ""
+        self._loading_tick  = 0
+
+        # --- Dataset wajah baru (tiap foto = 1 orang baru) ---
+        folder_wajah = os.getenv("LP_FACES_DIR", "")
+        self._folder_wajah_awal = folder_wajah
+        self.var_folder_wajah = None               # tk.StringVar (dibuat di build)
+        self.var_merge_mode   = None               # komposisi dataset: base|lp|lp_new
+        self.wajah_paths      = []                 # semua path gambar di folder
+        self.wajah_terpilih   = set()              # path gambar yang dipilih untuk diproses
+        self.grid_wajah       = None
+        self._ref_thumb_wajah = []
+        self._thumb_wajah_cache = {}               # {path: thumb_bgr} agar toggle tak decode ulang
+
+        # Chip label AI (read-only) di pemeriksa hasil
+        self.chip_ai_periksa = {}
+
         # --- Folder driving ---
         folder_default = os.getenv(
             "LP_DRIVING_DIR",
@@ -176,6 +195,8 @@ class LPPanel:
         self._sudah_dibangun = True
 
         self.var_folder_driving = tk.StringVar(value=self._folder_driving_awal)
+        self.var_folder_wajah   = tk.StringVar(value=self._folder_wajah_awal)
+        self.var_merge_mode     = tk.StringVar(value="lp")   # base | lp | lp_new
         for emosi in LABELS:
             self.pilihan_driving[emosi] = tk.StringVar(value="Semua")
 
@@ -190,6 +211,7 @@ class LPPanel:
         self._bangun_tombol_proses(area)
         self._bangun_pratinjau(area)
         self._bangun_pemilih_frame(area)
+        self._bangun_dataset_wajah(area)
         self._bangun_tinjau_label(area)
 
         self._pindai_folder_driving()   # isi menu driving otomatis
@@ -211,6 +233,10 @@ class LPPanel:
                       font=("Poppins", 9, "bold"), fg_color=WARNA_LP, hover_color="#d97706",
                       text_color="#1c1400",
                       command=lambda: self.app._goto_lp_mark(-1)).pack(side="right", padx=2)
+        ctk.CTkButton(kartu, text="Hapus Semua Tanda", width=128, height=26, corner_radius=20,
+                      font=("Poppins", 9, "bold"), fg_color=("#fee2e2", "#3a1414"),
+                      hover_color=("#fecaca", "#4a1a1a"), text_color=("#b91c1c", "#fca5a5"),
+                      command=self.app._lp_clear_all_marks).pack(side="right", padx=(2, 8))
         self.label_jml_tanda = ctk.CTkLabel(kartu, text="0 tertanda", font=("Poppins", 8),
                                             text_color=("#6b7280", "#9ca3af"))
         self.label_jml_tanda.pack(side="right", padx=(0, 8))
@@ -219,8 +245,9 @@ class LPPanel:
         _judul_seksi(induk, "Folder Video Driving (acuan ekspresi)")
         ctk.CTkLabel(
             induk,
-            text="Taruh video acuan di folder ini. Nama file menentukan emosi + urutan: "
-                 "confuse1.mp4, confuse2.mp4, frustration1.mp4, boredom1.mp4 …",
+            text="Taruh video acuan di folder ini. PENTING: beri nama file sesuai NAMA EMOSI "
+                 "LENGKAP + nomor urut — Confusion1.mp4, Frustration1.mp4, Boredom1.mp4, "
+                 "Engagement1.mp4 (bukan 'confuse'). Tambah variasi: Confusion2.mp4, dst.",
             font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
             wraplength=680, justify="left").pack(fill="x", padx=14, pady=(0, 4))
 
@@ -367,31 +394,99 @@ class LPPanel:
             font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
             wraplength=680, justify="left").pack(fill="x", padx=12, pady=(0, 8))
 
+    def _bangun_dataset_wajah(self, induk):
+        _judul_seksi(induk, "Dataset Wajah Baru  (opsional — tiap foto = 1 orang baru)")
+        ctk.CTkLabel(
+            induk,
+            text="Untuk menambah RAGAM orang (mis. dari dataset wajah open-source) agar model "
+                 "tidak overfit. Pilih folder berisi foto wajah; tiap foto dianggap ORANG BARU. "
+                 "Centang foto yang ingin diproses, lalu 'Proses Wajah Terpilih' memakai emosi + "
+                 "driving + frame index di atas.",
+            font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
+            wraplength=680, justify="left").pack(fill="x", padx=14, pady=(0, 4))
+
+        baris = ctk.CTkFrame(induk, fg_color="transparent")
+        baris.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkEntry(baris, textvariable=self.var_folder_wajah, font=("Poppins", 9),
+                     height=28, corner_radius=6,
+                     placeholder_text="folder berisi foto wajah…").pack(
+            side="left", fill="x", expand=True, padx=(0, 4))
+        ctk.CTkButton(baris, text="Pilih…", width=58, height=28, corner_radius=6,
+                      font=("Poppins", 9), fg_color=("#e5e7eb", "#2a2a3a"),
+                      hover_color=("#d1d5db", "#3a3a4a"), text_color=("#374151", "#9ca3af"),
+                      command=self._pilih_folder_wajah).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(baris, text="Pindai", width=64, height=28, corner_radius=6,
+                      font=("Poppins", 9, "bold"), fg_color="#3b82f6", hover_color="#2563eb",
+                      command=self._pindai_folder_wajah).pack(side="left")
+
+        aksi = ctk.CTkFrame(induk, fg_color="transparent")
+        aksi.pack(fill="x", padx=14, pady=(2, 2))
+        ctk.CTkButton(aksi, text="Pilih Semua", height=26, corner_radius=8, font=("Poppins", 9),
+                      fg_color=("#e5e7eb", "#2a2a3a"), hover_color=("#d1d5db", "#3a3a4a"),
+                      text_color=("#374151", "#9ca3af"),
+                      command=self._pilih_semua_wajah).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(aksi, text="Kosongkan", height=26, corner_radius=8, font=("Poppins", 9),
+                      fg_color=("#e5e7eb", "#2a2a3a"), hover_color=("#d1d5db", "#3a3a4a"),
+                      text_color=("#374151", "#9ca3af"),
+                      command=self._kosongkan_pilihan_wajah).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(aksi, text="Proses Wajah Terpilih", height=28, corner_radius=8,
+                      font=("Poppins", 9, "bold"), fg_color=WARNA_LP, hover_color="#d97706",
+                      text_color="#1c1400",
+                      command=self.app._lp_process_faces).pack(side="left")
+        self.label_jml_wajah = ctk.CTkLabel(aksi, text="0 dipilih", font=("Poppins", 8),
+                                            text_color=("#6b7280", "#9ca3af"))
+        self.label_jml_wajah.pack(side="left", padx=(8, 0))
+
+        self.grid_wajah = ctk.CTkFrame(induk, fg_color="transparent")
+        self.grid_wajah.pack(fill="both", expand=True, padx=10, pady=(2, 8))
+
     def _bangun_tinjau_label(self, induk):
-        _judul_seksi(induk, "Tinjau & Label Hasil  (cek sebelum merge)")
+        _judul_seksi(induk, "Tinjau & Label Hasil  (cek sebelum buat dataset)")
         bar = ctk.CTkFrame(induk, fg_color="transparent")
         bar.pack(fill="x", padx=14, pady=(0, 2))
-        ctk.CTkButton(bar, text="Muat / Refresh", height=28, corner_radius=8,
+        ctk.CTkButton(bar, text="Muat / Refresh", height=28, width=120, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#3b82f6", hover_color="#2563eb",
                       command=self.refresh_review).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(bar, text="Label Semua (AI)", height=28, corner_radius=8,
+        ctk.CTkButton(bar, text="Deteksi AI Semua", height=28, width=130, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#6366f1", hover_color="#4f46e5",
                       command=self.app._lp_label_all_ai).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(bar, text="Hapus Ditolak", height=28, corner_radius=8,
+        ctk.CTkButton(bar, text="Hapus Ditolak", height=28, width=120, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#ef4444", hover_color="#dc2626",
                       command=self.app._lp_delete_rejected).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(bar, text="Merge ke Dataset", height=28, corner_radius=8,
+        ctk.CTkLabel(
+            induk, text="Klik 1x thumbnail = lihat besar + bandingkan deteksi AI vs label manual.  "
+                        "Klik 2x = tolak/terima (merah = ditolak, tidak ikut dataset).",
+            font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
+            wraplength=680, justify="left").pack(fill="x", padx=14, pady=(2, 4))
+
+        # ── Buat Dataset (pilih komposisi via bullet/radio) ──
+        kartu_buat = ctk.CTkFrame(induk, fg_color=("#ecfdf5", "#0f1f1a"), corner_radius=10)
+        kartu_buat.pack(fill="x", padx=12, pady=(2, 6))
+        ctk.CTkLabel(kartu_buat, text="Buat Dataset — pilih komposisi:", font=("Poppins", 9, "bold"),
+                     text_color=("#059669", "#34d399")).pack(anchor="w", padx=12, pady=(8, 2))
+        baris_radio = ctk.CTkFrame(kartu_buat, fg_color="transparent")
+        baris_radio.pack(fill="x", padx=12, pady=(0, 2))
+        opsi = [("base",   "Tanpa LP (asli saja)"),
+                ("lp",     "Dengan LP (asli + LP)"),
+                ("lp_new", "LP + Dataset Wajah Baru")]
+        for nilai, teks in opsi:
+            ctk.CTkRadioButton(baris_radio, text=teks, value=nilai, variable=self.var_merge_mode,
+                               font=("Poppins", 9), radiobutton_width=16, radiobutton_height=16,
+                               fg_color="#10b981", hover_color="#0ea372").pack(side="left", padx=(0, 14))
+        baris_buat = ctk.CTkFrame(kartu_buat, fg_color="transparent")
+        baris_buat.pack(fill="x", padx=12, pady=(2, 10))
+        ctk.CTkButton(baris_buat, text="Buat Dataset", height=30, width=150, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#10b981", hover_color="#0ea372",
-                      command=self.app._lp_merge_into_label2d).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(bar, text="Undo Merge", height=28, corner_radius=8,
+                      command=self.app._lp_merge_into_label2d).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(baris_buat, text="Undo / Hapus", height=30, width=120, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color=("#e5e7eb", "#2a2a3a"),
                       hover_color=("#d1d5db", "#3a3a4a"), text_color=("#374151", "#9ca3af"),
                       command=self.app._lp_undo_merge).pack(side="left")
-        ctk.CTkLabel(
-            induk, text="Klik 1x thumbnail = lihat besar & label manual.  Klik 2x = tolak/terima "
-                        "(merah = ditolak, tidak ikut merge).",
-            font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
-            wraplength=680, justify="left").pack(fill="x", padx=14, pady=(2, 4))
+        ctk.CTkLabel(kartu_buat,
+                     text="Output ke Label2d_merged_{komposisi}/ (non-destruktif, kolom 'synthetic'). "
+                          "Label2d asli tidak diubah.",
+                     font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
+                     wraplength=680, justify="left").pack(anchor="w", padx=12, pady=(0, 8))
 
         # Pemeriksa: gambar BESAR + pill label manual + tombol tolak
         kartu = ctk.CTkFrame(induk, fg_color=("#f3f4f6", "#1a1a2e"), corner_radius=10)
@@ -408,10 +503,24 @@ class LPPanel:
         kanan.pack(side="left", fill="both", expand=True, padx=(4, 10), pady=10)
         self.label_pemeriksa = ctk.CTkLabel(kanan, text="—", font=("Poppins", 9, "bold"),
                                             text_color=("#374151", "#e5e7eb"), anchor="w",
-                                            justify="left", wraplength=300)
+                                            justify="left", wraplength=320)
         self.label_pemeriksa.pack(anchor="w", pady=(0, 6))
-        ctk.CTkLabel(kanan, text="Label final (yang dipakai saat merge):", font=("Poppins", 8),
+
+        # Hasil deteksi AI (read-only) — perbandingan dengan label manual
+        ctk.CTkLabel(kanan, text="Deteksi AI (SigLIP+MediaPipe):", font=("Poppins", 8),
                      text_color=("#6b7280", "#9ca3af")).pack(anchor="w")
+        baris_ai = ctk.CTkFrame(kanan, fg_color="transparent")
+        baris_ai.pack(anchor="w", pady=(2, 6))
+        for emosi in LABELS:
+            warna = LABEL_COLORS[emosi]
+            chip = ctk.CTkLabel(baris_ai, text=emosi[:4], width=54, height=22, corner_radius=11,
+                                font=("Poppins", 8, "bold"), fg_color="transparent",
+                                text_color=("#9ca3af", "#4b5563"))
+            chip.pack(side="left", padx=2)
+            self.chip_ai_periksa[emosi] = chip
+
+        ctk.CTkLabel(kanan, text="Label final manual (dipakai saat merge — klik untuk ubah):",
+                     font=("Poppins", 8), text_color=("#6b7280", "#9ca3af")).pack(anchor="w")
         baris_pill = ctk.CTkFrame(kanan, fg_color="transparent")
         baris_pill.pack(anchor="w", pady=(2, 8))
         for emosi in LABELS:
@@ -563,7 +672,7 @@ class LPPanel:
     # ── Tinjau & label hasil ────────────────────────────────────────────────────
 
     def render_review(self, item_tinjau: list):
-        """Render grid thumbnail hasil. `item_tinjau`: list (path, emosi, ditolak, label, thumb_bgr).
+        """Render grid thumbnail hasil. `item_tinjau`: list (path, emosi, ditolak, label, ai_label, thumb_bgr).
 
         thumb_bgr sudah di-decode di thread latar oleh app.py → di sini hanya konversi cepat
         ke gambar Tk (tidak ada pembacaan file di thread UI → tidak ada lag).
@@ -578,7 +687,7 @@ class LPPanel:
                          font=("Poppins", 9), text_color=("#6b7280", "#9ca3af")).pack(pady=10)
             return
         KOLOM = 4
-        for nomor, (path, emosi, ditolak, label, thumb) in enumerate(item_tinjau):
+        for nomor, (path, emosi, ditolak, label, ai_label, thumb) in enumerate(item_tinjau):
             r, c = divmod(nomor, KOLOM)
             sel = tk.Frame(self.grid_tinjau, bg="#161622")
             sel.grid(row=r, column=c, padx=4, pady=4)
@@ -609,7 +718,7 @@ class LPPanel:
         if not self.item_tinjau or nomor >= len(self.item_tinjau):
             return
         self.index_tinjau = nomor
-        path, emosi, ditolak, label, thumb = self.item_tinjau[nomor]
+        path, emosi, ditolak, label, ai_label, thumb = self.item_tinjau[nomor]
         bgr = cv2.imread(path)
         if bgr is None:
             bgr = thumb
@@ -627,6 +736,15 @@ class LPPanel:
                                               fill="#ef4444", font=("Poppins", 11, "bold"))
         self.label_pemeriksa.configure(
             text=f"{nomor+1}/{len(self.item_tinjau)}  ·  target: {emosi}\n{os.path.basename(path)}")
+        # Chip AI (read-only): nyala kalau AI mendeteksi emosi itu
+        ada_ai = bool(ai_label) and sum(ai_label.get(l, 0) for l in LABELS) > 0
+        for emo2, chip in self.chip_ai_periksa.items():
+            warna = LABEL_COLORS[emo2]
+            if ada_ai and ai_label.get(emo2, 0) == 1:
+                chip.configure(fg_color=warna, text_color="#0b0b12")
+            else:
+                chip.configure(fg_color="transparent", text_color=("#9ca3af", "#4b5563"))
+        # Pill label final manual (klik untuk ubah)
         for emo2, pill in self.pill_label_periksa.items():
             warna = LABEL_COLORS[emo2]
             if label.get(emo2, 0) == 1:
@@ -640,7 +758,7 @@ class LPPanel:
         """Toggle label manual untuk gambar yang sedang diperiksa (lalu app simpan + refresh)."""
         if not self.item_tinjau or self.index_tinjau >= len(self.item_tinjau):
             return
-        path, _emo, _tolak, label, _thumb = self.item_tinjau[self.index_tinjau]
+        path, _emo, _tolak, label, _ai, _thumb = self.item_tinjau[self.index_tinjau]
         gen_dir = self.app._lp_generated_dir() or ""
         rel = os.path.relpath(path, gen_dir).replace("\\", "/") if gen_dir else path
         nilai_baru = 0 if label.get(emosi, 0) == 1 else 1
@@ -661,6 +779,9 @@ class LPPanel:
 
     def get_selected_emotions(self) -> list:
         return [l for l in LABELS if self.emosi_aktif[l]]
+
+    def get_merge_mode(self) -> str:
+        return self.var_merge_mode.get() if self.var_merge_mode else "lp"
 
     def get_target_n(self) -> int:
         try:
@@ -697,6 +818,33 @@ class LPPanel:
     def update_progress(self, pesan: str, warna: str = "#10b981"):
         if self.label_progres:
             self.label_progres.configure(text=pesan, text_color=warna)
+
+    def start_loading(self, pesan: str):
+        """Tampilkan indikator loading beranimasi selama proses (biar tahu tidak hang)."""
+        self._loading_teks = pesan
+        if self._loading_aktif:
+            return
+        self._loading_aktif = True
+        self._loading_tick = 0
+        self._animasi_loading()
+
+    def _animasi_loading(self):
+        if not self._loading_aktif:
+            return
+        titik = "." * (1 + self._loading_tick % 3)
+        spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[self._loading_tick % 10]
+        self.update_progress(f"{spin}  {self._loading_teks}{titik}", "#f59e0b")
+        self._loading_tick += 1
+        try:
+            self.app.root.after(180, self._animasi_loading)
+        except Exception:
+            self._loading_aktif = False
+
+    def stop_loading(self, pesan: str = "", warna: str = "#10b981"):
+        """Hentikan animasi loading dan tampilkan pesan akhir."""
+        self._loading_aktif = False
+        if pesan:
+            self.update_progress(pesan, warna)
 
     def set_source_frame(self, bgr, uuid: str, nomor_frame: int):
         self.sumber_bgr, self.sumber_uuid, self.sumber_frame = bgr, uuid, nomor_frame
@@ -812,6 +960,89 @@ class LPPanel:
             tombol.configure(fg_color=warna, text_color="#0b0b12", border_color=warna)
         else:
             tombol.configure(fg_color="transparent", text_color=warna, border_color=warna)
+
+    # ── Dataset wajah baru ──────────────────────────────────────────────────────
+
+    def get_face_folder(self) -> str:
+        return self.var_folder_wajah.get().strip() if self.var_folder_wajah else ""
+
+    def get_selected_faces(self) -> list:
+        return sorted(self.wajah_terpilih)
+
+    def _pilih_folder_wajah(self):
+        from tkinter import filedialog
+        folder = filedialog.askdirectory(title="Folder dataset wajah",
+                                         initialdir=self.get_face_folder() or None)
+        if folder:
+            self.var_folder_wajah.set(folder)
+            self._pindai_folder_wajah()
+
+    def _pindai_folder_wajah(self):
+        self.wajah_terpilih.clear()
+        self.app._lp_refresh_faces()   # app baca folder + decode thumbnail di thread latar
+
+    def _pilih_semua_wajah(self):
+        self.wajah_terpilih = set(self.wajah_paths)
+        self.render_faces([(p, p in self.wajah_terpilih, None) for p in self.wajah_paths],
+                          dari_cache=True)
+
+    def _kosongkan_pilihan_wajah(self):
+        self.wajah_terpilih.clear()
+        self.render_faces([(p, False, None) for p in self.wajah_paths], dari_cache=True)
+
+    def _toggle_pilih_wajah(self, path: str):
+        if path in self.wajah_terpilih:
+            self.wajah_terpilih.discard(path)
+        else:
+            self.wajah_terpilih.add(path)
+        self._segarkan_label_wajah()
+        self.render_faces([(p, p in self.wajah_terpilih, None) for p in self.wajah_paths],
+                          dari_cache=True)
+
+    def _segarkan_label_wajah(self):
+        if hasattr(self, "label_jml_wajah"):
+            self.label_jml_wajah.configure(text=f"{len(self.wajah_terpilih)} dipilih")
+
+    def render_faces(self, item_wajah: list, dari_cache: bool = False):
+        """Render grid thumbnail wajah. item: (path, terpilih, thumb_bgr).
+        dari_cache=True → pakai thumbnail yang sudah tersimpan (toggle pilih, tanpa decode ulang)."""
+        import cv2
+        if not dari_cache:
+            self.wajah_paths = [p for (p, _s, _t) in item_wajah]
+            self._thumb_wajah_cache = {p: t for (p, _s, t) in item_wajah}
+        for anak in self.grid_wajah.winfo_children():
+            anak.destroy()
+        self._ref_thumb_wajah.clear()
+        if not item_wajah:
+            ctk.CTkLabel(self.grid_wajah, text="(folder kosong / belum dipindai)",
+                         font=("Poppins", 9), text_color=("#6b7280", "#9ca3af")).pack(pady=8)
+            self._segarkan_label_wajah()
+            return
+        KOLOM = 5
+        UK = 120
+        cache = getattr(self, "_thumb_wajah_cache", {})
+        for nomor, (path, terpilih, thumb) in enumerate(item_wajah):
+            if thumb is None:
+                thumb = cache.get(path)
+            if thumb is None:
+                continue
+            r, c = divmod(nomor, KOLOM)
+            sel = tk.Frame(self.grid_wajah, bg="#161622")
+            sel.grid(row=r, column=c, padx=3, pady=3)
+            warna_tepi = WARNA_LP if terpilih else "#333"
+            kanvas = tk.Canvas(sel, width=UK, height=UK, bg="#111", highlightthickness=3,
+                               highlightbackground=warna_tepi, cursor="hand2")
+            kanvas.pack()
+            rgb = cv2.cvtColor(cv2.resize(thumb, (UK, UK)), cv2.COLOR_BGR2RGB)
+            gambar = ImageTk.PhotoImage(Image.fromarray(rgb))
+            self._ref_thumb_wajah.append(gambar)
+            kanvas.create_image(0, 0, anchor="nw", image=gambar)
+            if terpilih:
+                kanvas.create_text(UK - 14, 14, text="✓", fill=WARNA_LP, font=("Poppins", 14, "bold"))
+            kanvas.bind("<Button-1>", lambda e, p=path: self._toggle_pilih_wajah(p))
+            ctk.CTkLabel(sel, text=os.path.basename(path)[:16], font=("Poppins", 7),
+                         text_color=("#6b7280", "#9ca3af")).pack()
+        self._segarkan_label_wajah()
 
     def _unduh_gambar(self, kolom: int):
         """Simpan gambar yang sedang tampil di kolom pratinjau ke file pilihan user."""

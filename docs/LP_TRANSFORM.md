@@ -1,126 +1,146 @@
 # Panel LP Transform — Augmentasi Ekspresi di Dalam Aplikasi
 
-Panel ini menambah sampel kelas minoritas (**Confusion** & **Frustration**, atau emosi lain)
-dengan cara **mengubah ekspresi wajah** sebuah frame netral memakai
-[LivePortrait](https://github.com/KwaiVGI/LivePortrait), tanpa keluar dari aplikasi.
+Panel ini menambah sampel kelas minoritas (**Confusion**, **Frustration**, dll.) dengan
+**mengubah ekspresi wajah** memakai [LivePortrait](https://github.com/KwaiVGI/LivePortrait),
+tanpa keluar dari aplikasi. Identitas orang tetap; hanya ekspresinya yang diganti mengikuti
+**video acuan (driving)**.
 
-Identitas siswa tetap (wajah orang yang sama), hanya ekspresinya yang diganti mengikuti
-sebuah **video acuan (driving)**. Karena frame hasil punya UUID orang yang sama, ia ikut
-split **train** (tidak bocor ke val/test).
+Ada **dua sumber** yang bisa diaugmentasi:
+1. **Frame dari dataset video** yang sedang dilabeli (orang/UUID sudah ada di dataset).
+2. **Dataset wajah baru** (mis. foto open-source) — tiap foto dianggap **orang baru**, untuk
+   menambah ragam orang agar model tidak overfit.
 
-> Ringkas: *pilih frame netral → pilih video acuan ekspresi → generate → pilih frame
-> hasil → cek & label → merge ke dataset.*
+Karena hasil augmentasi memakai UUID orang yang sama (atau orang baru yang unik), ia hanya
+masuk split **train** — tidak bocor ke val/test.
+
+---
+
+## Alur singkat (end-to-end)
+
+```
+            ┌─ Sumber A: frame video dataset (tandai "LP Transform" di galeri)
+ SUMBER ────┤
+            └─ Sumber B: dataset wajah baru (folder foto, tiap foto = orang baru)
+                                   │
+ DRIVING  ── folder video acuan ekspresi (Confusion1.mp4, Frustration1.mp4, …)
+                                   │
+ PROSES   ── Proses Frame Ini  |  Batch Semua  |  Proses Wajah Terpilih
+                                   │   (worker LivePortrait persisten — model load sekali)
+ PILIH    ── geser slider hasil → tandai frame index yang dipakai (ekspresi konsisten)
+                                   │
+ TINJAU   ── grid + pemeriksa BESAR → Deteksi AI (bandingkan vs label manual) → tolak/terima
+                                   │
+ BUAT     ── pilih komposisi (Tanpa LP / Dengan LP / LP + Dataset Baru) → Buat Dataset
+ DATASET     (output Label2d_merged_{komposisi}/, non-destruktif, bisa Undo)
+```
 
 ---
 
 ## 1. Membuka panel
 
-Di galeri frame (panel kiri), klik tab **LP Transform** di kanan atas, atau tombol
-**Buka Panel ▸** pada bar "Frame LP Transform".
+Di galeri (panel kiri) klik tab **LP Transform**, atau tombol **Buka Panel ▸** di bar
+"Frame LP Transform". Tiap frame galeri punya tombol **LP Transform** (amber) untuk menandai
+frame netral yang ingin diubah. Tombol **Hapus Semua Tanda** di header panel menghapus semua
+tanda sekaligus.
 
-Tiap frame di galeri punya tombol **LP Transform** (amber). Klik untuk menandai frame
-netral mana yang ingin diubah ekspresinya. Tombol Prev/Next di panel berpindah antar
-tanda. Sumber yang sedang aktif selalu mengikuti video yang sedang dilihat.
+Bagian **SUMBER** menampilkan UUID + frame yang sedang aktif; **◀ Sebelumnya / Berikutnya ▶**
+berpindah antar tanda. Sumber selalu mengikuti video yang sedang dilihat.
 
 ---
 
 ## 2. Folder video driving (acuan ekspresi)
 
-Driving **berbasis folder**, bukan path tetap. Taruh video acuan di satu folder; nama
-file menentukan **emosi + urutan**:
+Driving **berbasis folder**. Beri nama file sesuai **NAMA EMOSI LENGKAP + nomor urut**:
 
 ```
 refrensi/
-  confuse1.mp4      → Confusion
-  confuse2.mp4      → Confusion
-  frustration1.mp4  → Frustration
-  boredom1.mp4      → Boredom
-  engagement1.mp4   → Engagement
+  Confusion1.mp4    Confusion2.mp4
+  Frustration1.mp4
+  Boredom1.mp4
+  Engagement1.mp4
 ```
 
-Kata kunci nama file: `confuse/bingung`, `frustrat/frustrasi`, `bored/bosan`,
-`engag/antusias`. Klik **Pindai** untuk mendeteksi. Per emosi bisa pilih **Semua** video
-atau **satu** video tertentu lewat dropdown. Folder default diatur lewat `LP_DRIVING_DIR`
-(default: `4-Create/refrensi`).
-
-Untuk menambah variasi: cukup taruh file baru dengan nomor berbeda dan urut
-(`confuse3.mp4`, dst), lalu Pindai lagi.
+Klik **Pindai** untuk mendeteksi. Per emosi pilih **Semua** atau **satu** video via dropdown.
+Folder default dari `LP_DRIVING_DIR` (default `4-Create/refrensi`).
 
 ---
 
 ## 3. Memproses
 
 1. Pilih satu/lebih **emosi** (pill).
-2. **Proses Frame Ini** — generate satu video hasil dari frame sumber aktif memakai video
-   driving terpilih, untuk dicoba dan dipilih frame terbaiknya secara interaktif.
-3. **Batch Semua** — proses **semua** frame bertanda LP dengan **satu** video driving.
-   Frame index yang Anda tandai di scrubber dipakai untuk semua video — karena driving-nya
-   sama, ekspresi pada frame ke-N akan konsisten di semua hasil. Ganti video driving →
-   Batch lagi.
-4. **Batal** — hentikan proses berjalan. **Reset** — kosongkan pilihan & hasil (file tidak
-   dihapus).
+2. **Proses Frame Ini** — generate satu video hasil dari frame sumber aktif, untuk dicoba &
+   dipilih frame terbaiknya. **Hasil di-cache**: kalau pindah frame lalu kembali, hasilnya
+   muncul lagi tanpa proses ulang.
+3. **Batch Semua** — proses **semua** frame bertanda dengan **satu** video driving; frame index
+   yang Anda tandai dipakai untuk semua (ekspresi konsisten). Ganti driving → Batch lagi.
+4. **Batal** menghentikan; **Reset** mengosongkan pilihan & hasil (file tidak dihapus).
 
-### Kecepatan: model di-load sekali
+Saat proses berjalan, muncul **indikator loading beranimasi** supaya jelas tidak hang.
 
-Model LivePortrait dijalankan oleh **worker persisten** (`4-Create/lp_worker.py`) di
-`.venv-lp`. Model di-load **sekali** lalu dipakai ulang untuk semua job, sehingga tidak
-ada lag "load model" tiap frame. Bila worker gagal start, aplikasi otomatis fallback ke
-mode subprocess sekali-jalan (lebih lambat, tetapi tetap jalan). Worker dimatikan rapi
-saat aplikasi ditutup. Akses worker diserialisasi (satu job pada satu waktu) dan diberi
-timeout, sehingga tidak ada race condition / hang yang membekukan UI.
+### Kecepatan — model di-load sekali
+LivePortrait dijalankan oleh **worker persisten** (`4-Create/lp_worker.py`, env `.venv-lp`):
+model di-load **sekali** lalu dipakai ulang. Bila worker gagal, otomatis fallback ke subprocess
+sekali-jalan. Akses worker diserialisasi + diberi timeout → tanpa race/hang yang membekukan UI.
 
 ---
 
-## 4. Pratinjau & unduh
+## 4. Pratinjau & pilih frame
 
-Tiga gambar besar bersisian: **SUMBER | DRIVING | HASIL**, dengan UUID dan nomor frame
-yang sinkron. Overlay landmark (viz) hanya muncul bila saklar **Viz** di topbar aktif, dan
-dihitung dengan penundaan singkat agar menggeser slider tetap mulus. Tiap kolom punya
-tombol **Unduh Gambar** untuk menyimpan frame yang sedang tampil.
+Tiga gambar bersisian **SUMBER | DRIVING | HASIL** (frame & UUID sinkron). Overlay landmark
+(viz) hanya muncul bila saklar **Viz** di topbar aktif, dihitung dengan penundaan singkat agar
+menggeser slider tetap mulus. Tiap kolom punya tombol **Unduh Gambar**.
 
----
+Geser slider video hasil, lalu **＋ Tandai Frame** (pilih frame tertentu, mis. 2, 4, 8) atau
+**Tandai Merata** (N dari "Jumlah target"). **Simpan Frame Tertanda** menyimpan ke dataset.
+Frame index yang ditandai juga dipakai saat **Batch Semua** dan **Proses Wajah Terpilih**.
 
-## 5. Memilih frame hasil
-
-Geser slider video hasil, lalu:
-
-- **＋ Tandai Frame** — tandai frame yang sedang tampil.
-- **Tandai Merata** — tandai N frame tersebar merata (N dari "Jumlah target").
-- **Simpan Frame Tertanda** / **Simpan Frame Ini Saja** — simpan ke dataset.
-
-Frame yang ditandai juga dipakai sebagai index ekstraksi saat **Batch Semua**.
-
-Hasil disimpan ke:
-`{OUTPUT_DIR}/augmented/liveportrait_app/{uuid}/{emosi}/...jpg`
+Hasil disimpan ke `{OUTPUT_DIR}/augmented/liveportrait_app/{uuid}/{emosi}/...jpg`.
 
 ---
 
-## 6. Tinjau & label (cek sebelum merge)
+## 5. Dataset wajah baru (tiap foto = orang baru)
 
-Sebelum merge, periksa hasil agar tidak ada label yang tak diinginkan:
+Untuk menambah ragam orang (mis. dataset wajah open-source) agar model belajar deteksi emosi
+lebih umum / tidak overfit:
 
-- **Muat / Refresh** — tampilkan semua gambar hasil (thumbnail dimuat di latar agar UI
-  tidak nge-lag). Klik **1x** thumbnail → tampil besar di pemeriksa.
-- **Label Semua (AI)** — label semua hasil otomatis dengan SigLIP + MediaPipe (penggaris
-  yang sama dengan menu utama). Berguna untuk mendeteksi bila frame ternyata mengandung
-  emosi lain selain yang diinginkan.
-- **Label manual** — di pemeriksa, klik pill emosi untuk menyetel label final per gambar
-  (dengan mutual exclusion Bore↔Eng, Conf↔Frus).
-- **Tolak / terima** — klik **2x** gambar (di grid atau pemeriksa). Merah = ditolak, tidak
-  ikut merge. **Hapus Ditolak** menghapus file yang ditolak dari disk.
-
-Label final disimpan di `lp_labels.json`; status tolak di `lp_review.json`.
+1. Pilih **folder** berisi foto wajah → **Pindai**. Muncul grid thumbnail.
+2. **Centang** foto yang ingin diproses (klik thumbnail; ada **Pilih Semua** / **Kosongkan**).
+3. Pastikan **emosi**, **driving**, dan **frame index** sudah diset seperti alur biasa.
+4. **Proses Wajah Terpilih** → tiap foto diberi UUID baru (`newface-…`) = **orang baru**,
+   lalu diaugmentasi dan disimpan seperti hasil LP biasa.
 
 ---
 
-## 7. Merge & Undo
+## 6. Tinjau & label (cek sebelum buat dataset)
 
-- **Merge ke Dataset** — gabungkan gambar hasil yang **diterima + berlabel** ke split
-  **train** dataset. Output **non-destruktif** ke folder baru `Label2d_lp_merged/`
-  (val/test disalin apa adanya). Ditambah kolom `synthetic` (1 = hasil LP, 0 = asli).
-  `Label2d` asli tidak diubah. Bila `Label2d` belum ada, split dibuat otomatis dulu.
-- **Undo Merge** — hapus folder `Label2d_lp_merged/`. Karena merge non-destruktif, undo
-  aman dan tidak menyentuh data asli.
+- **Muat / Refresh** menampilkan semua gambar hasil (thumbnail dimuat di latar → UI tetap ringan).
+- Klik **1×** thumbnail → tampil **BESAR** di pemeriksa. Di sana ditampilkan **dua hal**:
+  - **Deteksi AI** (chip, read-only) — hasil SigLIP+MediaPipe.
+  - **Label final manual** (pill, bisa diklik) — yang dipakai saat buat dataset.
+  Ini membantu memastikan tidak ada emosi lain selain yang diinginkan.
+- **Deteksi AI Semua** mengisi chip AI untuk semua hasil (disimpan di `lp_ai_labels.json`,
+  terpisah dari label final manual `lp_labels.json`).
+- Klik **2×** gambar = **tolak/terima** (merah = ditolak, tidak ikut dataset). **Hapus Ditolak**
+  menghapus file yang ditolak dari disk.
+
+---
+
+## 7. Buat dataset (pilih komposisi) & Undo
+
+Pilih **komposisi** lewat bullet/radio, lalu **Buat Dataset**:
+
+| Komposisi | Isi |
+|---|---|
+| **Tanpa LP** | Dataset asli saja (tanpa augmentasi). |
+| **Dengan LP** | Asli + hasil LP dari frame video dataset. |
+| **LP + Dataset Wajah Baru** | Asli + hasil LP video + hasil LP dataset wajah baru. |
+
+Output **non-destruktif** ke `Label2d_merged_{komposisi}/` (mis. `Label2d_merged_lp/`):
+train = asli + sintetik, val/test disalin apa adanya, kolom `synthetic` (1 = hasil LP).
+`Label2d` asli tidak diubah. **Undo / Hapus** menghapus folder `Label2d_merged_*` (asli aman).
+
+Tiga komposisi disimpan terpisah → mudah membandingkan (mis. cek apakah augmentasi membantu
+atau malah overfit).
 
 ---
 
@@ -129,16 +149,17 @@ Label final disimpan di `lp_labels.json`; status tolak di `lp_review.json`.
 | File / folder | Isi |
 |---|---|
 | `augmented/liveportrait_app/{uuid}/{emosi}/*.jpg` | Frame hasil generate |
-| `lp_labels.json` | Label final per gambar hasil (untuk merge) |
+| `lp_labels.json` | Label final manual per gambar (dipakai saat buat dataset) |
+| `lp_ai_labels.json` | Hasil deteksi AI per gambar (pembanding) |
 | `lp_review.json` | Daftar gambar yang ditolak |
-| `Label2d_lp_merged/` | Hasil merge (train asli + sintetik, val/test disalin) |
-| `augment_marks.json` → `lp_transform_frames` | Frame sumber yang ditandai LP |
+| `Label2d_merged_{base,lp,lp_new}/` | Dataset gabungan per komposisi |
+| `augment_marks.json` → `lp_transform_frames` | Frame sumber video yang ditandai LP |
 
 ## Kode terkait
 
 | File | Peran |
 |---|---|
 | `ui/lp_panel.py` | Seluruh UI panel LP Transform |
-| `app.py` (metode `_lp_*`) | Proses, worker persisten, label, merge/undo |
+| `app.py` (metode `_lp_*`) | Proses, worker persisten, label AI, dataset wajah, buat/undo dataset |
 | `4-Create/lp_worker.py` | Worker LivePortrait persisten (model load sekali) |
-| `4-Create/.env` (`LP_DRIVING_*`, `LP_EXTRA_FLAGS`) | Konfigurasi driving & flag LP |
+| `4-Create/.env` (`LP_DRIVING_*`, `LP_DRIVING_DIR`, `LP_FACES_DIR`, `LP_EXTRA_FLAGS`) | Konfigurasi |
