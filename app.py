@@ -1000,7 +1000,7 @@ class VideoLabelerApp:
         if not result_dir:
             lp.update_progress("Buka folder dataset terlebih dahulu", "#ef4444")
             return
-        picked = lp.get_picked_indices()
+        fracs  = lp.get_picked_fractions()
         n_even = lp.get_target_n()
         plan = []
         for face in faces:
@@ -1015,7 +1015,7 @@ class VideoLabelerApp:
             return
         lp.start_loading(f"Proses {len(plan)} job wajah baru")
 
-        def _worker(jobs=plan, picks=picked, ndump=n_even):
+        def _worker(jobs=plan, frac=fracs, ndump=n_even):
             from ui.lp_panel import _decode_video
             done = 0
             for k, (face, emo, drv) in enumerate(jobs, 1):
@@ -1036,11 +1036,7 @@ class VideoLabelerApp:
                     if not frames:
                         continue
                     total = len(frames)
-                    if picks:
-                        idxs = [i for i in picks if i < total]
-                    else:
-                        idxs = sorted({int(round(i * (total - 1) / max(ndump - 1, 1)))
-                                       for i in range(ndump)})
+                    idxs = self._lp_extract_indices(frac, ndump, total)
                     sel = [(i, frames[i]) for i in idxs if i < total]
                     self._lp_write_frames(sel, emo, "", 0, drv_stem,
                                           uuid_override=uuid, stem_override=uuid)
@@ -1219,6 +1215,17 @@ class VideoLabelerApp:
         self._lp_current_source = t[0]
         return self._lp_current_source
 
+    @staticmethod
+    def _lp_extract_indices(fractions: list, n_even: int, total: int) -> list:
+        """Index frame yang diekstrak dari satu video hasil berlength `total`.
+        Pakai `fractions` (posisi proporsional 0-1, jumlah tetap) bila ada — sehingga
+        ganti driving = jumlah frame sama, posisi menyesuaikan. Selain itu: N merata."""
+        if total <= 0:
+            return []
+        if fractions:
+            return sorted({min(total - 1, max(0, int(round(f * (total - 1))))) for f in fractions})
+        return sorted({int(round(i * (total - 1) / max(n_even - 1, 1))) for i in range(n_even)})
+
     def _lp_begin(self, lp) -> bool:
         """Guard anti tumpang-tindih: cegah dua proses LP jalan bersamaan (anti-lag/pile-up)."""
         if self._lp_busy:
@@ -1324,7 +1331,9 @@ class VideoLabelerApp:
             lp.update_progress("Buka folder dataset terlebih dahulu", "#ef4444")
             return
 
-        picked = lp.get_picked_indices()          # frame index pilihan user (ekspresi sama)
+        # Fraksi posisi (0-1) sebagai template: tiap video driving dipetakan ke index-nya
+        # sendiri → jumlah frame sama, posisi proporsional walau panjang driving beda.
+        fracs  = lp.get_picked_fractions()
         n_even = lp.get_target_n()                 # fallback bila belum ada pilihan
         # Rencana job: (vid_idx, fi, emo, drv). Honor dropdown (1 video bila spesifik).
         plan = []
@@ -1335,12 +1344,12 @@ class VideoLabelerApp:
         if not plan:
             lp.update_progress("Tidak ada video driving untuk emosi terpilih (Pindai folder dulu)", "#ef4444")
             return
-        mode = (f"frame {[i+1 for i in picked]}" if picked else f"{n_even} frame merata")
+        mode = (f"{len(fracs)} frame (posisi proporsional)" if fracs else f"{n_even} frame merata")
         if not self._lp_begin(lp):
             return
         lp.start_loading(f"Batch {len(plan)} job · ekstrak {mode}")
 
-        def _worker(jobs=plan, picks=picked, ndump=n_even):
+        def _worker(jobs=plan, frac=fracs, ndump=n_even):
             done = 0
             for k, (vid_idx, fi, emo, drv) in enumerate(jobs, 1):
                 if self._lp_cancel_flag:
@@ -1365,11 +1374,7 @@ class VideoLabelerApp:
                     if not frames:
                         continue
                     total = len(frames)
-                    if picks:
-                        idxs = [i for i in picks if i < total]
-                    else:
-                        idxs = sorted({int(round(i * (total - 1) / max(ndump - 1, 1)))
-                                       for i in range(ndump)})
+                    idxs = self._lp_extract_indices(frac, ndump, total)
                     sel = [(i, frames[i]) for i in idxs if i < total]
                     self._lp_write_frames(sel, emo, rel, fi, drv_stem)
                     done += 1
@@ -1495,52 +1500,40 @@ class VideoLabelerApp:
         return out
 
     def _lp_refresh_review(self):
-        """Muat thumbnail hasil generate di THREAD LATAR (anti-lag UI), lalu render."""
+        """Kirim SELURUH daftar hasil + state ke panel (tanpa decode thumbnail di muka →
+        cepat walau ribuan; thumbnail di-decode per-halaman oleh panel saat dibutuhkan)."""
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if not lp or not lp._built:
             return
         gen_dir = self._lp_generated_dir() or ""
         gen = self._lp_list_generated()
-        lp.update_progress(f"Memuat {len(gen)} hasil…", "#6b7280")
-
-        def _worker():
-            import cv2 as _cv2
+        with self._lp_json_lock:
             rejected  = self._lp_load_review()
             labels    = self._lp_load_labels()
             ai_labels = self._lp_load_ai_labels()
-            MAX = 300                          # batasi agar UI tetap ringan
-            items = []
-            for path, emo in gen[:MAX]:
-                rel = os.path.relpath(path, gen_dir).replace("\\", "/") if gen_dir else path
-                bgr = _cv2.imread(path)
-                if bgr is None:
-                    continue
-                thumb = _cv2.resize(bgr, (160, 160))
-                lab = labels.get(rel) or self._lp_default_label(emo)
-                ai_lab = ai_labels.get(rel, {})
-                items.append((path, emo, rel in rejected, lab, ai_lab, thumb))
-            extra = max(0, len(gen) - MAX)
-            self.root.after(0, lambda it=items, ex=extra: (
-                lp.render_review(it),
-                lp.update_progress(
-                    f"{len(it)} hasil dimuat" + (f" (+{ex} disembunyikan)" if ex else ""),
-                    "#10b981"),
-            ))
-
-        threading.Thread(target=_worker, daemon=True).start()
+        items = [(path, emo, os.path.relpath(path, gen_dir).replace("\\", "/") if gen_dir else path)
+                 for path, emo in gen]
+        lp.set_review_data(items, labels, ai_labels, rejected)
+        lp.update_progress(
+            f"{len(items)} hasil siap ditinjau — pakai ◀/▶ atau Loncat untuk navigasi.",
+            "#10b981" if items else "#6b7280")
 
     def _lp_toggle_reject(self, path: str):
-        """Tolak/terima satu gambar hasil (klik 2x). Aman lintas-thread (lock)."""
+        """Tolak/terima satu gambar hasil. Aman lintas-thread (lock). Update panel di tempat
+        (tanpa reload seluruh daftar) supaya posisi navigasi tidak hilang."""
         gen_dir = self._lp_generated_dir() or ""
         rel = os.path.relpath(path, gen_dir).replace("\\", "/")
         with self._lp_json_lock:
             rejected = self._lp_load_review()
-            if rel in rejected:
-                rejected.discard(rel)
-            else:
+            baru = rel not in rejected
+            if baru:
                 rejected.add(rel)
+            else:
+                rejected.discard(rel)
             self._lp_save_review(rejected)
-        self._lp_refresh_review()
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if lp and getattr(lp, "_built", False):
+            lp.terapkan_state(rel, ditolak=baru)
 
     # ── Label hasil LP (untuk QA sebelum merge) ──────────────────────────────
     def _lp_labels_path(self) -> str | None:
@@ -1610,7 +1603,8 @@ class VideoLabelerApp:
             self._lp_report_error(f"GAGAL menyimpan hasil deteksi AI: {e}")
 
     def _lp_set_label(self, gen_rel: str, label: str, value: int):
-        """Toggle satu label manual untuk satu gambar hasil (dengan mutual exclusion)."""
+        """Toggle satu label manual untuk satu gambar hasil (dengan mutual exclusion).
+        Update panel di tempat (tanpa reload daftar) agar posisi navigasi tetap."""
         with self._lp_json_lock:
             labels = self._lp_load_labels()
             cur = labels.get(gen_rel) or {l: 0 for l in LABELS}
@@ -1619,7 +1613,9 @@ class VideoLabelerApp:
                 cur[MUTUAL_EXCLUSIVE[label]] = 0
             labels[gen_rel] = cur
             self._lp_save_labels(labels)
-        self._lp_refresh_review()
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if lp and getattr(lp, "_built", False):
+            lp.terapkan_state(gen_rel, label=dict(cur))
 
     def _lp_label_all_ai(self):
         """Deteksi emosi SEMUA gambar hasil pakai SigLIP+MediaPipe (penggaris yang sama

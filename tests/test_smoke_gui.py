@@ -31,18 +31,39 @@ def main():
         assert lp._built, "panel LP gagal build"
         lp.get_selected_emotions(); lp.get_target_n(); lp.get_picked_indices()
         lp.get_driving_folder(); lp.get_driving_list("Confusion"); lp.get_merge_mode()
-        lp.get_face_folder(); lp.get_selected_faces()
+        lp.get_face_folder(); lp.get_selected_faces(); lp.get_picked_fractions()
+
+        # Kunci posisi proporsional: tandai di video pendek lalu ganti ke video panjang
+        import numpy as _np
+        vid_a = [_np.zeros((40, 40, 3), "uint8")] * 10   # hasil driving A (10 frame)
+        vid_b = [_np.zeros((40, 40, 3), "uint8")] * 50   # hasil driving B (50 frame)
+        lp.set_result_frames(vid_a, "Confusion")
+        lp.frame_terpilih = {2, 8}; lp._simpan_fraksi()   # tandai 2 frame (frac 0.22, 0.89)
+        lp.set_result_frames(vid_b, "Confusion")          # ganti driving → remap proporsional
+        assert len(lp.get_picked_indices()) == 2, "jumlah frame tertanda harus tetap 2"
+        assert max(lp.get_picked_indices()) > 9, "posisi harus menyesuaikan video baru (50 frame)"
+        # _lp_extract_indices: jumlah sama untuk total beda
+        assert len(a._lp_extract_indices([0.0, 0.5, 1.0], 4, 80)) == 3
+        assert a._lp_extract_indices([0.0, 0.5, 1.0], 4, 80) == [0, 40, 79]
 
         # Status & loading
         lp.update_progress("uji"); lp.start_loading("uji loading"); lp.stop_loading("selesai")
         lp.clear_source("uji"); lp.set_source_label("abcd1234", 0); lp.reset()
 
-        # Render grid tinjau (6-tuple: path, emo, ditolak, label, ai_label, thumb)
+        # Tinjau & navigasi (ribuan item): set_review_data + prev/next/loncat/terapkan_state
         dummy = np.zeros((80, 80, 3), dtype="uint8")
         label_kosong = {l: 0 for l in mod.LABELS}
-        lp.render_review([("/tmp/x.jpg", "Confusion", False,
-                           dict(label_kosong, Confusion=1), {"Confusion": 1}, dummy)])
-        lp.render_review([])
+        items = [(f"/tmp/x{i}.jpg", "Confusion", f"rel/x{i}.jpg") for i in range(120)]
+        labels = {f"rel/x{i}.jpg": dict(label_kosong, Confusion=1) for i in range(120)}
+        lp.set_review_data(items, labels, {"rel/x0.jpg": {"Confusion": 1}}, set())
+        assert lp.idx_tinjau == 0
+        lp._tinjau_geser(+1); assert lp.idx_tinjau == 1
+        lp.entri_loncat.delete(0, "end"); lp.entri_loncat.insert(0, "95"); lp._tinjau_loncat()
+        assert lp.idx_tinjau == 94, lp.idx_tinjau
+        lp.terapkan_state("rel/x94.jpg", ditolak=True)
+        assert "rel/x94.jpg" in lp.review_ditolak
+        lp._geser_halaman(+1)                  # ganti halaman grid
+        lp.set_review_data([], {}, {}, set())  # kasus kosong
         lp.render_faces([("/tmp/a.jpg", False, dummy), ("/tmp/b.jpg", True, dummy)])
 
         # Metode app yang dipanggil panel harus ada

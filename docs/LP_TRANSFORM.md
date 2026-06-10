@@ -94,6 +94,14 @@ Geser slider video hasil, lalu **＋ Tandai Frame** (pilih frame tertentu, mis. 
 **Tandai Merata** (N dari "Jumlah target"). **Simpan Frame Tertanda** menyimpan ke dataset.
 Frame index yang ditandai juga dipakai saat **Batch Semua** dan **Proses Wajah Terpilih**.
 
+**Kunci posisi proporsional** (checkbox, default aktif): kalau **video driving diganti** lalu
+diproses ulang, frame yang sudah ditandai **otomatis dipetakan ulang** ke posisi proporsional
+di video baru — **jumlah frame tetap sama, hanya letaknya yang menyesuaikan** panjang/timing
+driving baru. Contoh: tandai 2 frame di driving 10-frame (posisi ~22% & ~89%) → ganti ke driving
+50-frame → otomatis jadi 2 frame di ~frame 11 & ~44. Saat Batch, tiap video hasil memetakan
+fraksi ini ke index-nya sendiri, jadi konsisten walau tiap driving beda panjang. Matikan
+checkbox bila ingin menandai dari nol tiap ganti driving.
+
 Hasil disimpan ke `{OUTPUT_DIR}/augmented/liveportrait_app/{uuid}/{emosi}/...jpg`.
 
 ---
@@ -113,7 +121,12 @@ lebih umum / tidak overfit:
 
 ## 6. Tinjau & label (cek sebelum buat dataset)
 
-- **Muat / Refresh** menampilkan semua gambar hasil (thumbnail dimuat di latar → UI tetap ringan).
+- **Muat / Refresh** menyiapkan **seluruh** gambar hasil (ribuan pun cepat — thumbnail dimuat
+  per-halaman di latar, tidak sekaligus).
+- **Navigasi (untuk ribuan gambar):** pemeriksa besar punya **◀ Sebelumnya / Berikutnya ▶**,
+  kotak **Loncat** ke nomor tertentu, dan penunjuk posisi **"12 / 1340"**. Grid thumbnail
+  **berhalaman** (◀ Halaman / Halaman ▶) — klik thumbnail untuk lompat ke gambar itu di pemeriksa.
+  Jadi tidak perlu scroll satu-satu mencari di antara ribuan hasil.
 - Klik **1×** thumbnail → tampil **BESAR** di pemeriksa. Di sana ditampilkan **dua hal**:
   - **Deteksi AI** (chip, read-only) — hasil SigLIP+MediaPipe.
   - **Label final manual** (pill, bisa diklik) — yang dipakai saat buat dataset.
