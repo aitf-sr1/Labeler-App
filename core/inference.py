@@ -15,7 +15,44 @@ import torch
 from .siglip_model import get_siglip, get_device
 
 
+# ── Mutual exclusion pasangan emosi berlawanan (PENYEDERHANAAN DESAIN) ────────
+# Sinkron dengan core/recalculate.py agar preview galeri == hasil final tersimpan.
+# Index LABELS: 0=Boredom 1=Engagement 2=Confusion 3=Frustration.
+#
+# CATATAN KEJUJURAN (hard XOR ini BUKAN verbatim paper — lihat DESIGN_RATIONALE §11/§15):
+#   Bore↔Eng : yang paper-grounded adalah hubungan KOMPLEMENTER (DAiSEE 2016 §5
+#              "when engagement is low, boredom is generally high and vice-versa";
+#              D'Mello 2012) → sudah ditangani SOFT suppress `bore_eng_suppress=0.40`
+#              di skor landmark. Hard XOR di sini = versi keras (penyederhanaan).
+#   Conf↔Frus: basis LEMAH — paper (D'Mello 2012) hanya menunjukkan TRANSISI temporal
+#              confusion→frustration, BUKAN mutual exclusion per-frame. DAiSEE multi-label
+#              malah membolehkan co-occur. Hard XOR di sini = penyederhanaan desain
+#              (alasan praktis: kirim label bersih ke LLM hilir), bukan dari paper.
+# Aturan: jika kedua pasangan diprediksi 1, ambil yang skor DOMINAN.
+_MUTEX_PAIRS = [(0, 1), (2, 3)]
 
+
+def _apply_mutual_exclusion(per_label_result: dict, n_frames: int) -> None:
+    """Terapkan mutual exclusion in-place pada hasil per-label (struktur inference)."""
+    # Video-level: jika kedua emosi pasangan diprediksi 1, yang skor-avg lebih rendah → 0
+    # (sekaligus nol-kan semua frame_preds-nya — konsisten dengan recalculate.py).
+    for a, b in _MUTEX_PAIRS:
+        if per_label_result[a]["prediction"] == 1 and per_label_result[b]["prediction"] == 1:
+            loser = b if per_label_result[a]["avg_score"] >= per_label_result[b]["avg_score"] else a
+            per_label_result[loser]["prediction"] = 0
+            per_label_result[loser]["frame_preds"] = [0] * n_frames
+    # Per-frame: untuk frame yang masih dobel, ambil yang skor-frame lebih tinggi
+    for f in range(n_frames):
+        for a, b in _MUTEX_PAIRS:
+            if per_label_result[a]["frame_preds"][f] == 1 and per_label_result[b]["frame_preds"][f] == 1:
+                sa = per_label_result[a]["frame_scores"][f]
+                sb = per_label_result[b]["frame_scores"][f]
+                loser = b if sa >= sb else a
+                per_label_result[loser]["frame_preds"][f] = 0
+    # Resync vote counts
+    for i in per_label_result:
+        per_label_result[i]["vote_pos"] = sum(per_label_result[i]["frame_preds"])
+        per_label_result[i]["vote_neg"] = n_frames - per_label_result[i]["vote_pos"]
 
 
 def run_siglip_on_frames(
@@ -155,25 +192,12 @@ def run_siglip_on_frames(
                 sum(land_scores_per_frame[f][i] for f in valid_frames) / len(valid_frames), 4
             )
 
-            # ── Gaze-attention gate khusus Engagement (i=1) ──────────────
-            # Whitehill et al. (2014): "looking away from the computer" = NOT engaged (level 1).
-            # GazeTutor (D'Mello et al. 2012): gaze menjauh layar → bored/disengaged.
-            # Problem: SigLIP memberikan skor "engaged" dari penampilan wajah saja, tanpa tahu
-            # apakah orang menatap layar. Gate ini mencegah engagement tinggi saat gaze jauh.
-            # Gate = gaze_dev_eng dari landmark (sudah menggabungkan yaw+iris, tanpa roll).
-            # Jika landmark tidak tersedia, gate tidak diterapkan.
-            if i == 1 and landmark_results:
-                eng_gate_th    = hcfg.get("eng_gaze_gate_th", 15.0)    # gaze_dev_eng (°) mulai suppress
-                eng_gate_range = hcfg.get("eng_gaze_gate_range", 15.0) # nol di th+range (default 30°)
-                eng_gate_hard  = hcfg.get("eng_gaze_gate_hard", 0.20)  # max pengurangan skor (0–1)
-                for f_idx, r_lm in enumerate(landmark_results):
-                    if not r_lm.face_found:
-                        continue
-                    gaze_h_eff = abs(r_lm.yaw + r_lm.iris_x * 35.0)
-                    gaze_v_up  = max(0.0, -(-r_lm.pitch + r_lm.iris_y * 25.0))
-                    gaze_dev_f = (gaze_h_eff ** 2 + gaze_v_up ** 2) ** 0.5
-                    gate_penalty = min(max((gaze_dev_f - eng_gate_th) / max(eng_gate_range, 1e-6), 0.0), 1.0) * eng_gate_hard
-                    hybrid_scores[f_idx] = round(max(0.0, hybrid_scores[f_idx] - gate_penalty), 4)
+            # CATATAN: eng_gaze_gate eksternal DIHAPUS. Prinsip Whitehill 2014 ("looking away
+            # = not engaged") sudah ditegakkan DI DALAM skor landmark Engagement (gate via
+            # gaze_dev_eng + yaw_gate + pitch_gate, Whitehill/Sümer-grounded) yang kini berbobot
+            # land_w[Eng]=0.75. Gate eksternal hanya aplikasi-ganda redundan pada porsi SigLIP
+            # dan menimbulkan divergensi inference vs recalculate → dihapus (tanpa kehilangan
+            # mekanisme paper). Lihat DESIGN_RATIONALE.
         else:
             hybrid_scores = siglip_scores
             land_avg      = None
@@ -228,6 +252,10 @@ def run_siglip_on_frames(
             sum(r["frame_scores"][f] for f in vf) / max(len(vf), 1), 4
         )
         r["prediction"] = 1 if (n_frames > 0 and r["avg_score"] >= thresholds[i]) else 0
+
+    # Mutual exclusion (Bore↔Eng, Conf↔Frus) — sinkron dgn recalculate.py (galeri == final)
+    if n_labels == 4:
+        _apply_mutual_exclusion(per_label_result, n_frames)
 
     # Deteksi sampel tanpa label — semua emosi di bawah threshold
     has_any_label = any(
@@ -412,6 +440,10 @@ def run_siglip_batch(
                 sum(r_lbl["frame_scores"][f] for f in vf) / max(len(vf), 1), 4
             )
             r_lbl["prediction"] = 1 if (n_frames > 0 and r_lbl["avg_score"] >= thresholds[i]) else 0
+
+        # Mutual exclusion (Bore↔Eng, Conf↔Frus) — sinkron dgn recalculate.py (galeri == final)
+        if n_labels == 4:
+            _apply_mutual_exclusion(per_label_result, n_frames)
 
         has_any_label = any(per_label_result[i]["prediction"] == 1 for i in range(n_labels))
         results.append({

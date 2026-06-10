@@ -11,7 +11,8 @@ Menghasilkan per frame:
   - Skor emosi landmark (0–1) untuk hybrid scoring dengan SigLIP
 
 ARSITEKTUR: MediaPipe-only — tidak ada py-feat, tidak ada subprocess eksternal.
-Semua AU dihitung dari blendshape MediaPipe via core/action_units.py (sinkron).
+Sinyal emosi dihitung dari blendshape MediaPipe via core/blendshape_features.py (sinkron).
+Chain paper: Craig 2008 (AU→emosi) + Turrisi 2026 (BF→AU, κ=0.92) → blendshape langsung.
 Model diunduh otomatis ke ~/.cache/siglip_labeler/ pada pertama kali digunakan.
 """
 
@@ -24,7 +25,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
-from .action_units import compute_action_units, AU_NAMES
+from .blendshape_features import compute_action_units, AU_NAMES
 
 # Sumber blendshape (env BLENDSHAPE_SOURCE):
 #   "mediapipe"      (default) = blendshape bawaan MediaPipe FaceLandmarker (gratis, sudah keluar)
@@ -339,7 +340,7 @@ def analyze_frame(frame_bgr, injected_hand: tuple = None) -> 'LandmarkResult':
     lms = res.face_landmarks[0]
     bs  = {b.category_name: round(b.score, 4) for b in res.face_blendshapes[0]}
     # Opsi: ganti sumber blendshape ke model py-feat mp_blendshapes (env BLENDSHAPE_SOURCE).
-    # Output kompatibel (52 nama ARKit yang sama) → langsung dipakai oleh action_units.py.
+    # Output kompatibel (52 nama ARKit yang sama) → langsung dipakai oleh blendshape_features.py.
     if _BLENDSHAPE_SOURCE == "mp_blendshapes":
         from .mp_blendshapes import compute_blendshapes as _mp_bs
         _alt = _mp_bs(lms)
@@ -390,11 +391,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         cfg: Dict parameter dari rules.py. Jika None, pakai DEFAULT_RULES.
 
     PRINSIP GAZE:
-      Dua metrik gaze deviation:
-      - `gaze_dev_bore` (include roll) → Boredom. Kepala miring/noleh = bosan.
-      - `gaze_dev` (tanpa roll) → Engagement gate. Roll ditangani roll_gate terpisah
-        agar natural head tilt tidak mengurangi engagement.
+      Metrik gaze deviation yang DIPAKAI:
+      - `gaze_dev_bore` (yaw+iris, ke atas saja, tanpa roll) → Boredom. Nunduk & roll ≠ bosan.
+      - `gaze_dev_eng`  (sama dgn bore) → Engagement gate (line `gate`). Roll ditangani
+        roll_gate terpisah agar natural head tilt tidak mengurangi engagement.
       Tatapan lurus ke kamera → gaze rendah → Tidak Bosan, Engaged.
+      (Confusion TIDAK memakai gaze gate — Craig 2008 mendefinisikannya via AU, bukan arah pandang.)
     """
     from .rules import DEFAULT_RULES
     if cfg is None:
@@ -404,7 +406,8 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         return {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
 
     # Intensitas AU FACS untuk scoring — semua dari blendshape MediaPipe (baseline-normalized).
-    # AU1/AU2/AU4/AU7/AU12/AU14/AU25/AU26/AU43 tersedia dari compute_action_units().
+    # AU1/AU2/AU4/AU7/AU12/AU14/AU25/AU26/AU43 tersedia dari compute_blendshape_features()
+    # via alias compute_action_units (chain: Craig 2008 + Turrisi 2026).
     # person_neutral (Bosch 2023): jika ada → override neutral anchor per-AU dengan
     # netral pribadi orang ini → scoring lebih adil lintas individu (Bartlett 1999 FACS).
     # Scoring TIDAK akses blendshape langsung — semua lewat au[...].
@@ -430,25 +433,36 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
         _iris_y_factor = 0.0
     else:
         _iris_y_factor = max(0.0, 1.0 - _eye_closed / max(_iris_blink_th, 1e-6))
-    iris_y_eff      = r.iris_y * _iris_y_factor   # scaled iris_y; = r.iris_y saat mata terbuka
+    # Catatan: iris_y (eye-space) TIDAK dipakai untuk gaze_v lagi (lihat penjelasan di bawah);
+    # _iris_y_factor (blink suppression) tetap diterapkan ke iris_img_y di bawah.
 
     # ── Gaze deviation (shared basis) ─────────────────────────────────────────
     GAZE_SCALE   = gcfg["scale_h"]
     GAZE_SCALE_V = gcfg["scale_v"]
     gaze_h     = r.yaw + r.iris_x * GAZE_SCALE
-    gaze_v_raw = -r.pitch + iris_y_eff * GAZE_SCALE_V
+
+    # Untuk gaze VERTIKAL: gunakan iris_img_y (posisi iris absolut di image frame),
+    # BUKAN iris_y (relatif ke eye center). Alasan:
+    #   iris_y = (iris_pixel_y - eye_center_y) / eye_height — dihitung dalam koordinat
+    #   eye frame yang berputar dengan kepala. Saat head roll besar (>8°), eye landmarks
+    #   (top=159/bot=145) ikut berputar, sehingga iris_y bisa artifak besar (misal -0.431)
+    #   meski iris_img_y ≈ 0 (siswa menatap layar lurus). Ini menyebabkan boredom-dari-atas
+    #   palsu saat kepala miring.
+    #   iris_img_y = raw iris y position in image - 0.5 — tidak terpengaruh head roll,
+    #   langsung merepresentasikan ke mana iris menghadap di ruang image/kamera.
+    #   Untuk horizontal (gaze_h): tetap pakai iris_x (eye-space) agar kompensasi head yaw
+    #   tetap bekerja (kepala noleh kanan + iris kompensasi kiri → gaze_h ≈ 0).
+    _iris_img_y_eff = r.iris_img_y * _iris_y_factor
+    gaze_v_raw = -r.pitch + _iris_img_y_eff * GAZE_SCALE_V
 
     # Pisahkan komponen vertikal atas dan bawah:
     #   - Ke atas : dead zone kecil (5°) — tatapan ke atas = melamun = boredom
     #   - Ke bawah: dead zone besar (15°) — nunduk = baca/ngetik/berpikir = BUKAN boredom
-    # Arah vertikal murni dari geometri (pitch kepala + iris_y), BUKAN blendshape eyeLookDown.
+    # Arah vertikal murni dari geometri (pitch kepala + iris_img_y). BUKAN blendshape eyeLookDown.
     gaze_v_up   = max(0.0, -gaze_v_raw)                             # komponen ke atas
-    gaze_v_down = max(0.0, gaze_v_raw)                              # komponen ke bawah
+    gaze_v_down = max(0.0, gaze_v_raw)                              # komponen ke bawah (debug saja)
     v_dz_up   = gcfg.get("v_dead_zone_up", 5.0)
-    v_dz_down = gcfg["v_dead_zone"]
     gaze_v_up_eff   = max(0.0, gaze_v_up   - v_dz_up)
-    gaze_v_down_eff = max(0.0, gaze_v_down - v_dz_down)
-    gaze_v_eff = max(gaze_v_up_eff, gaze_v_down_eff)    # untuk engagement gate (atas dan bawah sama-sama suppress engagement)
 
     # gaze_h sudah = yaw + iris_x*scale_h — menggabungkan head pose + posisi iris.
     # Jika iris mengkompensasi head turn (natap depan walau kepala miring), gaze_h ≈ 0 → benar.
@@ -460,25 +474,18 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # Roll (kepala miring, ear→shoulder).
     roll_gaze_eff = max(0.0, abs(r.roll) - gcfg.get("roll_dz", 5.0))
 
-    # gaze_dev_bore: untuk BOREDOM — include roll, HANYA gaze ke atas (bukan ke bawah).
+    # gaze_dev_bore: untuk BOREDOM — HANYA dari arah pandang (gaze horizontal + ke atas).
     #   Nunduk (ke bawah) = baca soal / ngetik / mikir = Engagement/Confusion, BUKAN Boredom.
-    #   Boredom datang dari: gaze ke samping + gaze ke atas + kepala miring.
-    #
-    # Roll ditambahkan secara ADITIF (bukan kuadrat/Euclidean):
-    #   Alasan: roll (kepala miring ke bahu) adalah dimensi inattention yang INDEPENDEN,
-    #   bukan komponen vektor gaze yang sama. Dengan kuadrat, roll=10° + gH=10° = 14.1° (terlalu kecil).
-    #   Dengan aditif, roll=10° + gH=10° = 20° — lebih mencerminkan dua cue distinct yang saling memperkuat.
-    gaze_dev_bore = (gaze_h_eff ** 2 + gaze_v_up_eff ** 2) ** 0.5 + roll_gaze_eff
+    #   Roll (kepala miring ke bahu) TIDAK ditambahkan: siswa dapat memiringkan kepala
+    #   sambil tetap menatap layar — roll ≠ mengalihkan pandang. Hanya yaw (menoleh) = boredom.
+    #   roll_gaze_eff tetap dihitung untuk debug log, tapi TIDAK masuk ke gaze_dev_bore.
+    gaze_dev_bore = (gaze_h_eff ** 2 + gaze_v_up_eff ** 2) ** 0.5
 
     # gaze_dev_eng: untuk ENGAGEMENT gate — TANPA roll, TANPA komponen ke bawah.
     # Sümer et al. (2021): "head-down (i.e., taking notes or reading learning material)" —
     # lihat ke bawah = baca/catat = ON-TASK. "Students can still focus on content when
     # looking around or taking notes." → lihat ke bawah TIDAK mengurangi skor Engagement.
     gaze_dev_eng  = (gaze_h_eff ** 2 + gaze_v_up_eff ** 2) ** 0.5
-
-    # gaze_dev: untuk confusion attentive gate — pakai SEMUA arah (atas+bawah), TANPA roll.
-    #   Confusion membutuhkan attention ke konten — gaze jauh ke manapun mengurangi gate.
-    gaze_dev      = (gaze_h_eff ** 2 + gaze_v_eff ** 2) ** 0.5
 
     # == 0: BOREDOM ============================================================
     bore_gaze_raw = _clamp((gaze_dev_bore - bcfg["gaze_dead_zone"]) / max(bcfg["gaze_range"], 1e-6), 0, 1)
@@ -587,11 +594,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     #   - Dong et al. (2026, ConfusionBench): "Hand-to-face actions such as touching the chin, pressing
     #     the forehead, and covering the mouth may indicate thinking, frustration, or hesitation."
     #   - Behera (2020): HoF ↑ saat difficulty ↑; Mahmoud (2016): HoF = "cognitive mental states".
-    # max(hand_one, hand_two) — paper tidak bedakan jumlah untuk Confusion. Bobot final hand_conf_w=0.78
-    # (= au7_alone_w): Mahmoud 2011 coverage 14/15 ≈ 93% ≥ AU7 (78%) → hand = cue KUAT, setara AU diskrit.
-    # Catatan: deteksi count-based, tak bisa bedakan jari-aktif (kognitif) vs bersandar-pasif (rileks) →
-    # anotator manusia menilai posisi (dagu vs dahi) saat review; skor otomatis sengaja kuat agar tidak under-detect.
-    sig_hand_conf = max(r.hand_one, r.hand_two) * ccfg.get("hand_conf_w", 0.78)
+    # max(hand_one, hand_two) — paper tidak bedakan jumlah untuk Confusion. Bobot final hand_conf_w=0.95
+    # (≥ au7_alone_w): Mahmoud 2011 coverage 14/15 ≈ 93% ≥ AU7 (78%) → hand = cue KUAT, dinaikkan
+    # agar override smile gate (lihat rules.py). Catatan: deteksi count-based, tak bisa bedakan
+    # jari-aktif (kognitif) vs bersandar-pasif (rileks) → anotator manusia menilai posisi (dagu vs
+    # dahi) saat review; skor otomatis sengaja kuat agar tidak under-detect.
+    sig_hand_conf = max(r.hand_one, r.hand_two) * ccfg.get("hand_conf_w", 0.95)
 
     # MOUTH OPEN (AU25 Lips Part + AU26 Jaw Drop) → cue KUAT Confusion (Namba "most significant").
     # Chain dua paper:
@@ -607,9 +615,9 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     mouth_open_w = ccfg.get("mouth_open_conf_w", 0.78)
     sig_mouth_conf = max(au25_au26_co, au25_alone * 0.5) * mouth_open_w
 
-    # base_conf = max() dari 5 cue setara-kuat: AU4 (95%), AU7 (78%, w0.78), AU4+AU7 (73%),
-    # HoF/tangan (Mahmoud 93%, w0.78), mulut-mangap (Namba "most significant", w0.78).
-    # Tangan & mulut kini SETARA AU7 (bukan lagi cue lemah) → confusion tidak under-detect.
+    # base_conf = max() dari 5 cue: AU4 (95%, w1.0), AU7 (78%, w0.78), AU4+AU7 (73%, w0.50),
+    # HoF/tangan (Mahmoud 93%, w0.95), mulut-mangap (Namba "most significant", w0.78).
+    # Tangan & mulut kini cue KUAT (bukan lagi cue lemah) → confusion tidak under-detect.
     base_conf = max(brow_dn_v, au7_sig, au4_au7_sig, sig_hand_conf, sig_mouth_conf)
     conf = _clamp(base_conf * ccfg["blend_a"] + max(brow_dn_v, au7_v) * ccfg["blend_b"], 0, 1)
 
@@ -640,8 +648,12 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # cocok use-case kita) → AU4/AU14 DINAIKKAN dari sekunder ke PRIMER. AU4 sering nyala di py-feat
     # (median 0.31, p90 0.61) → frustration jadi lebih sering terdeteksi (jawab "frus jarang muncul").
     br_fr  = au["AU4"]    # AU4 brow lowerer  (Grafsgaard 2013: korelat POSITIF frustration)
-    dim_fr = au["AU14"]   # AU14 dimpler      (Grafsgaard 2013: korelat POSITIF frustration + learning)
-    face_secondary = max(br_fr, dim_fr)  # AU4 atau AU14 — kini PRIMER (Grafsgaard 2013)
+    # AU14 (mouthDimple): saat tangan terdeteksi di wajah, mouthDimple MediaPipe dapat
+    # meningkat akibat tekanan/deformasi pipi oleh tangan — bukan ekspresi dimpling asli.
+    # Suppress AU14 proporsional ke kepercayaan deteksi tangan (hand_on_face 0→1).
+    hand_on_face = max(r.hand_one, r.hand_two)
+    dim_fr_adj = au["AU14"] * max(0.0, 1.0 - hand_on_face)
+    face_secondary = max(br_fr, dim_fr_adj)  # AU4 atau AU14 (hand-adjusted) — Grafsgaard 2013
 
     # Craig et al. (2008) Table 2: AU1 sendiri (100%), AU2 sendiri (100%), dan AU1+AU2 bersama (100%)
     # → single brow raise PUN valid per paper (masing-masing 100% coverage); bobot parsial 0.70 = kalibrasi.
@@ -649,8 +661,8 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # Two-tier weighting:
     #   brow_raise_co (AU1+AU2 primary) → brow_raise_direct_w lebih tinggi (100% coverage co-occurrence)
     #   face_secondary (AU4/AU14)       → face_weight lebih rendah (secondary signal)
-    brow_raise_direct_w = fcfg.get("brow_raise_direct_w", 0.65)  # Craig2008: AU1+AU2 primary
-    face_w              = fcfg.get("face_weight", 0.60)           # AU4/AU14 PRIMER (Grafsgaard 2013)
+    brow_raise_direct_w = fcfg.get("brow_raise_direct_w", 0.55)  # Craig2008: AU1+AU2 primary (turun: butuh co-signal)
+    face_w              = fcfg.get("face_weight", 0.65)           # AU4/AU14 pendukung (Grafsgaard 2013)
 
     sig_brow_raise = brow_raise_co * brow_raise_direct_w                   # AU1+AU2 co-occurrence, primary
     sig_bou_alone  = max(bou_fr * 0.70, biu_fr * 0.70) * brow_raise_direct_w  # single brow (Craig: tiap-tiap 100%), parsial
@@ -692,7 +704,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
     # Debug log
     if _DBG_LAND:
         print(f"  [LAND] yaw={r.yaw:+.1f} pitch={r.pitch:+.1f} roll={r.roll:+.1f} iris_x={r.iris_x:+.3f} iris_y={r.iris_y:+.3f} "
-              f"gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev:.1f}° | "
+              f"gH={gaze_h:+.1f}° gVup={gaze_v_up:.1f}° gVdn={gaze_v_down:.1f}° rollG={roll_gaze_eff:.1f}° devBore={gaze_dev_bore:.1f}° devEng={gaze_dev_eng:.1f}° | "
               f"rollGate={roll_gate:.2f} yawGate={yaw_gate:.2f} gate={gate:.2f} | "
               f"boreGaze={bore_gaze:.2f} | "
               f"B={bore:.3f} E={eng:.3f} C={conf:.3f} F={frus:.3f}")
@@ -701,7 +713,7 @@ def compute_emotion_scores(r: LandmarkResult, cfg: dict = None) -> dict:
                   f"au4_au7_sig={au4_au7_sig:.2f} AU12_smile={smile_au12:.2f} base={base_conf:.2f}")
         if frus > 0.5:
             print(f"  [FRUS] AU1_inner={biu_fr:.2f} AU2_outer={bou_fr:.2f} brow_raise_co={brow_raise_co:.2f} "
-                  f"AU4={br_fr:.2f} AU14={dim_fr:.2f} sig_wajah={sig_wajah_frus:.2f}")
+                  f"AU4={br_fr:.2f} AU14={dim_fr_adj:.2f} sig_wajah={sig_wajah_frus:.2f}")
 
     return {
         0: round(bore, 4),
@@ -816,22 +828,28 @@ def draw_landmark_viz(frame_bgr: np.ndarray, r: LandmarkResult,
     cv2.putText(viz, f"P{r.pitch:+.0f}", (S(2), pitch_cy - pitch_px - S(4)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.32 * sc, pitch_color, S(1), cv2.LINE_AA)
 
-    # ── 5. Signal bars (sisi kanan) — AU dari MediaPipe blendshape ──────────────
-    # Semua AU dihitung dari blendshape MediaPipe (baseline-normalized).
-    # AU4 = browDown+sneer booster (stretch agresif). AU25/AU26 = mouthOpen/jawOpen.
+    # ── 5. Signal bars (sisi kanan) — Blendshape Features (Turrisi 2026 + Aldenhoven 2026) ─
+    # Blendshape → AU chain: Craig 2008 (AU→emosi) + Turrisi 2026 (BF→AU, κ=0.92).
+    # eyeLookDown gating (Turrisi: AU64 = gaze direction ≠ AU7/AU43): ditampilkan sbg indikator.
+    # AU25/AU26 keduanya dari jawOpen (proxy — ARKit tidak punya mouthOpen terpisah, Namba 2024).
+    _eld = (g("eyeLookDownLeft") + g("eyeLookDownRight")) / 2
+    _gate_start = 0.25
+    _gate_full  = 0.60
+    _ld_gate = max(0.0, 1.0 - max(0.0, min(1.0, (_eld - _gate_start) / max(_gate_full - _gate_start, 1e-6))))
     signals = [
-        ("AU1",   g("browInnerUp"),                                         (255, 140,  80)),  # inner brow → Frus
-        ("AU2",   (g("browOuterUpLeft")+g("browOuterUpRight"))/2,           (255, 170,  90)),  # outer brow → Frus
-        ("AU4",   (g("browDownLeft")+g("browDownRight"))/2,                 (255,  80,  80)),  # brow lowerer → Conf
-        ("AU7",   (g("eyeSquintLeft")+g("eyeSquintRight"))/2,               (255, 160,   0)),  # lid tightener → Conf
-        ("AU14",  (g("mouthDimpleLeft")+g("mouthDimpleRight"))/2,           (255,  60, 120)),  # dimpler → Frus sekunder
-        ("AU25",  g("mouthOpen"),                                           (0,   180, 255)),  # Lips Part → Conf cue (Namba 2024)
-        ("AU26",  g("jawOpen"),                                             (0,   220, 180)),  # Jaw Drop  → Conf cue (Namba 2024)
-        ("AU43",  max(g("eyeBlinkLeft"), g("eyeBlinkRight")),               (100, 100, 255)),  # eye closure → Bore
-        ("Sneer", max(g("noseSneerLeft"), g("noseSneerRight")),             (200,  80,  80)),  # co-occur AU4 booster
-        ("EyeW",  (g("eyeWideLeft")+g("eyeWideRight"))/2,                  (80,  255, 200)),  # eye wide → Eng
-        ("H1",    r.hand_one,                                               (0,   200, 255)),  # 1 tangan → Conf
-        ("H2",    r.hand_two,                                               (0,   255, 140)),  # 2 tangan → Frus
+        ("AU1",   g("browInnerUp"),                                         (255, 140,  80)),  # browInnerUp → Frus (Aldenhoven T1, Turrisi κ=1.00)
+        ("AU2",   (g("browOuterUpLeft")+g("browOuterUpRight"))/2,           (255, 170,  90)),  # browOuterUp → Frus (Aldenhoven T1, Turrisi κ=1.00)
+        ("AU4",   (g("browDownLeft")+g("browDownRight"))/2,                 (255,  80,  80)),  # browDown → Conf (Aldenhoven T1, Turrisi κ=1.00)
+        ("AU7",   (g("eyeSquintLeft")+g("eyeSquintRight"))/2 * _ld_gate,   (255, 160,   0)),  # eyeSquint → Conf (gated by eyeLookDown)
+        ("AU14",  (g("mouthDimpleLeft")+g("mouthDimpleRight"))/2,           (255,  60, 120)),  # mouthDimple → Frus (Aldenhoven T1)
+        ("AU25",  g("jawOpen"),                                             (0,   180, 255)),  # jawOpen proxy AU25 (Namba 2024)
+        ("AU26",  g("jawOpen"),                                             (0,   220, 180)),  # jawOpen → AU26 (Aldenhoven T1)
+        ("AU43",  (g("eyeBlinkLeft")+g("eyeBlinkRight"))/2 * _ld_gate,     (100, 100, 255)),  # eyeBlink → Bore (gated by eyeLookDown)
+        ("LkDn",  _eld,                                                     (180,  80, 255)),  # eyeLookDown = AU64 (Turrisi) — gate trigger
+        ("Gate",  _ld_gate,                                                 (120, 255, 120)),  # gating aktif=1.0, mati=0.0
+        ("EyeW",  (g("eyeWideLeft")+g("eyeWideRight"))/2,                  (80,  255, 200)),  # eyeWide → AU5 → Eng
+        ("H1",    r.hand_one,                                               (0,   200, 255)),  # 1 tangan → Conf (Mahmoud 2011)
+        ("H2",    r.hand_two,                                               (0,   255, 140)),  # 2 tangan → Frus (Grafsgaard 2013b)
     ]
     bar_w_max = S(60)
     bar_h_each = S(14)

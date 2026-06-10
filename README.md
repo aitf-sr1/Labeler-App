@@ -39,6 +39,7 @@ Keempat-empatnya digabung lewat **Hybrid Scoring** (lihat [§5](#5-cara-kerja-si
 | [docs/PANDUAN_ANOTASI_MANUAL.md](docs/PANDUAN_ANOTASI_MANUAL.md) | Panduan anotator manusia: ciri tiap emosi, tabel gaze, tabel suppress/co-occurrence, cue tangan. |
 | [docs/DESIGN_RATIONALE.md](docs/DESIGN_RATIONALE.md) | Alasan desain tiap bobot (kenapa angka segini), kode vs. paper. |
 | [docs/RULES_PANEL.md](docs/RULES_PANEL.md) | Cara menggunakan Rules Editor: semua ~50 parameter dijelaskan, panduan "kalau label X bermasalah ubah ini", strategi tuning. |
+| [docs/LP_TRANSFORM.md](docs/LP_TRANSFORM.md) | **Panel LP Transform**: augmentasi ekspresi (LivePortrait) di dalam aplikasi — folder driving, worker persisten, pilih frame, tinjau + label, merge/undo ke dataset. |
 | [core/README_SIGLIP.md](core/README_SIGLIP.md) | Arsitektur pipeline inferensi: SigLIP2, MediaPipe-only AU pipeline, kalibrasi per-orang, sistem cache, recalculate, viz. |
 
 ---

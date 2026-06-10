@@ -51,7 +51,7 @@ AU1+AU2/AU4/AU14 (MediaPipe blendshape, baseline-normalized) = **primer** (land_
 
 ### Confusion — SigLIP 35%, Landmark 65% (AU primer + SigLIP jaring pengaman)
 
-**Riwayat:** Dulu **SigLIP 65%** karena AU4 (Craig 95%) **hampir mati** di MediaPipe `browDown` (median=0.001). Setelah kalibrasi stretch agresif (`AU4_active=0.05`) + noseSneer co-occur booster + AU7 standalone (78% Craig), AU MediaPipe cukup reliable → SigLIP diturunkan 0.65→0.35.
+**Riwayat:** Dulu **SigLIP 65%** karena AU4 (Craig 95%) **hampir mati** di MediaPipe `browDown` (median=0.001). Setelah kalibrasi stretch agresif (`AU4_active=0.05`) + AU7 standalone (78% Craig) + eyeLookDown gating (Turrisi 2026), AU MediaPipe cukup reliable → SigLIP diturunkan 0.65→0.35.
 
 **Final:** AU4+AU7 (MediaPipe, stretch agresif) = **primer** (land_w 0.65). **SigLIP 0.35 dipertahankan** sebagai jaring pengaman oklusi tangan (SigLIP tetap membaca crop walau AU gagal).
 
@@ -261,11 +261,13 @@ Prompt SigLIP dirancang untuk menangkap level "high/very high" dari setiap emosi
 
 ---
 
-## 14. Bisakah Blendshape MediaPipe Dijadikan Action Unit FACS? (parameter ukur = paper)
+## 14. Blendshape MediaPipe sebagai Sinyal Emosi Langsung (Chain Rule)
 
-> **ARSITEKTUR SAAT INI: MediaPipe-only.** Semua AU (AU1/AU2/AU4/AU7/AU12/AU14/AU25/AU26/AU43) dihitung dari blendshape MediaPipe via `core/action_units.py` dengan normalisasi baseline-relative dan kalibrasi per-orang (`person_neutral`). Tidak ada py-feat, tidak ada subprocess.
+> **ARSITEKTUR SAAT INI: MediaPipe-only.** Sinyal emosi dihitung dari blendshape MediaPipe via `core/blendshape_features.py` dengan normalisasi baseline-relative, eyeLookDown gating, dan kalibrasi per-orang (`person_neutral`). Tidak ada py-feat, tidak ada subprocess.
+>
+> **Chain rule:** Craig 2008 (AU→emosi belajar) + Turrisi 2026 (BF→AU, κ=0.92, expert-validated) = blendshape langsung merepresentasikan sinyal emosi belajar dengan justifikasi dua paper.
 
-**Jawaban singkat: Bisa, sebagai APROKSIMASI yang dikalibrasi — dengan dua langkah wajib.** Inilah inti agar "parameter ukur sama dengan paper". Lihat `core/action_units.py`.
+**Jawaban singkat: Ya — blendshape MediaPipe adalah sinyal LANGSUNG, bukan aproksimasi semu.** Turrisi et al. (2026) memvalidasi secara klinis bahwa 52 blendshape MediaPipe berkorespondensi ke AU FACS dengan κ=0.92 (10 psikolog bersertifikat). Lihat `core/blendshape_features.py`.
 
 Paper (Craig 2008, Grafsgaard) mengukur emosi lewat **intensitas AU FACS** yang dikode manusia bersertifikat. MediaPipe meng-output **52 blendshape gaya ARKit** — itu **bukan** AU FACS. Tapi blendshape MediaPipe **dapat dipetakan** ke AU dengan 2 langkah:
 
@@ -318,12 +320,13 @@ Anchor disimpan di `rules.py → "action_units"` dan bisa diatur lewat Rules pan
 
 ### Batas kejujuran
 
-Ini tetap **aproksimasi**, bukan FACS coding manusia bersertifikat:
-- Korespondensi blendshape↔AU tidak 1:1 sempurna.
-- Skala dikalibrasi empiris ke dataset ini, bukan dari anchor FACS A–E.
-- AU4 (browDown) **lemah di MediaPipe** (median 0.001). Dikompensasi: stretch agresif (`AU4_active=0.05`) + noseSneer co-occur booster (×0.3) + per-person neutral (`person_neutral` Bosch 2023).
+**Validasi tambahan (Turrisi 2026):** Expert panel 10 psikolog klinis memvalidasi mapping ini dengan κ=0.92 (post-discussion). Temuan kritis: `eyeLookDownLeft/Right` = **AU64 (Eyes Turn Down)** — gaze direction, **bukan** AU7 (Lid Tightener) atau AU43 (Eye Close). Dasar `eyeLookDown gating` di `_raw_blendshape_signals()`.
 
-Tapi setelah dua langkah ini, **"parameter ukur" sistem adalah intensitas AU FACS bernama (AU1/AU2/AU4/AU7/AU12/AU43) — sama seperti paper** — bukan lagi blendshape mentah.
+**Batas kejujuran:**
+- Skala dikalibrasi empiris ke dataset ini, bukan dari anchor FACS A–E.
+- AU4 (browDown) **lemah di MediaPipe** (median 0.001). Dikompensasi: stretch agresif (`AU4_active=0.05`) + per-person neutral (`person_neutral` Bosch 2023). CATATAN: noseSneer **tidak** dipakai sebagai AU4 booster — Aldenhoven 2026 Table 1 menetapkan noseSneer = AU9 (Nose Wrinkler), bukan AU4.
+
+Setelah dua langkah ini + Turrisi validation, **"parameter ukur" sistem adalah blendshape yang dikonfirmasi berkorespondensi ke AU FACS bernama (AU1/AU2/AU4/AU7/AU12/AU43) — sama seperti paper** — dengan chain yang eksplisit dan tervalidasi secara klinis.
 
 ---
 
@@ -331,7 +334,7 @@ Tapi setelah dua langkah ini, **"parameter ukur" sistem adalah intensitas AU FAC
 
 | Sinyal | Paper Basis | Coverage | Implementasi |
 |---|---|---|---|
-| **MediaPipe blendshape → AU FACS (semua emosi)** | Craig 2008 + ARKit↔FACS mapping | stretch agresif + per-person calib | `core/action_units.py`, anchor `rules.py["action_units"]` |
+| **MediaPipe blendshape → sinyal emosi (chain rule)** | Craig 2008 (AU→emosi) + Turrisi 2026 (BF→AU, κ=0.92) | stretch agresif + per-person calib + eyeLookDown gating | `core/blendshape_features.py`, anchor `rules.py["action_units"]` |
 | AU1 (inner) + AU2 (outer) Frustration | Craig 2008 Table 2 | 100% | `au["AU1"]·au["AU2"]` geometric mean + `brow_raise_direct_w=0.85` |
 | AU4 (brow lowerer) + AU14 (dimpler) Frustration **PRIMER** | Grafsgaard 2013 | positif korelasi | `au["AU4"]/au["AU14"] * face_weight=0.65` (dinaikkan) |
 | AU4 (brow lowerer) Confusion | Craig 2008 Table 2 + Grafsgaard 2011 | 95% | `au["AU4"]` (browDown lemah di MediaPipe → andalkan AU7+SigLIP) |
@@ -378,9 +381,9 @@ Setiap **sinyal/parameter ukur** punya landasan paper (lihat tabel di atas). Yan
 
 ---
 
-## 16. Mengapa MediaPipe-Only (Tanpa py-feat)?
+## 16. Mengapa MediaPipe-Only dengan Native Blendshapes?
 
-**Arsitektur branch ini:** `core/action_units.py` `compute_action_units(blendshapes, cfg, person_neutral)` — satu fungsi sinkron, satu proses, nol subprocess.
+**Arsitektur branch ini:** `core/blendshape_features.py` `compute_blendshape_features(blendshapes, cfg, person_neutral)` — satu fungsi sinkron, satu proses, nol subprocess. Native MediaPipe blendshapes (`BLENDSHAPE_SOURCE=mediapipe`) dikonfirmasi sebagai sumber optimal berdasarkan Aldenhoven 2026.
 
 **⚠️ Klarifikasi: "MediaPipe lebih baru" ≠ "lebih akurat untuk AU".** Ini bukan soal umur tool, tapi soal *untuk apa tiap tool dilatih*:
 - **py-feat = SPESIALIS AU.** Dilatih langsung pada data wajah yang otot-ototnya **dikode FACS oleh manusia** → outputnya benar-benar "intensitas AU4 = sekian". Lebih presisi untuk AU otot halus (mis. kerut alis AU4).
@@ -396,9 +399,10 @@ Setiap **sinyal/parameter ukur** punya landasan paper (lihat tabel di atas). Yan
 - **Pada frame buram/resolusi rendah** (224px webcam), keunggulan presisi py-feat **sebagian besar hilang** — otot alis halus sulit dibaca siapa pun dari gambar buram (garbage-in). Jadi selisih akurasi nyata py-feat vs MediaPipe **di data ini kecil**, sementara py-feat jauh lebih lambat → **MediaPipe-only = trade-off yang tepat**, dengan kelemahan AU4 ditutup oleh cue tangan/mulut/alis-naik yang kasar & robust terhadap blur.
 
 **Kompensasi MediaPipe-only untuk AU4 lemah:**
-- Stretch agresif: `AU4_neutral=0.001, AU4_active=0.05` → deviasi kecil terdeteksi.
-- noseSneer co-occur booster ×0.3 → sinyal AU4 implisit diperkuat.
+- Stretch agresif: `AU4_neutral=0.001, AU4_active=0.05` → deviasi kecil terdeteksi (Aldenhoven: browDown→AU4 confirmed).
 - Per-person neutral (`person_neutral`, Bosch 2023): browDown baseline tiap orang berbeda → kalibrasi per-individu menghilangkan bias struktural.
+- eyeLookDown gating (Turrisi 2026): false-trigger AU7/AU43 saat lihat bawah disuppress → confusion dan boredom lebih akurat.
+- DIHAPUS: noseSneer booster — Aldenhoven 2026 Table 1 menetapkan noseSneer=AU9, bukan AU4.
 - `brow_raise_direct_w=0.85` (dinaikkan): kompensasi tidak adanya py-feat, menguatkan AU1+AU2 primer Craig 2008.
 - `face_weight=0.65` (dinaikkan): kompensasi AU4 MediaPipe, menguatkan Grafsgaard 2013 AU4/AU14.
 
@@ -406,9 +410,9 @@ Setiap **sinyal/parameter ukur** punya landasan paper (lihat tabel di atas). Yan
 
 **Basis paper tetap tidak berubah:** AU yang diukur = AU FACS dari Craig 2008 + Grafsgaard 2011/2013 (tidak berubah). MediaPipe mengukurnya via blendshape→AU mapping yang dinormalisasi — aproksimasi yang jauh lebih cepat dan stabil.
 
-**Korroborasi (py-feat sendiri mengakui bridge ini):** Py-Feat — pustaka FACS itu sendiri — merilis model `mp_blendshapes` (Hugging Face) yang memetakan **146 dari 478 titik Face Mesh MediaPipe → 52 blendshape** yang merepresentasikan pergerakan otot FACS **"secara longgar" (loosely)**. Artinya jembatan *MediaPipe → blendshape → AU FACS* yang kita pakai **bukan karangan**: bahkan otoritas FACS (Py-Feat) menyediakannya secara resmi. Dua implikasi: (1) pendekatan kita **tervalidasi pihak ketiga**; (2) kata **"longgar"** dari Py-Feat sendiri = konsisten dengan "akurasi parsial" — ini memang **aproksimasi FACS, bukan FACS persis** (jujur, bukan over-claim).
+**Validasi akademis — native MediaPipe blendshapes (Aldenhoven 2026):** Aldenhoven dkk. (Sensors 2026) membuktikan bahwa **native ARKit/MediaPipe blendshapes dipakai langsung** untuk klasifikasi emosi via cosine similarity menghasilkan akurasi 68.3% — melebihi rata-rata human rater (58.9%). Mereka secara eksplisit menyebut "similar coefficient streams are also exposed by alternative stacks (e.g., MediaPipe Face Landmarker)" — mengkonfirmasi portabilitas pipeline ke MediaPipe. Ini adalah dasar **`BLENDSHAPE_SOURCE=mediapipe` sebagai sumber primer yang dikonfirmasi**, bukan hanya default.
 
-**Opsi sumber blendshape (toggle, `core/mp_blendshapes.py`):** model `mp_blendshapes` ini di-**vendor standalone** (kelas MLP-Mixer + 146 indeks + 52 nama, hanya butuh `torch`+`huggingface_hub`, **TANPA** install py-feat penuh). Diaktifkan via env **`BLENDSHAPE_SOURCE=mp_blendshapes`** (default `mediapipe` = blendshape bawaan FaceLandmarker). Tujuannya **eksperimen A/B**: bandingkan apakah mp_blendshapes lebih FACS-akurat (mis. AU4) daripada bawaan MediaPipe. Catatan jujur: keduanya menghasilkan 52 blendshape ARKit dari **geometri mesh yang sama** → kemungkinan besar AU4 sama lemahnya; default tetap di bawaan MediaPipe sampai terbukti lebih baik di data nyata.
+**Model mp_blendshapes (tersedia via `core/mp_blendshapes.py`):** model py-feat yang memetakan 146 dari 478 titik Face Mesh → 52 blendshape via MLP-Mixer. Tersedia untuk eksperimen A/B, tapi tidak diaktifkan secara default. Catatan: ini **model aproksimasi** yang menghasilkan blendshape dari geometri mesh yang sama → kemungkinan besar tidak lebih akurat dari native untuk tugas ini, dan Aldenhoven 2026 menunjukkan native sudah cukup akurat.
 
 **Justifikasi: kenapa MediaPipe-only sah, bahkan bisa LEBIH baik untuk tugas ini.** Validitas labeling datang dari **patokannya** (pemetaan emosi→AU FACS dari paper), **bukan** dari merek alat pengukur. py-feat & MediaPipe **menargetkan 9 AU yang sama persis** (AU1/2/4/7/12/14/25/26/43) → *patokan identik* → label sah dengan tool mana pun. Tiga hal membuat pipeline MediaPipe-only ini **bisa unggul** untuk use-case ini:
 1. **Kalibrasi per-orang (Bosch 2023).** AU di sini dihitung sebagai **deviasi dari frame netral PRIBADI** tiap siswa, bukan dari raw AU global. py-feat *default* memberi AU mentah (baseline populasi). Karena "tiap orang beda baseline" (alis natural tinggi/rendah), normalisasi per-orang **menghilangkan bias antar-individu** → bisa **lebih adil/akurat** daripada raw py-feat untuk tugas pelabelan.

@@ -7,7 +7,7 @@ Fungsi utama:
   - prepare_cropped_frames(...)        → list of PIL.Image + LandmarkResult
 
 ARSITEKTUR: MediaPipe-only — tidak ada py-feat, tidak ada subprocess eksternal.
-AU dihitung sinkron dari blendshape MediaPipe via core/action_units.py.
+Sinyal emosi dihitung dari blendshape MediaPipe via core/blendshape_features.py (sinkron).
 """
 
 import os
@@ -88,7 +88,7 @@ def prepare_cropped_frames(
 
     # Baseline netral AU per-ORANG (Bosch 2023 + FACS: intensitas AU = deviasi dari netral pribadi).
     # Disimpan di person_neutrals.json via utils/person_neutral; format AU MediaPipe (AU1, AU2, ...).
-    # Jika belum dikalibrasi → None → compute_action_units() pakai baseline populasi (DEFAULT_AU_CALIB).
+    # Jika belum dikalibrasi → None → compute_blendshape_features() pakai baseline populasi (DEFAULT_AU_CALIB).
     _person_neutral = None
     if raw_cache_dir:
         try:

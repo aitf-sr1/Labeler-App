@@ -28,6 +28,8 @@ class LeftPanel:
         - Klik kanan -> toggle label aktif pada frame tersebut (app.toggle_single_frame)
     """
 
+    _LP_COLOR = "#f59e0b"   # amber — warna khas LP Transform
+
     def __init__(self, parent, app):
         self.app              = app
         self.frame_canvases     = []
@@ -37,6 +39,9 @@ class LeftPanel:
         self._emotion_tab_btns  = {}
         self._current_frame_annotations: dict = {}  # referensi ke frame_annotations video aktif
         self.rules_content      = None  # set by init_rules_content()
+        self.lp_panel_content   = None  # set by init_lp_content()
+        self._lp_mark_btns      = []    # tombol "LP Transform" per frame
+        self._lp_mark_states    = []    # status aktif tiap tombol LP
 
         self._build(parent)
 
@@ -50,7 +55,8 @@ class LeftPanel:
 
         self._build_video_player(left)
         self._build_frame_gallery(left)
-        self._build_rules_container(left)  # hidden by default
+        self._build_rules_container(left)   # hidden by default
+        self._build_lp_container(left)      # hidden by default
 
     @staticmethod
     def _bind_mousewheel(scrollable_frame):
@@ -93,6 +99,20 @@ class LeftPanel:
         self.slider.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.slider.set(0)
 
+        # ── Kartu info augmentasi (statistik penanda orang aktif) ──
+        # Penandaan SOURCE & DRIVING dilakukan PER-GAMBAR di galeri bawah (bukan per-video).
+        drv_card = ctk.CTkFrame(vid_wrap, fg_color=("#ede9fe", "#1b1b2e"), corner_radius=12)
+        drv_card.pack(fill="x", padx=10, pady=(2, 10))
+        ctk.CTkLabel(
+            drv_card, text="AUGMENTASI  ·  tandai 'LP Transform' di galeri, proses di tab LP",
+            font=("Poppins", 10, "bold"), text_color=("#d97706", "#fbbf24"),
+        ).pack(anchor="w", padx=14, pady=(10, 4))
+        self._aug_stats = ctk.CTkLabel(
+            drv_card, text="", font=("Poppins", 9), text_color=("#6b7280", "#9ca3af"),
+            anchor="w", justify="left",
+        )
+        self._aug_stats.pack(fill="x", anchor="w", padx=14, pady=(0, 10))
+
     def _build_frame_gallery(self, parent):
         gallery_scroll = ctk.CTkScrollableFrame(
             parent, fg_color=("f3f4f6", "#161622"), corner_radius=12
@@ -125,6 +145,19 @@ class LeftPanel:
         rules_tab_btn.pack(side="left", padx=3)
         self._rules_tab_btn = rules_tab_btn
 
+        lp_tab_btn = ctk.CTkButton(
+            tab_row, text="LP Transform", width=96, height=26,
+            font=("Poppins", 10, "bold"),
+            fg_color="transparent",
+            border_width=1, border_color=(self._LP_COLOR, self._LP_COLOR),
+            corner_radius=20,
+            text_color=(self._LP_COLOR, self._LP_COLOR),
+            hover_color=("#fef3c7", "#1c1400"),
+            command=self.app._open_lp_panel,
+        )
+        lp_tab_btn.pack(side="left", padx=3)
+        self._lp_tab_btn = lp_tab_btn
+
         for lbl in LABELS:
             color = LABEL_COLORS[lbl]
             b = ctk.CTkButton(
@@ -144,12 +177,51 @@ class LeftPanel:
         )
         self.lbl_frame_quality.pack(anchor="w", padx=14, pady=(0, 4))
 
+        # Navigasi cepat ke frame yang ditandai sebagai Gambar Referensi.
+        ref_nav = ctk.CTkFrame(gallery_scroll, fg_color=("#ecfdf5", "#0f1f1a"), corner_radius=10)
+        ref_nav.pack(fill="x", padx=12, pady=(0, 8))
+        ctk.CTkLabel(ref_nav, text="Gambar referensi", font=("Poppins", 9, "bold"),
+                     text_color=("#059669", "#34d399")).pack(side="left", padx=(12, 6), pady=6)
+        self.lbl_ref_total = ctk.CTkLabel(ref_nav, text="0 tertanda", font=("Poppins", 9),
+                                          text_color=("#6b7280", "#9ca3af"))
+        self.lbl_ref_total.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(ref_nav, text="Next  ▶", width=70, height=26, corner_radius=20,
+                      font=("Poppins", 9, "bold"), fg_color="#10b981", hover_color="#0ea372",
+                      command=lambda: self.app._goto_reference(+1)).pack(side="right", padx=(2, 10))
+        ctk.CTkButton(ref_nav, text="◀  Prev", width=70, height=26, corner_radius=20,
+                      font=("Poppins", 9, "bold"), fg_color="#10b981", hover_color="#0ea372",
+                      command=lambda: self.app._goto_reference(-1)).pack(side="right", padx=2)
+
+        # Navigasi cepat ke frame yang ditandai LP Transform + pintasan buka panel.
+        lp_nav = ctk.CTkFrame(gallery_scroll, fg_color=("#fef3c7", "#1c1400"), corner_radius=10)
+        lp_nav.pack(fill="x", padx=12, pady=(0, 8))
+        ctk.CTkLabel(lp_nav, text="Frame LP Transform", font=("Poppins", 9, "bold"),
+                     text_color=("#d97706", "#fbbf24")).pack(side="left", padx=(12, 6), pady=6)
+        self.lbl_lp_total = ctk.CTkLabel(lp_nav, text="0 tertanda", font=("Poppins", 9),
+                                         text_color=("#6b7280", "#9ca3af"))
+        self.lbl_lp_total.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(lp_nav, text="Buka Panel ▸", width=96, height=26, corner_radius=20,
+                      font=("Poppins", 9, "bold"), fg_color=self._LP_COLOR, hover_color="#d97706",
+                      text_color="#1c1400",
+                      command=self.app._open_lp_panel).pack(side="right", padx=(2, 10))
+        ctk.CTkButton(lp_nav, text="Next ▶", width=60, height=26, corner_radius=20,
+                      font=("Poppins", 9, "bold"), fg_color=self._LP_COLOR, hover_color="#d97706",
+                      text_color="#1c1400",
+                      command=lambda: self.app._goto_lp_mark(+1)).pack(side="right", padx=2)
+        ctk.CTkButton(lp_nav, text="◀ Prev", width=60, height=26, corner_radius=20,
+                      font=("Poppins", 9, "bold"), fg_color=self._LP_COLOR, hover_color="#d97706",
+                      text_color="#1c1400",
+                      command=lambda: self.app._goto_lp_mark(-1)).pack(side="right", padx=2)
+
         grid_frame = ctk.CTkFrame(gallery_scroll, fg_color="transparent")
         grid_frame.pack(expand=True, fill="both", padx=12, pady=(0, 10))
         for col in range(2):
             grid_frame.columnconfigure(col, weight=1)
 
         self._manual_check_frames = []   # list of {lbl: BooleanVar} per frame
+        self._reference_btns  = []       # tombol "Gambar Referensi" per frame
+        self._reference_state = []       # status aktif tiap tombol referensi
+        self._driving_segs    = []       # segmented "Driving" per frame
 
         for i in range(2):
             row_g, col_g = i // 2, i % 2
@@ -177,29 +249,126 @@ class LeftPanel:
             dot_cv.bind("<Button-1>", lambda e, idx=i: self.app.toggle_frame_label_by_dot(idx, e.y))
             self.frame_dot_canvases.append(dot_cv)
 
-            # Baris bawah: checkboxes manual label (tersembunyi default)
+            # Tombol GAMBAR REFERENSI (netral; 1 per orang). Toggle modern, bukan checkbox.
+            ref_btn = ctk.CTkButton(
+                outer, text="Gambar Referensi", height=30, corner_radius=8,
+                font=("Poppins", 10, "bold"),
+                fg_color="transparent", border_width=2, border_color=("#cbd5e1", "#3f3f5a"),
+                text_color=("#475569", "#9ca3af"), hover_color=("#e2e8f0", "#23233a"),
+                command=lambda fi=i: self.app._on_reference_mark(fi, not self._reference_state[fi]),
+            )
+            ref_btn.pack(fill="x", pady=(6, 0), padx=2)
+            self._reference_btns.append(ref_btn)
+            self._reference_state.append(False)
+
+            # Tombol LP TRANSFORM — tandai frame ini untuk diproses LP (amber toggle).
+            lp_btn = ctk.CTkButton(
+                outer, text="LP Transform", height=28, corner_radius=8,
+                font=("Poppins", 9, "bold"),
+                fg_color="transparent", border_width=2,
+                border_color=("#d1d5db", "#3f3f5a"),
+                text_color=("#6b7280", "#9ca3af"),
+                hover_color=("#fef3c7", "#1c1400"),
+                command=lambda fi=i: self.app._on_lp_mark(
+                    fi, not self._lp_mark_states[fi]
+                ),
+            )
+            lp_btn.pack(fill="x", pady=(4, 0), padx=2)
+            self._lp_mark_btns.append(lp_btn)
+            self._lp_mark_states.append(False)
+
+            # Label manual sebagai PILL TOGGLE (bukan checkbox). Muncul saat semi-manual aktif.
             chk_row = tk.Frame(outer, bg="#161622")
-            # TIDAK di-pack sekarang — muncul saat semi_manual aktif
-            frame_vars = {}
+            frame_btns, frame_state = {}, {}
             for lbl in LABELS:
                 color = LABEL_COLORS[lbl]
-                var = tk.BooleanVar(value=False)
-                cb = tk.Checkbutton(
-                    chk_row, text=lbl, variable=var,
-                    bg="#161622", fg=color, selectcolor="#1a1a2e",
-                    activebackground="#161622", activeforeground=color,
-                    font=("Poppins", 9, "bold"), bd=0,
-                    command=lambda fi=i, l=lbl, v=var: self.app._on_manual_check(fi, l, v.get()),
+                mb = ctk.CTkButton(
+                    chk_row, text=lbl, width=82, height=26, corner_radius=20,
+                    font=("Poppins", 9, "bold"),
+                    fg_color="transparent", border_width=2, border_color=color,
+                    text_color=color, hover_color=("#e5e7eb", "#23233a"),
+                    command=lambda fi=i, l=lbl: self.app._on_manual_check(
+                        fi, l, not self._manual_check_frames[fi]["state"][l]),
                 )
-                cb.pack(side="left", padx=6)
-                frame_vars[lbl] = var
-            self._manual_check_frames.append({"vars": frame_vars, "row": chk_row})
+                mb.pack(side="left", padx=3)
+                frame_btns[lbl] = mb
+                frame_state[lbl] = False
+            self._manual_check_frames.append({"buttons": frame_btns, "state": frame_state, "row": chk_row})
 
         ctk.CTkLabel(
             gallery_scroll,
             text="Klik kiri: seek  |  Klik kanan: toggle label  |  Double-klik: tolak frame",
             font=("Poppins", 9), text_color=("#9ca3af", "#4b5563"),
         ).pack(pady=(0, 8))
+
+    def set_reference_mark(self, frame_idx: int, active: bool):
+        """Set tampilan tombol Gambar Referensi (aktif = terisi hijau)."""
+        if frame_idx >= len(self._reference_btns):
+            return
+        self._reference_state[frame_idx] = bool(active)
+        btn = self._reference_btns[frame_idx]
+        if active:
+            btn.configure(text="●  Gambar Referensi", fg_color="#10b981",
+                          border_color="#10b981", text_color="#06281f", hover_color="#0ea372")
+        else:
+            btn.configure(text="Gambar Referensi", fg_color="transparent",
+                          border_color=("#cbd5e1", "#3f3f5a"), text_color=("#475569", "#9ca3af"),
+                          hover_color=("#e2e8f0", "#23233a"))
+
+    def set_driving_mark(self, frame_idx: int, emotion: str):
+        """Set segmented driving satu frame ('' = Tidak)."""
+        if frame_idx < len(self._driving_segs):
+            self._driving_segs[frame_idx].set(emotion if emotion in LABELS else "Tidak")
+
+    def set_reference_total(self, n: int):
+        """Tampilkan total gambar referensi tertanda (di bar navigasi)."""
+        if hasattr(self, "lbl_ref_total"):
+            self.lbl_ref_total.configure(text=f"{n} tertanda")
+
+    def set_driving_total(self, n: int):
+        """Tampilkan total gambar driving tertanda (di bar navigasi)."""
+        if hasattr(self, "lbl_drv_total"):
+            self.lbl_drv_total.configure(text=f"{n} tertanda")
+
+    def set_lp_mark(self, frame_idx: int, active: bool):
+        """Set tampilan tombol LP Transform (aktif = amber solid)."""
+        if frame_idx >= len(self._lp_mark_btns):
+            return
+        self._lp_mark_states[frame_idx] = bool(active)
+        btn = self._lp_mark_btns[frame_idx]
+        if active:
+            btn.configure(
+                text="●  LP Transform",
+                fg_color=self._LP_COLOR, border_color=self._LP_COLOR,
+                text_color="#1c1400", hover_color="#d97706",
+            )
+        else:
+            btn.configure(
+                text="LP Transform",
+                fg_color="transparent",
+                border_color=("#d1d5db", "#3f3f5a"),
+                text_color=("#6b7280", "#9ca3af"),
+                hover_color=("#fef3c7", "#1c1400"),
+            )
+
+    def set_lp_total(self, n: int):
+        """Update jumlah frame LP tertanda di nav galeri + LP panel."""
+        if hasattr(self, "lbl_lp_total"):
+            self.lbl_lp_total.configure(text=f"{n} tertanda")
+        if self.lp_panel_content:
+            self.lp_panel_content.update_marks_count(n)
+
+    def update_augment_stats(self, uuid, stats):
+        """Statistik orang aktif: jumlah gambar referensi + frame LP Transform."""
+        if not hasattr(self, "_aug_stats"):
+            return
+        if not uuid or stats is None:
+            self._aug_stats.configure(text="")
+            return
+        lp_n = stats.get("lp", 0)
+        self._aug_stats.configure(
+            text=f"Orang {uuid[:8]}    gambar referensi: {stats['refs']}    |    "
+                 f"frame LP Transform: {lp_n}")
 
     def _build_rules_container(self, parent):
         """Hidden container untuk rules editor mode — muncul saat show_rules_mode()."""
@@ -208,27 +377,52 @@ class LeftPanel:
         )
         # NOT gridded — starts hidden
 
+    def _build_lp_container(self, parent):
+        """Hidden container untuk LP Transform mode — muncul saat show_lp_mode()."""
+        self._lp_container = ctk.CTkFrame(
+            parent, fg_color=("#f3f4f6", "#161622"), corner_radius=12
+        )
+        # NOT gridded — starts hidden
+
     def show_rules_mode(self):
         """Ganti galeri frame dengan rules editor di area yang sama."""
-        # Lazy-build rules content on first open
         if self.rules_content is not None and not self.rules_content._built:
             self.rules_content.build()
         self._gallery_container.grid_remove()
+        self._lp_container.grid_remove()
         self._rules_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
-        # Highlight Rules tab button
         self._rules_tab_btn.configure(
             fg_color=("#8b5cf6", "#6d28d9"), text_color=("white", "white")
         )
+        self._lp_tab_btn.configure(
+            fg_color="transparent", text_color=(self._LP_COLOR, self._LP_COLOR)
+        )
 
-    def show_gallery_mode(self):
-        """Kembali ke galeri frame dari rules editor."""
+    def show_lp_mode(self):
+        """Ganti galeri frame dengan LP Transform panel."""
+        if self.lp_panel_content and not self.lp_panel_content._built:
+            self.lp_panel_content.build()
+        self._gallery_container.grid_remove()
         self._rules_container.grid_remove()
-        self._gallery_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
-        # Restore Rules tab button style
+        self._lp_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self._lp_tab_btn.configure(
+            fg_color=(self._LP_COLOR, "#d97706"), text_color=("#1c1400", "#1c1400")
+        )
         self._rules_tab_btn.configure(
             fg_color="transparent", text_color=("#8b5cf6", "#8b5cf6")
         )
-        # Restore active label highlight
+
+    def show_gallery_mode(self):
+        """Kembali ke galeri frame dari rules editor atau LP panel."""
+        self._rules_container.grid_remove()
+        self._lp_container.grid_remove()
+        self._gallery_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self._rules_tab_btn.configure(
+            fg_color="transparent", text_color=("#8b5cf6", "#8b5cf6")
+        )
+        self._lp_tab_btn.configure(
+            fg_color="transparent", text_color=(self._LP_COLOR, self._LP_COLOR)
+        )
         active = self.app.active_frame_label.get()
         self.set_active_tab_highlight(active)
 
@@ -272,6 +466,37 @@ class LeftPanel:
             on_close=self.show_gallery_mode,
         )
 
+    def init_lp_content(self, app):
+        """
+        Buat LPPanel di dalam _lp_container.
+        Dipanggil dari app.py setelah semua panel selesai dibangun.
+        """
+        from ui.lp_panel import LPPanel
+
+        hdr = ctk.CTkFrame(
+            self._lp_container,
+            fg_color=("#e8eaef", "#1e1e2c"), corner_radius=0, height=46,
+        )
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+
+        ctk.CTkLabel(
+            hdr, text="LP Transform  ·  LivePortrait Augmentation",
+            font=("Poppins", 13, "bold"), text_color=("#374151", "#c4c4d4"),
+        ).pack(side="left", padx=16)
+
+        ctk.CTkButton(
+            hdr, text="Kembali", width=88, height=30,
+            font=("Poppins", 10),
+            fg_color=("#e5e7eb", "#2a2a3a"),
+            hover_color=("#d1d5db", "#3a3a4a"),
+            text_color=("#374151", "#9ca3af"),
+            corner_radius=8,
+            command=self.show_gallery_mode,
+        ).pack(side="right", padx=12, pady=8)
+
+        self.lp_panel_content = LPPanel(parent=self._lp_container, app=app)
+
     def show_manual_checkboxes(self, visible: bool):
         """Tampilkan atau sembunyikan baris checkbox manual label di bawah tiap frame."""
         for entry in self._manual_check_frames:
@@ -280,12 +505,22 @@ class LeftPanel:
             else:
                 entry["row"].pack_forget()
 
+    def _set_manual_chip(self, frame_idx: int, lbl: str, active: bool):
+        """Set tampilan satu pill label manual (aktif = terisi warna label)."""
+        e = self._manual_check_frames[frame_idx]
+        e["state"][lbl] = bool(active)
+        btn, color = e["buttons"][lbl], LABEL_COLORS[lbl]
+        if active:
+            btn.configure(fg_color=color, text_color="#0b0b12", border_color=color)
+        else:
+            btn.configure(fg_color="transparent", text_color=color, border_color=color)
+
     def update_manual_checkboxes(self, frame_idx: int, label_dict: dict):
-        """Update state checkbox untuk satu frame dari dict {lbl: 0|1}."""
+        """Update tampilan pill label manual satu frame dari dict {lbl: 0|1}."""
         if frame_idx >= len(self._manual_check_frames):
             return
-        for lbl, var in self._manual_check_frames[frame_idx]["vars"].items():
-            var.set(bool(label_dict.get(lbl, 0)))
+        for lbl in self._manual_check_frames[frame_idx]["buttons"]:
+            self._set_manual_chip(frame_idx, lbl, bool(label_dict.get(lbl, 0)))
 
     def show_loading(self):
         """Tampilkan state loading di semua canvas frame (saat prepare_cropped_frames berjalan)."""

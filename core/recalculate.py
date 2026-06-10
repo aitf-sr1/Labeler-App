@@ -11,8 +11,9 @@ Flow:
     ↓_______________________________↓
     hybrid_scores → frame_preds → batch_history
 
-ARSITEKTUR: MediaPipe-only — AU dihitung dari blendshape MediaPipe
-(compute_action_units), tidak ada py-feat atau subprocess eksternal.
+ARSITEKTUR: MediaPipe-only — sinyal emosi dihitung dari blendshape MediaPipe
+(compute_blendshape_features), tidak ada py-feat atau subprocess eksternal.
+Chain: Craig 2008 (AU→emosi) + Turrisi 2026 (BF→AU, κ=0.92).
 """
 
 import os
@@ -29,7 +30,7 @@ def _safe_name(rel_path: str) -> str:
 def _reconstruct_lr(frame_data: dict) -> LandmarkResult:
     """Rekonstruksi LandmarkResult dari data cache.
 
-    AU dihitung oleh compute_emotion_scores() via compute_action_units(blendshapes)
+    Sinyal emosi dihitung oleh compute_emotion_scores() via compute_blendshape_features(blendshapes)
     — tidak ada py-feat, tidak ada subprocess eksternal.
     """
     return LandmarkResult(

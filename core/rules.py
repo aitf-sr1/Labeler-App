@@ -71,8 +71,9 @@ DEFAULT_RULES = {
         "bore_eng_low_th":    0.25,
     },
     "action_units": {
-        # Normalisasi baseline-relative blendshape MediaPipe → intensitas AU FACS.
-        # intensity = clamp((raw - neutral)/(active - neutral), 0, 1). Lihat core/action_units.py.
+        # Normalisasi baseline-relative blendshape MediaPipe → intensitas sinyal emosi.
+        # intensity = clamp((raw - neutral)/(active - neutral), 0, 1). Lihat core/blendshape_features.py.
+        # Chain: Craig 2008 (AU→emosi) + Turrisi 2026 (BF→AU, κ=0.92) → blendshape langsung.
         # Anchor = kalibrasi empiris dari 21.204 frame raw_cache dataset ini.
         # neutral ≈ median populasi (otot diam), active ≈ p90–p99 (AU aktif penuh).
         # AU1/AU2 active diturunkan 0.88→0.84 / 0.86→0.82 → alis-naik lebih sensitif (intensity penuh
@@ -80,8 +81,9 @@ DEFAULT_RULES = {
         "AU1_neutral": 0.46, "AU1_active": 0.84,    # browInnerUp (inner brow raise — Frustration AU1)
         "AU2_neutral": 0.47, "AU2_active": 0.82,    # browOuterUp (outer brow raise — Frustration AU2)
         # browDown median 0.001 → stretch AGRESIF ke active=0.05 agar AU4 terdeteksi.
-        # noseSneer co-occur booster (×0.3) ditambahkan di _raw_action_units() sebelum normalisasi.
-        "AU4_neutral": 0.001, "AU4_active": 0.05,   # browDown+sneer (Confusion AU4) — stretch agresif
+        # Basis: Aldenhoven 2026 Table 1 (browDownL/R → AU4) + Turrisi 2026 (κ=1.00).
+        # TIDAK ada noseSneer booster — noseSneer = AU9 per Aldenhoven, bukan AU4.
+        "AU4_neutral": 0.001, "AU4_active": 0.05,   # browDown (Confusion AU4) — stretch agresif
         "AU7_neutral": 0.30, "AU7_active": 0.52,    # eyeSquint   (lid tightener — Confusion AU7)
         "AU12_neutral": 0.05, "AU12_active": 0.55,  # mouthSmile  (questioning smile — gate Confusion)
         "AU14_neutral": 0.002, "AU14_active": 0.08, # mouthDimple (dimpler — Grafsgaard2013 frustration)
@@ -90,6 +92,11 @@ DEFAULT_RULES = {
         "AU25_neutral": 0.05, "AU25_active": 0.50,  # mouthOpen  (Lips Part — mulut terbuka sedikit)
         "AU26_neutral": 0.05, "AU26_active": 0.60,  # jawOpen    (Jaw Drop  — rahang turun)
         "AU43_neutral": 0.12, "AU43_active": 0.55,  # eyeBlink   (eye closure — Boredom AU43)
+        # eyeLookDown gating (Turrisi 2026: eyeLookDownL/R = AU64 gaze direction, BUKAN AU7/AU43).
+        # Saat lihat bawah, eyeSquint+eyeBlink naik secara mekanik (bukan ekspresi) → suppress.
+        # Gate linear dari gate_start (mulai suppress) ke gate_full (full suppress = 100%).
+        "eyeLookDown_gate_start": 0.25,  # eyeLookDown > 0.25 → mulai suppress AU7 & AU43
+        "eyeLookDown_gate_full":  0.60,  # eyeLookDown > 0.60 → full suppress (AU7=0, AU43=0)
     },
     "confusion": {
         # Craig et al. (2008) Table 2: AU4 (brow lowerer) 95%, AU7 (lid tightener) 78%,
@@ -103,14 +110,14 @@ DEFAULT_RULES = {
         # max(hand_one, hand_two) karena paper tidak bedakan jumlah untuk Confusion.
         # Dinaikkan 0.40→0.50→0.78 = SETARA au7_alone_w (sinyal AU diskrit terkuat). Basis: Mahmoud 2011
         # coverage 14/15 ≈ 93% bahkan LEBIH tinggi dari AU7 (78%) → hand layak jadi cue KUAT, bukan lemah.
-        "hand_conf_w": 0.78,         # cue Confusion KUAT (≈ AU7) — Mahmoud 2011 93%
+        "hand_conf_w": 0.95,         # cue Confusion KUAT — Mahmoud 2011 14/15=93%; dinaikkan agar override smile gate
         # Namba et al. (2024): mulut terbuka (AU25+AU26) = "most significant component" thinking face.
         # Chain: thinking face (Namba) + thinking = Confusion (D'Mello 2012).
         # Dinaikkan 0.25→0.35→0.78 = SETARA au7_alone_w. Basis: Namba "most significant" → cue KUAT, bukan lemah.
         # Dilindungi geometric-mean AU25·AU26 (butuh lips-part + jaw-drop) → tidak fire dari mulut sedikit gerak.
         "mouth_open_conf_w": 0.78,   # cue Confusion KUAT (≈ AU7) — Namba 2024 "most significant component"
         # AU12 questioning smile sebagai gate (bukan sinyal positif) — floor cegah zeroing confusion
-        "smile_conf_gate_th": 0.45,
+        "smile_conf_gate_th": 0.65,       # dinaikkan: smile lemah (AU12<0.65) tidak agresif suppress Confusion
         "smile_conf_gate_floor": 0.30,
         "blend_a": 0.85,
         "blend_b": 0.15,
@@ -119,14 +126,17 @@ DEFAULT_RULES = {
         # Craig et al. (2008): AU1 (inner brow raise) + AU2 (outer brow raise) = PRIMARY frustration signals (100% coverage)
         # Note: Craig 2008 Table 2 uses non-standard numbering; Grafsgaard 2013 confirms standard FACS: AU1=inner, AU2=outer.
         # MediaPipe: browInnerUp = AU1 (inner), browOuterUpLeft/Right = AU2 (outer).
-        # Intensitas AU1/AU2 dihitung baseline-normalized (core/action_units.py): alis "diam"
+        # Intensitas AU1/AU2 dihitung baseline-normalized (core/blendshape_features.py): alis "diam"
         # MediaPipe ~0.46 kini = 0 intensity, sehingga frustration TIDAK lagi over-fire saat netral.
         # Dinaikkan 0.65→0.70: kompensasi hilangnya py-feat AU4 range (sebelumnya 0.31–0.61),
         # menguatkan sinyal primer AU1+AU2 sesuai Craig 2008 "100% coverage".
         # Dinaikkan 0.65→0.70→0.85: AU1+AU2 = sinyal PRIMER dgn coverage 100% (Craig 2008 — basis
         # terkuat yg mungkin) → layak jadi bobot tertinggi. Kompensasi MediaPipe-only + memperjelas
         # frustrasi yg sebelumnya kurang terdeteksi (alis-naik kini jadi pemicu kuat).
-        "brow_raise_direct_w": 0.85, # AU1+AU2 primer, Craig2008 100% coverage → bobot tertinggi
+        # DIKEMBALIKAN ke 0.85 (2026-06): grid search pada 18.618 frame vs label manual menunjukkan
+        # 0.85 memberi F1 Frustration terbaik (~0.57); penurunan ke 0.55 (anekdot 1 video) menjatuhkan
+        # recall Frustration ke ~0.05. Aggregate ground-truth menang atas kasus tunggal.
+        "brow_raise_direct_w": 0.85,
         # Grafsgaard et al. (2013): "Action Unit 4 (brow lowering) was POSITIVELY correlated with
         # frustration" + AU14 (dimpling) juga positif.
         # Dinaikkan 0.60→0.65: kompensasi hilangnya py-feat — lebih mengandalkan AU4+AU14 MediaPipe.
@@ -140,22 +150,25 @@ DEFAULT_RULES = {
     },
     "hybrid": {
         "empirical_bias": 3.5,
-        # Prinsip: SigLIP TERTINGGI di Engagement (holistik, Whitehill 2014); emosi AU-diskrit
-        # (Craig 2008) bertumpu landmark MediaPipe TAPI tetap diberi SigLIP sebagai cross-check
-        # independen — berguna saat landmark sulit (oklusi tangan, wajah miring). SigLIP = expression
-        # reader tervalidasi (Zhai 2023); bobotnya = kalibrasi empiris yang SAH (seperti threshold).
-        # Urutan siglip_w (Eng > Conf > Frus > Bore) mencerminkan seberapa holistik tiap emosi:
-        # - Engagement: holistik, tak ada AU dominan → siglip_w tertinggi (0.50).
-        # - Confusion: AU4+AU7 (MediaPipe) primer (0.65) + SigLIP 0.35 (jaring pengaman oklusi).
-        # - Frustration: AU1+2/AU4/AU14 primer (0.70) + SigLIP 0.30 (gestalt stres).
-        # - Boredom: gaze+AU43 primer (0.75) + SigLIP 0.25 (tired/vacant look).
-        "siglip_w": [0.25, 0.50, 0.35, 0.30],   # [Bore, Eng, Conf, Frus]
-        "land_w":   [0.75, 0.50, 0.65, 0.70],
-        # Gaze-attention gate khusus Engagement di inference.py — Whitehill+GazeTutor:
-        # SigLIP tidak tahu arah pandang, gate ini cegah engaged tinggi saat gaze jauh dari layar.
-        "eng_gaze_gate_th":    15.0,  # gaze_dev_eng (°) mulai suppress hybrid score
-        "eng_gaze_gate_range": 15.0,  # nol di th+range (default 30°)
-        "eng_gaze_gate_hard":  0.20,  # max pengurangan skor per frame (0–1)
+        # Prinsip: landmark MediaPipe (AU-diskrit, Craig 2008) = sumber primer untuk SEMUA emosi;
+        # SigLIP = cross-check holistik independen (Zhai 2023) — berguna saat landmark sulit
+        # (oklusi tangan, wajah miring). Bobotnya = kalibrasi empiris yang SAH (seperti threshold).
+        # Bobot DIVALIDASI grid search vs label manual (18.618 frame), 2026-06:
+        # - Boredom   (land 0.75): gaze+AU43 primer + SigLIP 0.25.
+        # - Engagement(land 0.50): 0.5/0.5 memberi F1 0.905 (sudah sangat baik) — TIDAK diubah
+        #   (perubahan ke 0.25/0.75 anekdotal tidak terbukti membaik & berisiko ubah Eng).
+        # - Confusion (land 0.70): siglip 0.30 terbukti F1 terbaik (~0.83); siglip 0.10 menurunkannya.
+        # - Frustration(land 0.70): siglip 0.30. SigLIP lemah utk Frus (F1 0.26) → landmark dominan.
+        "siglip_w": [0.25, 0.5, 0.30, 0.30],   # [Bore, Eng, Conf, Frus]
+        "land_w":   [0.75, 0.5, 0.70, 0.70],
+        # CATATAN: eng_gaze_gate eksternal DIHAPUS (lihat core/inference.py). Prinsip Whitehill
+        # "looking away = not engaged" sudah ditegakkan di dalam skor landmark Engagement
+        # (gaze_dev_eng + yaw_gate + pitch_gate) yang berbobot land_w[Eng]=0.75 → gate eksternal
+        # redundan & menimbulkan divergensi galeri vs final.
+        # Mutual exclusion hard-XOR (Bore↔Eng, Conf↔Frus) diterapkan konsisten di inference.py
+        # & recalculate.py — tapi itu PENYEDERHANAAN DESAIN, bukan verbatim paper. Yang
+        # paper-grounded: komplementer Bore↔Eng via soft `bore_eng_suppress` (DAiSEE/D'Mello).
+        # Conf↔Frus XOR = basis lemah (paper hanya transisi temporal). Lihat DESIGN_RATIONALE §11.
     },
 }
 

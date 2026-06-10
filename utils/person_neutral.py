@@ -13,8 +13,8 @@ algorithm that is then customized towards each individual."
 Baseline populasi (DEFAULT_AU_CALIB) mengabaikan ini — orang yang alisnya secara
 struktural lebih rendah akan selalu salah-baca "confused". Modul ini menyimpan
 nilai MediaPipe AU (baseline-normalized) saat tiap orang netral, lalu scoring
-memakai nilai pribadi itu sebagai anchor neutral (lihat core/action_units.py
-compute_action_units(..., person_neutral=...) ).
+memakai nilai pribadi itu sebagai anchor neutral (lihat core/blendshape_features.py
+compute_blendshape_features(..., person_neutral=...) ).
 
 FORMAT person_neutrals.json (disimpan di folder dataset, sejajar batch_history.json):
     {
@@ -27,7 +27,7 @@ FORMAT person_neutrals.json (disimpan di folder dataset, sejajar batch_history.j
     }
 
 Kunci = identitas orang (UUID dari path video).
-Nilai AU = skor AU MediaPipe ter-normalisasi (compute_action_units) saat netral.
+Nilai AU = skor blendshape ter-normalisasi (compute_blendshape_features) saat netral.
 Key "_video" dan "_frame" = lokasi frame acuan (untuk marker visual di galeri).
 Key non-AU (underscore prefix) diabaikan saat scoring.
 """

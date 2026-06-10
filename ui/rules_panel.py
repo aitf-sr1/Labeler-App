@@ -117,13 +117,8 @@ _SLIDER_DEFS = [
     # HYBRID
     ("hybrid", "empirical_bias",       "SigLIP Empirical Bias", 1.0, 6.0,
      "Bias global yang ditambahkan ke logits SigLIP sebelum sigmoid. Naik → semua skor SigLIP naik (semua emosi lebih mudah positif). Turun → skor SigLIP lebih konservatif. Terlalu besar = semua label selalu 1."),
-    ("hybrid", "eng_gaze_gate_th",    "Eng Gaze Gate Th (deg)",  5.0, 30.0,
-     "Whitehill2014+GazeTutor: gaze_dev_eng di atas ini → hybrid score Engagement diturunkan. "
-     "Cegah SigLIP 'engaged' tinggi padahal orang tidak lihat layar. Default 15°."),
-    ("hybrid", "eng_gaze_gate_range", "Eng Gaze Gate Range (deg)", 5.0, 30.0,
-     "Rentang gate engagement dari threshold. Di th+range, penalti maksimal. Default 15° → penuh di 30°."),
-    ("hybrid", "eng_gaze_gate_hard",  "Eng Gaze Gate Strength",  0.0,  0.5,
-     "Maksimal pengurangan hybrid score Engagement per frame oleh gaze gate. Default 0.20 = moderate."),
+    # CATATAN: slider eng_gaze_gate_* DIHAPUS — gate eksternal redundan (prinsip Whitehill
+    # sudah ada di skor landmark Engagement). Lihat core/inference.py & core/rules.py.
 ]
 
 _SECTION_COLORS = {
@@ -483,6 +478,7 @@ class RulesContent:
             parent, fg_color="transparent",
         )
         self.frame.pack(fill="both", expand=True, padx=4, pady=4)
+        RulesPanel._bind_scroll(self.frame)   # aktifkan mousewheel saat dikurung inline
 
         _build_slider_sections(self.frame, self._vars, self._lbl_vars)
         _build_hybrid_weight_section(self.frame, self._vars, self._lbl_vars, self._weight_vars)
