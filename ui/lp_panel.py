@@ -198,6 +198,7 @@ class LPPanel:
         self.label_hal     = None
         self._items_tinjau_penuh = []   # SEMUA item sebelum filter
         self.var_filter_tinjau = None   # Semua|Diterima|Ditolak|AI != target|per-emosi
+        self._periksa_token = 0         # anti-balapan load full-res pemeriksa
 
         # --- Referensi widget (diisi saat build) ---
         self.label_sumber   = None
@@ -862,22 +863,9 @@ class LPPanel:
         self._render_pemeriksa()
         self._render_halaman()
 
-    def _render_pemeriksa(self):
-        """Tampilkan gambar BESAR pada idx_tinjau + chip AI + pill manual + status tolak."""
+    def _gambar_pemeriksa(self, bgr, ditolak: bool, emosi: str):
+        """Gambar satu bgr ke kanvas pemeriksa (+ overlay DITOLAK + warna tepi)."""
         import cv2
-        n = len(self.review_items)
-        self.label_posisi_tinjau.configure(text=f"{(self.idx_tinjau + 1) if n else 0} / {n}")
-        if not n:
-            self.kanvas_pemeriksa.delete("all")
-            self.kanvas_pemeriksa.create_text(UKURAN_PEMERIKSA // 2, UKURAN_PEMERIKSA // 2,
-                                              text="(belum ada hasil)", fill="#4b5563", font=("Poppins", 10))
-            self.label_pemeriksa.configure(text="—")
-            return
-        path, emosi, rel = self.review_items[self.idx_tinjau]
-        ditolak = rel in self.review_ditolak
-        label = self._label_item(rel, emosi)
-        ai_label = self.review_ai.get(rel, {})
-        bgr = cv2.imread(path)
         self.kanvas_pemeriksa.delete("all")
         if bgr is not None:
             rgb = cv2.cvtColor(_letterbox(bgr, UKURAN_PEMERIKSA, UKURAN_PEMERIKSA), cv2.COLOR_BGR2RGB)
@@ -890,6 +878,46 @@ class LPPanel:
                                                    fill="#2a0000", stipple="gray50")
             self.kanvas_pemeriksa.create_text(UKURAN_PEMERIKSA // 2, 20, text="DITOLAK",
                                               fill="#ef4444", font=("Poppins", 11, "bold"))
+
+    def _render_pemeriksa(self):
+        """Tampilkan gambar BESAR pada idx_tinjau + chip AI + pill manual + status tolak.
+
+        Supaya navigasi cepat (klik Berikutnya beruntun) TIDAK tersendat: thumbnail dari
+        cache ditampilkan SEKETIKA, lalu gambar full-res dimuat di thread latar dan
+        menggantikannya (dengan token anti-balapan)."""
+        import threading
+        n = len(self.review_items)
+        self.label_posisi_tinjau.configure(text=f"{(self.idx_tinjau + 1) if n else 0} / {n}")
+        if not n:
+            self.kanvas_pemeriksa.delete("all")
+            self.kanvas_pemeriksa.create_text(UKURAN_PEMERIKSA // 2, UKURAN_PEMERIKSA // 2,
+                                              text="(belum ada hasil)", fill="#4b5563", font=("Poppins", 10))
+            self.label_pemeriksa.configure(text="—")
+            return
+        path, emosi, rel = self.review_items[self.idx_tinjau]
+        ditolak = rel in self.review_ditolak
+        label = self._label_item(rel, emosi)
+        ai_label = self.review_ai.get(rel, {})
+
+        # 1) tampilkan thumbnail dari cache dulu (instan); full-res menyusul
+        self._gambar_pemeriksa(self._thumb_review.get(path), ditolak, emosi)
+        self._periksa_token += 1
+        token = self._periksa_token
+
+        def _muat_penuh(p=path, t=token, tolak=ditolak, emo=emosi):
+            import cv2
+            bgr = cv2.imread(p)
+            if bgr is None:
+                return
+            def _pasang():
+                if t == self._periksa_token:        # masih gambar yang sama?
+                    self._gambar_pemeriksa(bgr, tolak, emo)
+            try:
+                self.app.root.after(0, _pasang)
+            except (RuntimeError, tk.TclError):
+                pass
+        threading.Thread(target=_muat_penuh, daemon=True).start()
+
         self.label_pemeriksa.configure(text=f"target: {emosi}\n{os.path.basename(path)}")
         ada_ai = bool(ai_label) and sum(ai_label.get(l, 0) for l in LABELS) > 0
         for emo2, chip in self.chip_ai_periksa.items():
@@ -947,6 +975,11 @@ class LPPanel:
                         t = _letterbox(bgr, UKURAN_THUMBNAIL, UKURAN_THUMBNAIL)
                         self._thumb_review[path] = t
                 hasil.append((path, emosi, rel, t))
+            # Batasi cache thumbnail (FIFO ~12 halaman) supaya RAM tidak membengkak
+            # saat menjelajah ribuan gambar.
+            MAKS = self.PER_HAL * 12
+            while len(self._thumb_review) > MAKS:
+                self._thumb_review.pop(next(iter(self._thumb_review)), None)
             try:   # root mungkin sudah ditutup saat shutdown → abaikan
                 self.app.root.after(0, lambda: self._gambar_halaman(hasil, awal, token))
             except (RuntimeError, tk.TclError):
@@ -1294,12 +1327,14 @@ class LPPanel:
             text=f"Setelan aktif — Emosi: {emos}   ·   Driving: {driving}   ·   "
                  f"Frame hasil: {frame_hasil}")
 
-    def render_faces(self, item_wajah: list, dari_cache: bool = False):
+    def render_faces(self, item_wajah: list, dari_cache: bool = False, semua_path: list = None):
         """Render grid thumbnail wajah. item: (path, terpilih, thumb_bgr).
-        dari_cache=True → pakai thumbnail yang sudah tersimpan (toggle pilih, tanpa decode ulang)."""
+        dari_cache=True → pakai thumbnail yang sudah tersimpan (toggle pilih, tanpa decode ulang).
+        semua_path → daftar LENGKAP file di folder (bisa > yang ditampilkan); 'Pilih Semua'
+        memilih daftar lengkap ini, bukan hanya thumbnail yang tampil."""
         import cv2
         if not dari_cache:
-            self.wajah_paths = [p for (p, _s, _t) in item_wajah]
+            self.wajah_paths = list(semua_path) if semua_path else [p for (p, _s, _t) in item_wajah]
             self._thumb_wajah_cache = {p: t for (p, _s, t) in item_wajah}
         for anak in self.grid_wajah.winfo_children():
             anak.destroy()
@@ -1333,6 +1368,13 @@ class LPPanel:
             kanvas.bind("<Button-1>", lambda e, p=path: self._toggle_pilih_wajah(p))
             ctk.CTkLabel(sel, text=os.path.basename(path)[:16], font=("Poppins", 7),
                          text_color=("#6b7280", "#9ca3af")).pack()
+        sisa = len(self.wajah_paths) - len(self._thumb_wajah_cache)
+        if sisa > 0:
+            ctk.CTkLabel(
+                self.grid_wajah,
+                text=f"(+{sisa} foto lain tidak ditampilkan — 'Pilih Semua' tetap memilih semuanya)",
+                font=("Poppins", 8), text_color=("#d97706", "#fbbf24"),
+            ).grid(row=999, column=0, columnspan=5, sticky="w", padx=4, pady=(4, 0))
         self._segarkan_label_wajah()
 
     def _unduh_gambar(self, kolom: int):

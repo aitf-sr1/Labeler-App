@@ -965,10 +965,11 @@ class VideoLabelerApp:
                     continue
                 # letterbox (rasio dijaga) — foto wajah dari luar bisa non-persegi
                 items.append((p, False, _letterbox(bgr, 120, 120)))
-            self.root.after(0, lambda it=items: (
-                lp.render_faces(it),
+            self.root.after(0, lambda it=items, semua=paths: (
+                lp.render_faces(it, semua_path=semua),
                 lp.update_progress(
-                    f"{len(it)} foto wajah dimuat — centang yang ingin diproses.", "#10b981")))
+                    f"{len(it)} thumbnail ditampilkan dari {len(semua)} foto — "
+                    f"'Pilih Semua' memilih SEMUA foto di folder.", "#10b981")))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1694,11 +1695,13 @@ class VideoLabelerApp:
                                 lab[b] = 0
                         ai_labels[rel] = lab
                         done += 1
+                    # Simpan TIAP batch (bukan hanya di akhir): bila dibatalkan/crash di
+                    # tengah, progres tidak hilang — run berikutnya lanjut (inkremental).
+                    with self._lp_json_lock:
+                        self._lp_save_ai_labels(ai_labels)
                     self.root.after(0, lambda d=done, t=len(antrian):
                                     lp.start_loading(f"Deteksi AI {d}/{t}"))
                 pembaca.shutdown(wait=False)
-                with self._lp_json_lock:
-                    self._lp_save_ai_labels(ai_labels)
                 def _fin(d=done):
                     self._lp_busy = False
                     lp.stop_loading(f"Deteksi AI selesai: {d} gambar. Bandingkan dengan label "
