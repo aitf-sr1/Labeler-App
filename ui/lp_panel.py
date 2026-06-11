@@ -70,6 +70,26 @@ def _aktifkan_scroll_mouse(area_scroll):
     area_scroll.bind("<Leave>", _keluar)
 
 
+def _letterbox(bgr, lebar: int, tinggi: int):
+    """Resize dengan RASIO DIJAGA lalu beri latar hitam (letterbox) sampai lebar x tinggi.
+
+    Dipakai semua tampilan gambar/video di app supaya tidak gepeng/melar. Murni untuk
+    tampilan — pemrosesan (crop wajah, LivePortrait) selalu membaca file asli.
+    """
+    import cv2
+    import numpy as np
+    h, w = bgr.shape[:2]
+    skala = min(lebar / w, tinggi / h)
+    baru_w, baru_h = max(1, int(w * skala)), max(1, int(h * skala))
+    kecil = cv2.resize(bgr, (baru_w, baru_h),
+                       interpolation=cv2.INTER_AREA if skala < 1 else cv2.INTER_LINEAR)
+    kanvas = np.zeros((tinggi, lebar, 3), dtype=bgr.dtype)
+    y = (tinggi - baru_h) // 2
+    x = (lebar - baru_w) // 2
+    kanvas[y:y + baru_h, x:x + baru_w] = kecil
+    return kanvas
+
+
 def _decode_video(path: str, batas_frame: int = MAX_FRAME_DECODE) -> list:
     """Baca SELURUH frame video ke list array BGR (satu thread saja).
 
@@ -615,10 +635,11 @@ class LPPanel:
     # ── Menampilkan gambar (semua dari memori → tanpa lag, tanpa crash) ─────────
 
     def _tampilkan(self, kolom: int, bgr):
-        """Tampilkan array BGR ke kanvas pratinjau ke-`kolom` (0=sumber,1=driving,2=hasil)."""
+        """Tampilkan array BGR ke kanvas pratinjau ke-`kolom` (0=sumber,1=driving,2=hasil).
+        Letterbox (rasio dijaga) supaya video driving/hasil non-persegi tidak gepeng."""
         import cv2
         self.bgr_tampil[kolom] = bgr
-        rgb = cv2.cvtColor(cv2.resize(bgr, (UKURAN_PRATINJAU, UKURAN_PRATINJAU)), cv2.COLOR_BGR2RGB)
+        rgb = cv2.cvtColor(_letterbox(bgr, UKURAN_PRATINJAU, UKURAN_PRATINJAU), cv2.COLOR_BGR2RGB)
         gambar = ImageTk.PhotoImage(Image.fromarray(rgb))
         self._ref_pratinjau[kolom] = gambar
         kanvas = self.kanvas_pratinjau[kolom]
@@ -814,7 +835,7 @@ class LPPanel:
         bgr = cv2.imread(path)
         self.kanvas_pemeriksa.delete("all")
         if bgr is not None:
-            rgb = cv2.cvtColor(cv2.resize(bgr, (UKURAN_PEMERIKSA, UKURAN_PEMERIKSA)), cv2.COLOR_BGR2RGB)
+            rgb = cv2.cvtColor(_letterbox(bgr, UKURAN_PEMERIKSA, UKURAN_PEMERIKSA), cv2.COLOR_BGR2RGB)
             self._ref_periksa = ImageTk.PhotoImage(Image.fromarray(rgb))
             self.kanvas_pemeriksa.create_image(0, 0, anchor="nw", image=self._ref_periksa)
         self.kanvas_pemeriksa.configure(highlightbackground="#ef4444" if ditolak
@@ -878,7 +899,7 @@ class LPPanel:
                 if t is None:
                     bgr = cv2.imread(path)
                     if bgr is not None:
-                        t = cv2.resize(bgr, (UKURAN_THUMBNAIL, UKURAN_THUMBNAIL))
+                        t = _letterbox(bgr, UKURAN_THUMBNAIL, UKURAN_THUMBNAIL)
                         self._thumb_review[path] = t
                 hasil.append((path, emosi, rel, t))
             try:   # root mungkin sudah ditutup saat shutdown → abaikan
@@ -1258,7 +1279,7 @@ class LPPanel:
             kanvas = tk.Canvas(sel, width=UK, height=UK, bg="#111", highlightthickness=3,
                                highlightbackground=warna_tepi, cursor="hand2")
             kanvas.pack()
-            rgb = cv2.cvtColor(cv2.resize(thumb, (UK, UK)), cv2.COLOR_BGR2RGB)
+            rgb = cv2.cvtColor(_letterbox(thumb, UK, UK), cv2.COLOR_BGR2RGB)
             gambar = ImageTk.PhotoImage(Image.fromarray(rgb))
             self._ref_thumb_wajah.append(gambar)
             kanvas.create_image(0, 0, anchor="nw", image=gambar)

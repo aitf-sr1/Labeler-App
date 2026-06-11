@@ -957,12 +957,14 @@ class VideoLabelerApp:
 
         def _worker():
             import cv2 as _cv2
+            from ui.lp_panel import _letterbox
             items = []
             for p in paths[:300]:
                 bgr = _cv2.imread(p)
                 if bgr is None:
                     continue
-                items.append((p, False, _cv2.resize(bgr, (120, 120))))
+                # letterbox (rasio dijaga) — foto wajah dari luar bisa non-persegi
+                items.append((p, False, _letterbox(bgr, 120, 120)))
             self.root.after(0, lambda it=items: (
                 lp.render_faces(it),
                 lp.update_progress(

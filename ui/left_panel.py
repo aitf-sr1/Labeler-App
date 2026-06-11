@@ -672,15 +672,15 @@ class LeftPanel:
         """
         Tampilkan satu frame BGR ke canvas video player.
 
-        Frame di-resize ke 640x320 dan dikonversi dari BGR ke RGB sebelum ditampilkan.
-
-        Args:
-            frame_bgr: Frame dalam format BGR (output OpenCV).
+        Frame di-LETTERBOX ke 640x320 (rasio asli DIJAGA, sisa ruang diberi latar hitam)
+        — bukan di-stretch — supaya video tidak tampak gepeng/melar. Catatan: ini murni
+        tampilan; pemrosesan (crop wajah, LP) selalu membaca frame/file asli.
         """
         import cv2  # lazy import — cached after first call, no startup overhead
+        from ui.lp_panel import _letterbox
         img = ImageTk.PhotoImage(
             image=Image.fromarray(
-                cv2.cvtColor(cv2.resize(frame_bgr, (640, 320)), cv2.COLOR_BGR2RGB)
+                cv2.cvtColor(_letterbox(frame_bgr, 640, 320), cv2.COLOR_BGR2RGB)
             )
         )
         self.canvas_video.itemconfig(self.canvas_image_item, image=img)
