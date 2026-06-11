@@ -196,6 +196,8 @@ class LPPanel:
         self.entri_loncat  = None
         self.label_posisi_tinjau = None
         self.label_hal     = None
+        self._items_tinjau_penuh = []   # SEMUA item sebelum filter
+        self.var_filter_tinjau = None   # Semua|Diterima|Ditolak|AI != target|per-emosi
 
         # --- Referensi widget (diisi saat build) ---
         self.label_sumber   = None
@@ -232,6 +234,7 @@ class LPPanel:
         self.var_folder_wajah   = tk.StringVar(value=self._folder_wajah_awal)
         self.var_merge_mode     = tk.StringVar(value="lp")   # base | lp | lp_new
         self.var_kunci_posisi   = tk.BooleanVar(value=True)  # pertahankan posisi proporsional
+        self.var_filter_tinjau  = tk.StringVar(value="Semua")
         for emosi in LABELS:
             self.pilihan_driving[emosi] = tk.StringVar(value="Semua")
 
@@ -508,9 +511,32 @@ class LPPanel:
         ctk.CTkButton(bar, text="Buang Ditolak → _trash", height=28, width=156, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#ef4444", hover_color="#dc2626",
                       command=self.app._lp_delete_rejected).pack(side="left", padx=(0, 6))
+
+        # Baris alat QA: filter tampilan + auto-tolak mismatch AI + statistik dataset
+        bar2 = ctk.CTkFrame(induk, fg_color="transparent")
+        bar2.pack(fill="x", padx=14, pady=(2, 2))
+        ctk.CTkLabel(bar2, text="Filter:", font=("Poppins", 9),
+                     text_color=("#6b7280", "#9ca3af")).pack(side="left", padx=(0, 4))
+        self.menu_filter = ctk.CTkOptionMenu(
+            bar2, variable=self.var_filter_tinjau,
+            values=["Semua", "Diterima", "Ditolak", "AI != target"] + LABELS,
+            font=("Poppins", 9), height=26, width=130, corner_radius=6,
+            fg_color=("#e5e7eb", "#23233a"), button_color="#3b82f6",
+            command=lambda _v: self._terapkan_filter())
+        self.menu_filter.pack(side="left", padx=(0, 10))
+        ctk.CTkButton(bar2, text="Auto-Tolak (AI != target)", height=26, width=170, corner_radius=8,
+                      font=("Poppins", 9, "bold"), fg_color=("#fee2e2", "#3a1414"),
+                      hover_color=("#fecaca", "#4a1a1a"), text_color=("#b91c1c", "#fca5a5"),
+                      command=self.app._lp_auto_reject_mismatch).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(bar2, text="Statistik Dataset", height=26, width=130, corner_radius=8,
+                      font=("Poppins", 9, "bold"), fg_color="#10b981", hover_color="#0ea372",
+                      command=self.app._lp_show_stats).pack(side="left")
+
         ctk.CTkLabel(
             induk, text="Klik 1x thumbnail = lihat besar + bandingkan deteksi AI vs label manual.  "
-                        "Klik 2x = tolak/terima (merah = ditolak, tidak ikut dataset).",
+                        "Klik 2x = tolak/terima (merah = ditolak, tidak ikut dataset).  "
+                        "Auto-Tolak menandai tolak semua hasil yang menurut AI tidak mengandung "
+                        "emosi targetnya (jalankan 'Deteksi AI Semua' dulu).",
             font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
             wraplength=680, justify="left").pack(fill="x", padx=14, pady=(2, 4))
 
@@ -776,13 +802,32 @@ class LPPanel:
     def set_review_data(self, items: list, labels: dict, ai_labels: dict, ditolak: set):
         """Terima SELURUH daftar hasil + state (label/ai/tolak). Tidak decode thumbnail di
         sini (cepat walau ribuan). items: list (path, emosi, rel)."""
-        self.review_items = items or []
+        self._items_tinjau_penuh = items or []
         self.review_label = labels or {}
         self.review_ai = ai_labels or {}
         self.review_ditolak = set(ditolak or set())
-        # pertahankan posisi bila masih valid (mis. setelah refresh), else mulai dari 0
-        self.idx_tinjau = min(self.idx_tinjau, len(self.review_items) - 1) if self.review_items else 0
         self._thumb_review.clear()
+        self._terapkan_filter()
+
+    def _cocok_filter(self, item) -> bool:
+        """Apakah satu item lolos filter tampilan yang sedang dipilih."""
+        _path, emo, rel = item
+        f = self.var_filter_tinjau.get() if self.var_filter_tinjau else "Semua"
+        if f == "Ditolak":
+            return rel in self.review_ditolak
+        if f == "Diterima":
+            return rel not in self.review_ditolak
+        if f == "AI != target":
+            ai = self.review_ai.get(rel)
+            return bool(ai) and ai.get(emo, 0) == 0   # AI tidak mendeteksi emosi target
+        if f in LABELS:
+            return emo == f
+        return True   # "Semua"
+
+    def _terapkan_filter(self):
+        """Saring daftar tinjau sesuai filter, lalu render ulang (posisi di-clamp)."""
+        self.review_items = [it for it in self._items_tinjau_penuh if self._cocok_filter(it)]
+        self.idx_tinjau = min(self.idx_tinjau, len(self.review_items) - 1) if self.review_items else 0
         self._render_pemeriksa()
         self._render_halaman()
 
@@ -957,8 +1002,8 @@ class LPPanel:
                 self.review_ditolak.add(rel)
             else:
                 self.review_ditolak.discard(rel)
-        self._render_pemeriksa()
-        self._render_halaman()
+        # re-apply filter: status tolak/label bisa mengubah keanggotaan daftar tersaring
+        self._terapkan_filter()
 
     def _ganti_label_periksa(self, emosi: str):
         """Toggle label manual gambar yang sedang diperiksa → app simpan + update lokal."""

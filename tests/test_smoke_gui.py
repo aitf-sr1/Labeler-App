@@ -63,6 +63,14 @@ def main():
         lp.terapkan_state("rel/x94.jpg", ditolak=True)
         assert "rel/x94.jpg" in lp.review_ditolak
         lp._geser_halaman(+1)                  # ganti halaman grid
+        # Filter tinjau: Ditolak -> 1 item; AI != target -> item dgn AI tapi target=0
+        lp.var_filter_tinjau.set("Ditolak"); lp._terapkan_filter()
+        assert len(lp.review_items) == 1, len(lp.review_items)
+        lp.review_ai["rel/x1.jpg"] = {l: 0 for l in mod.LABELS}    # AI tak deteksi target
+        lp.var_filter_tinjau.set("AI != target"); lp._terapkan_filter()
+        assert len(lp.review_items) == 1 and lp.review_items[0][2] == "rel/x1.jpg"
+        lp.var_filter_tinjau.set("Semua"); lp._terapkan_filter()
+        assert len(lp.review_items) == 120
         lp.set_review_data([], {}, {}, set())  # kasus kosong
         lp.render_faces([("/tmp/a.jpg", False, dummy), ("/tmp/b.jpg", True, dummy)])
 
@@ -72,7 +80,8 @@ def main():
                   "_lp_process_current", "_lp_process_batch", "_lp_process_faces",
                   "_lp_refresh_review", "_lp_refresh_faces", "_lp_save_frames",
                   "_lp_scan_driving", "_lp_set_label", "_lp_toggle_reject",
-                  "_lp_build_merged_dataset", "_rel_to_idx"]:
+                  "_lp_build_merged_dataset", "_rel_to_idx",
+                  "_lp_show_stats", "_lp_auto_reject_mismatch"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
 
         # Ganti-ganti mode tidak boleh error

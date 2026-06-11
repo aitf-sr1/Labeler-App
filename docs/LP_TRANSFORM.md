@@ -137,6 +137,16 @@ lebih umum / tidak overfit:
 - Klik **2×** gambar = **tolak/terima** (merah = ditolak, tidak ikut dataset). **Buang Ditolak →
   _trash** memindahkan gambar yang ditolak ke folder `_trash/` (BUKAN hapus permanen — bisa
   dipulihkan manual bila berubah pikiran).
+- **Filter** tampilan: Semua / Diterima / Ditolak / **AI != target** / per-emosi — supaya
+  pemeriksaan ribuan hasil terarah (mis. langsung lihat yang dicurigai salah).
+- **Auto-Tolak (AI != target)**: tandai tolak otomatis semua hasil yang menurut deteksi AI
+  **tidak mengandung emosi targetnya** (jalankan "Deteksi AI Semua" dulu). QA ribuan gambar
+  dalam satu klik; ada konfirmasi jumlah, tidak menghapus file, dan tiap gambar bisa
+  di-batal-tolak lagi. Setelahnya pakai filter "Ditolak" untuk meninjau keputusan AI.
+- **Statistik Dataset**: tampilkan distribusi label per emosi — `asli` (Label2d train) +
+  `LP diterima` (yang akan masuk dataset, termasuk berapa dari wajah baru) + `ditolak`.
+  Pakai ini untuk menilai apakah kelas minoritas (Confusion/Frustration) sudah seimbang
+  sebelum Buat Dataset.
 
 ---
 

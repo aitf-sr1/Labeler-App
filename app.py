@@ -1870,6 +1870,107 @@ class VideoLabelerApp:
         messagebox.showinfo("Undo", f"{len(folders)} folder dataset gabungan dihapus.")
         print(f"[LP Merge] undo: {len(folders)} folder Label2d_merged_* dihapus.")
 
+    def _lp_show_stats(self):
+        """Statistik dataset: distribusi label per emosi — asli (Label2d train) vs hasil LP
+        (diterima/ditolak, berapa dari dataset wajah baru). Untuk melihat ketimpangan kelas
+        dan menilai apakah augmentasi sudah cukup."""
+        if not self.path_json_augment:
+            messagebox.showinfo("Statistik Dataset", "Buka folder dataset terlebih dahulu.")
+            return
+        import csv as _csv
+        gen_dir = self._lp_generated_dir() or ""
+        with self._lp_json_lock:
+            rejected = self._lp_load_review()
+            labels   = self._lp_load_labels()
+
+        # Hitung hasil LP per emosi (pakai label final manual; default = emosi target)
+        st = {l: {"asli": 0, "lp": 0, "wajah_baru": 0, "ditolak": 0} for l in LABELS}
+        for path, emo in self._lp_list_generated():
+            rel = os.path.relpath(path, gen_dir).replace("\\", "/")
+            lab = labels.get(rel) or self._lp_default_label(emo)
+            tolak = rel in rejected
+            for l in LABELS:
+                if lab.get(l, 0) != 1:
+                    continue
+                if tolak:
+                    st[l]["ditolak"] += 1
+                else:
+                    st[l]["lp"] += 1
+                    if self._lp_path_is_newface(path):
+                        st[l]["wajah_baru"] += 1
+
+        # Label asli dari Label2d/train.csv (bila sudah pernah split)
+        train_csv = os.path.join(self._lp_label2d_base(), "train.csv")
+        ada_base = os.path.exists(train_csv)
+        if ada_base:
+            with open(train_csv, newline="") as f:
+                rows = list(_csv.reader(f))
+            kol = {l: rows[0].index(l) for l in LABELS if l in rows[0]}
+            for r in rows[1:]:
+                for l, i in kol.items():
+                    if i < len(r) and r[i] == "1":
+                        st[l]["asli"] += 1
+
+        baris = ["Distribusi label kelas (train):", ""]
+        for l in LABELS:
+            d = st[l]
+            total = d["asli"] + d["lp"]
+            baris.append(
+                f"{l}:\n"
+                f"   asli {d['asli']}  +  LP diterima {d['lp']} "
+                f"(dari wajah baru: {d['wajah_baru']})  =  {total}"
+                + (f"   |   ditolak {d['ditolak']}" if d["ditolak"] else ""))
+        if not ada_base:
+            baris.append("\n(Label2d/train.csv belum ada — kolom 'asli' = 0. "
+                         "Buat split 2D dulu untuk angka asli.)")
+        baris.append("\n'LP diterima' = yang akan masuk saat Buat Dataset. "
+                     "Pakai angka ini untuk menyeimbangkan kelas minoritas.")
+        messagebox.showinfo("Statistik Dataset", "\n".join(baris))
+
+    def _lp_auto_reject_mismatch(self):
+        """QA cepat untuk RIBUAN hasil: tandai TOLAK semua gambar yang menurut deteksi AI
+        TIDAK mengandung emosi targetnya. Butuh 'Deteksi AI Semua' dijalankan dulu.
+        Bisa dibatalkan per-gambar (Batal Tolak) — tidak menghapus file apa pun."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        gen_dir = self._lp_generated_dir() or ""
+        with self._lp_json_lock:
+            rejected = self._lp_load_review()
+            ai       = self._lp_load_ai_labels()
+        kandidat, tanpa_ai = [], 0
+        for path, emo in self._lp_list_generated():
+            rel = os.path.relpath(path, gen_dir).replace("\\", "/")
+            if rel in rejected:
+                continue
+            lab = ai.get(rel)
+            if not lab:
+                tanpa_ai += 1
+                continue
+            if lab.get(emo, 0) == 0:      # AI tidak melihat emosi target di gambar ini
+                kandidat.append(rel)
+        if not kandidat:
+            pesan = "Tidak ada mismatch AI vs target."
+            if tanpa_ai:
+                pesan += (f"\n\n{tanpa_ai} gambar belum punya hasil deteksi AI — "
+                          "jalankan 'Deteksi AI Semua' dulu.")
+            messagebox.showinfo("Auto-Tolak", pesan)
+            return
+        if not messagebox.askyesno(
+                "Auto-Tolak (AI != target)",
+                f"Tandai TOLAK {len(kandidat)} gambar yang menurut AI tidak mengandung "
+                f"emosi targetnya?\n\n"
+                + (f"({tanpa_ai} gambar belum dideteksi AI — dilewati.)\n" if tanpa_ai else "")
+                + "Tidak ada file dihapus; bisa dibatalkan per-gambar (Batal Tolak)."):
+            return
+        with self._lp_json_lock:
+            rejected = self._lp_load_review()
+            rejected |= set(kandidat)
+            self._lp_save_review(rejected)
+        self._lp_refresh_review()
+        if lp:
+            lp.update_progress(
+                f"Auto-Tolak: {len(kandidat)} gambar ditandai tolak (filter 'Ditolak' untuk meninjau).",
+                "#10b981")
+
     def _lp_delete_rejected(self):
         """Buang gambar yang ditolak ke folder _trash/ (BUKAN hapus permanen) —
         user bisa memulihkan manual bila berubah pikiran (prinsip undo/recovery)."""
