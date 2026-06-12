@@ -133,8 +133,39 @@ def main():
         os.rename(drv, drv_baru)                      # rename = video yang sama
         assert a._lp_pcache_get(src, drv_baru, "Confusion") == out
         assert a._lp_pcache_get(src, drv_baru, "Frustration") is None
+        # Reverse-lookup: render 'tetep ada' saat frame sumber dibuka lagi (lepas emosi)
+        tdir2 = tempfile.mkdtemp(prefix="lp_any_")
+        a.path_json_augment = os.path.join(tdir2, "augment_marks.json")
+        root_lama, vf_lama = a.root_folder, a.video_files
+        a.root_folder = tdir2
+        vidX = os.path.join(tdir2, "vidX.mp4")
+        with open(vidX, "wb") as f:
+            f.write(b"v" * 10)
+        a.video_files = [vidX]
+        srcdir = os.path.join(tdir2, "cropped_faces", "clean", "vidX")
+        os.makedirs(srcdir, exist_ok=True)
+        srcf = os.path.join(srcdir, "frame_00.jpg")
+        outv = os.path.join(tdir2, "render.mp4")
+        drvv = os.path.join(tdir2, "drv2.mp4")
+        for p, isi in [(srcf, b"s" * 50), (outv, b"o" * 60), (drvv, b"d" * 70)]:
+            with open(p, "wb") as f:
+                f.write(isi)
+        a._lp_pcache_put(srcf, drvv, "Boredom", outv)
+        got = a._lp_pcache_lookup_any_for_source((0, 0))
+        assert got and got["video"] == outv and got["emo"] == "Boredom", got
+        a.root_folder, a.video_files = root_lama, vf_lama
         a.path_json_augment = path_lama
-        _sh.rmtree(tdir, ignore_errors=True)
+        _sh.rmtree(tdir2, ignore_errors=True)
+
+        # Panah saat TIDAK ada daftar tinjau → scrub video HASIL yang sedang tampil
+        lp.set_review_data([], {}, {}, set())
+        lp.set_result_frames([np.zeros((30, 30, 3), "uint8")] * 8, "Confusion")
+        lp.index_hasil = 0
+        assert lp.geser_frame_relatif(+1) is True and lp.index_hasil == 1
+        root.update()
+        a._on_arrow(+1); assert lp.index_hasil == 2, lp.index_hasil
+        lp.set_result_frames([], "Confusion"); lp.frame_driving = []
+        assert lp.geser_frame_relatif(+1) is False
 
         lp.set_review_data([], {}, {}, set())  # kasus kosong
         lp.render_faces([("/tmp/a.jpg", False, dummy), ("/tmp/b.jpg", True, dummy)])
@@ -148,7 +179,8 @@ def main():
                   "_lp_build_merged_dataset", "_rel_to_idx",
                   "_lp_show_stats", "_lp_auto_reject_mismatch",
                   "_lp_restore_trash", "_lp_restore_one", "_lp_list_trashed",
-                  "_lp_pcache_get", "_lp_pcache_put", "_on_arrow"]:
+                  "_lp_pcache_get", "_lp_pcache_put", "_lp_pcache_lookup_any_for_source",
+                  "_on_arrow"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
 
         # Ganti-ganti mode tidak boleh error; di galeri panah kembali ke navigasi video

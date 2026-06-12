@@ -94,6 +94,10 @@ Akibatnya:
 - **Me-rename video driving tidak masalah** — file yang sama tetap dikenali dari waktunya.
 - Video driving **baru/diganti isinya** otomatis dianggap berbeda dan diproses normal.
 - Cache bertahan walau aplikasi ditutup-buka (tersimpan di folder hasil).
+- **Hasil "tetap ada"**: saat Anda membuka kembali frame sumber yang pernah diproses/di-batch
+  (lewat ◀/▶ sumber atau pindah video), video hasil terakhirnya **otomatis muncul lagi** di
+  kolom HASIL — tanpa proses ulang, bahkan tanpa memilih ulang emosi. Frame yang sudah disimpan
+  tetap ada di grid "Tinjau & Label".
 
 ### Kecepatan — model di-load sekali
 LivePortrait dijalankan oleh **worker persisten** (`4-Create/lp_worker.py`, env `.venv-lp`):

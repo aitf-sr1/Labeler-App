@@ -775,6 +775,21 @@ class LPPanel:
         self._render_index(index)               # gambar mentah dulu (tanpa lag)
         self._jadwalkan_viz(index)              # viz menyusul bila saklar aktif
 
+    def geser_frame_relatif(self, delta: int) -> bool:
+        """Geser frame HASIL/DRIVING yang sedang tampil sebanyak `delta` (untuk panah
+        keyboard). Mengembalikan True bila ada video untuk digeser, False bila tidak."""
+        total = self._total_aktif()
+        if not total:
+            return False
+        idx = max(0, min(total - 1, self.index_hasil + delta))
+        if self.slider_hasil:
+            try:
+                self.slider_hasil.set(idx)
+            except Exception:
+                pass
+        self._geser_slider(idx)
+        return True
+
     def _jadwalkan_viz(self, index: int):
         """Debounce: hitung viz hanya saat slider berhenti ~250ms (agar geser tetap mulus)."""
         try:

@@ -166,8 +166,10 @@ class VideoLabelerApp:
         self.root.bind("<space>", lambda e: self.toggle_play())
         # Panah ◀/▶ sadar-mode: di galeri = pindah video (save & next); di panel LP =
         # pindah gambar di pemeriksa hasil (review ribuan gambar tanpa klik mouse).
-        self.root.bind("<Right>", lambda e: self._on_arrow(+1))
-        self.root.bind("<Left>",  lambda e: self._on_arrow(-1))
+        # bind_all (BUKAN root.bind): tangkap di mana pun fokus berada — root.bind hanya
+        # menyala bila event sempat menggelembung ke root, sering ditelan widget panel.
+        self.root.bind_all("<Right>", lambda e: self._on_arrow(+1))
+        self.root.bind_all("<Left>",  lambda e: self._on_arrow(-1))
 
     def _build_topbar(self):
         """Bangun bar atas: tombol buka folder, label nama video, dan progress counter."""
@@ -906,12 +908,47 @@ class VideoLabelerApp:
                         data = _json.load(f)
                 except Exception:
                     data = {}
-            data[k] = {"video": out_vid, "driving": drv}
+            data[k] = {"video": out_vid, "driving": drv, "emo": emo, "src": src}
             try:
                 with open(p, "w") as f:
                     _json.dump(data, f, indent=1)
             except Exception as e:
                 print(f"[LP cache] gagal menyimpan lp_result_cache.json: {e}")
+
+    def _lp_pcache_lookup_any_for_source(self, key):
+        """Render TERAKHIR yang pernah dibuat untuk frame sumber `key` — LEPAS dari emosi/
+        driving yang sedang dipilih. Supaya hasil 'Proses Frame Ini' / Batch muncul lagi
+        otomatis saat frame itu dibuka kembali, bahkan setelah aplikasi ditutup-buka dan
+        tanpa harus memilih ulang emosi. Dicocokkan via identitas file (sig), bukan nama."""
+        import json as _json
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if not lp or not getattr(lp, "_built", False) or not getattr(self, "path_json_augment", None):
+            return None
+        vid_idx, fi = key
+        if vid_idx >= len(self.video_files):
+            return None
+        rel  = os.path.relpath(self.video_files[vid_idx], self.root_folder).replace("\\", "/")
+        base = os.path.splitext(rel)[0]
+        result_dir = os.path.dirname(self.path_json_augment)
+        src = os.path.join(result_dir, "cropped_faces", "clean", base, f"frame_{fi:02d}.jpg")
+        sig = self._lp_sig(src)
+        p = self._lp_pcache_path()
+        if not sig or not p or not os.path.exists(p):
+            return None
+        try:
+            with self._lp_json_lock, open(p) as f:
+                data = _json.load(f)
+        except Exception:
+            return None
+        # dict menjaga urutan sisip → entri belakangan = paling baru
+        best = None
+        for kk, ent in data.items():
+            if not kk.startswith(sig + "|"):
+                continue
+            if ent.get("video") and os.path.exists(ent["video"]):
+                emo = ent.get("emo") or (kk.split("|")[2] if kk.count("|") >= 2 else "")
+                best = {"emo": emo, "video": ent["video"], "driving": ent.get("driving", "")}
+        return best
 
     def _lp_pcache_lookup_for_source(self, key):
         """Cari hasil tersimpan (cache persisten) untuk frame sumber `key`, memakai
@@ -943,21 +980,25 @@ class VideoLabelerApp:
             return
         data = self._lp_result_cache.get(key)
         if not data or not os.path.exists(data.get("video", "")):
-            data = self._lp_pcache_lookup_for_source(key)
-        if not data:
+            # cache sesi miss → cache persisten (emosi terpilih dulu, lalu lepas-emosi)
+            data = (self._lp_pcache_lookup_for_source(key)
+                    or self._lp_pcache_lookup_any_for_source(key))
+        if not data or not os.path.exists(data.get("video", "")):
             return
         lp.start_loading("Memuat hasil yang sudah pernah diproses")
 
         def _worker(d=data, k=key):
             from ui.lp_panel import _decode_video
             res_frames = _decode_video(d["video"])
-            drv_frames = _decode_video(d["driving"])
+            drv = d.get("driving", "")
+            drv_frames = _decode_video(drv) if drv and os.path.exists(drv) else []
 
             def _terapkan():
                 if self._lp_current_source != k:
                     lp.stop_loading("")          # user sudah pindah frame — jangan timpa
                     return
-                lp.set_driving_frames(drv_frames, d["emo"], path=d["driving"])
+                if drv_frames:
+                    lp.set_driving_frames(drv_frames, d["emo"], path=drv)
                 lp.set_result_frames(res_frames, d["emo"])
                 lp.stop_loading(
                     f"Hasil sebelumnya ditampilkan ({d['emo']}, {len(res_frames)} frame).",
@@ -2601,16 +2642,19 @@ class VideoLabelerApp:
     def _on_arrow(self, delta: int):
         """Tombol panah kiri/kanan, sadar-mode:
         - galeri  : pindah video (kanan = save & next, kiri = sebelumnya) — perilaku lama;
-        - panel LP: pindah gambar di pemeriksa 'Tinjau & Label' (kalau daftar tinjau ada),
-                    atau pindah antar frame sumber bertanda bila belum ada hasil.
+        - panel LP: (1) pindah gambar di pemeriksa 'Tinjau & Label' bila daftar tinjau ada;
+                    (2) kalau belum, scrub video HASIL/DRIVING yang sedang tampil;
+                    (3) kalau itu pun belum ada, pindah antar frame sumber bertanda.
         Saat kursor sedang di kotak input, panah dibiarkan menggerakkan kursor teks."""
         fokus = self.root.focus_get()
         if isinstance(fokus, tk.Entry):
-            return
+            return                      # sedang mengetik → jangan rebut panah
         lp = self._arrow_target_lp()
         if lp is not None:
             if lp.review_items:
                 lp._tinjau_geser(delta)
+            elif lp.geser_frame_relatif(delta):
+                pass                    # scrub video hasil/driving yang sedang tampil
             else:
                 self._goto_lp_mark(delta)
             return
