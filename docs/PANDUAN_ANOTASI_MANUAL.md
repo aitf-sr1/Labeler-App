@@ -20,6 +20,24 @@ Semua ciri **verbatim dari paper** (sudah diverifikasi kata-per-kata ke 37 PDF s
 
 ---
 
+## Dasar Label Kekuatan — dari Jurnalnya Sendiri (bukan opini)
+
+Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibuat jurnalnya sendiri** (terutama ConfusionBench 2026, benchmark *expert-validated* oleh 10 psikolog) dan **angka coverage** dari Craig 2008. Berikut buktinya verbatim:
+
+| Klaim label | Apa kata jurnal (verbatim) | Sumber |
+|---|---|---|
+| Alis (AU4/AU7) = **KUAT** (tier 1) | *"brow lowering (AU4), eyelid tightening (AU7), and especially their combination (AU4+AU7) as **the most reliable indicators**"* | ConfusionBench 2026, protokol anotasi |
+| Tangan = **auxiliary** (tier 4 dari 5) | *"(4) **auxiliary** hand-to-face behaviors, such as chin touching, forehead pressing, and covering the mouth"* | ConfusionBench 2026 |
+| Gaze = pendukung | *"gaze direction and head pose **may also provide supportive evidence**"* | ConfusionBench 2026 |
+| "1 tangan→confusion, 2 tangan→frustration" itu **inferensi**, bukan klaim langsung | *"one-hand-to-face gestures **may be** associated with less negative affect, while two-hands-to-face gestures **may be** indicative of reduced focus"* — confusion/frustration adalah simpulan KITA, jurnal cuma bilang "thoughtful" & "reduced focus" + korelasi **self-efficacy rendah** (sifat, bukan emosi sesaat) | Grafsgaard 2013b |
+| Gestur tangan = pendekatan **spekulatif** | *"**speculative approach** to find the correlation between gestures and context"* · *"it is still **unclear if these states can be detected**"* | Behera 2020 |
+| Mulut terbuka = **SEDANG** (1 studi, konteks "berpikir") | *"a **novel form** that has not been **previously reported**"* — komponen paling signifikan untuk *thinking face* (android), bukan confusion-belajar langsung; ConfusionBench bahkan **tidak** memasukkan mulut-terbuka ke kriteria confusion | Namba 2024 |
+| Coverage = dasar angka | Craig 2008 Table 2: AU4 **95%**, AU7 **78%**, AU4+AU7 **73%**, AU1+AU2 **100%**, AU43 (boredom) **40%** | Craig 2008 |
+
+**Kesimpulan:** menaikkan tangan/mulut ke **KUAT** justru **bertentangan** dengan jurnalnya — mereka sendiri menyebutnya *auxiliary / may be / speculative*. Jadi LEMAH/SEDANG itu **setia ke sumber**, bukan meremehkan. (Untuk anotasi manual, lihat aturan **"gestalt berpikir"** di §3 & §5 — kombinasi tangan+mulut+gaze boleh jadi pemicu walau tidak satu-satu.)
+
+---
+
 ## SISTEM LABEL
 
 4 label **independen** (boleh lebih dari satu aktif). Boredom & Engagement biasanya **tidak bersamaan**; Confusion & Engagement **boleh bersamaan** (*productive confusion*).
@@ -120,6 +138,19 @@ Semua ciri **verbatim dari paper** (sudah diverifikasi kata-per-kata ke 37 PDF s
 
 > **Inti:** jangkar Confusion = **alis berkerut (AU4)**. Mulut terbuka & tangan hanya **menambah**, tidak cukup sendiri.
 
+### Aturan "gestalt berpikir" (untuk anotasi manual)
+
+Tangan-saja **tidak cukup**, mulut-saja **tidak cukup** — itu posisi jurnal. **Tapi** karena ini anotasi manual dan kamu bisa melihat keseluruhan pose, **kombinasi** berikut **boleh** kamu tandai **Confusion** walau alisnya **hanya sedikit** berkerut:
+
+> **Tangan di dagu/telunjuk (kontak ringan) + mulut sedikit terbuka + tatapan ke soal sulit** = pola "lagi mikir/unsure" → **boleh Confusion** (keputusan anotator).
+
+Dasarnya: ConfusionBench 2026 mengakui kategori **"Unsure"** = *"additional information is needed for a more confident judgment"* — zona abu-abu yang sah dinilai manusia. Mahmoud 2011 juga mengaitkan telunjuk-ke-wajah dengan **"thinking and unsure"**.
+
+**Tetap hati-hati:**
+- **Satu** cue saja (cuma tangan, ATAU cuma mulut) → **jangan** langsung Confusion; cek dulu apa benar lagi memproses soal (bukan menguap/ngobrol/santai).
+- Kalau ada **alis berkerut jelas (AU4)** → tidak perlu ragu, itu sudah Confusion KUAT tanpa bantuan tangan/mulut.
+- Gestalt ini menaikkan keyakinan dari "lemah" ke "cukup" **hanya saat beberapa cue muncul bersamaan** + konteks on-task.
+
 ---
 
 ## 4. FRUSTRATION (Frustrasi)
@@ -163,6 +194,8 @@ Tangan **tidak pernah** jadi alasan tunggal. Gunakan hanya untuk **menguatkan** 
 | Tangan menyangga kepala **pasif, santai** | **Bukan sinyal kognitif** | — | Mahmoud 2011: gestur pasif = *relaxed mood* |
 
 > ⚠️ **Jebakan:** banyak siswa menyangga kepala karena lelah/santai, bukan berpikir. Kalau tidak ada alis berkerut (Confusion) atau alis naik/distressed (Frustration), **jangan** melabeli dari tangan saja.
+
+> ✅ **Pengecualian "gestalt berpikir" (lihat §3):** kalau **tangan-di-dagu + mulut sedikit terbuka + tatapan ke soal** muncul **bersamaan**, itu pola *thinking/unsure* → **boleh Confusion** walau alis cuma sedikit berkerut. Yang dilarang adalah melabeli dari **satu** cue tunggal; **kombinasi**-nya boleh.
 
 ---
 
@@ -218,4 +251,4 @@ Lihat frame →
 
 ## Catatan Verifikasi Verbatim
 
-Seluruh kutipan di panduan ini dan di `ACADEMIC_BASIS.md` telah **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`) memakai ekstraksi teks + pencocokan substring ternormalisasi. **Hasil: semua kutipan akurat.** Perbedaan kecil yang muncul saat pengecekan otomatis semuanya **artefak ekstraksi PDF** (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan sesuai konvensi, header halaman nyelip) — bukan kesalahan kutipan. Satu paper (Bartlett 1999) adalah PDF hasil pindai (tanpa lapisan teks) sehingga tidak bisa dicek otomatis; kutipannya kanonik dan dibiarkan apa adanya.
+Seluruh kutipan di panduan ini dan di `ACADEMIC_BASIS.md` telah **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`) memakai ekstraksi teks + pencocokan substring ternormalisasi. **Hasil: semua kutipan akurat.** Perbedaan kecil yang muncul saat pengecekan otomatis semuanya **artefak ekstraksi PDF** (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan sesuai konvensi, header halaman nyelip) — bukan kesalahan kutipan. Satu paper (**Bartlett 1999**) adalah PDF hasil **pindai** (tanpa lapisan teks); ia di-**OCR** (EasyOCR, 300 dpi, 11 halaman → 9.701 kata) dan kutipannya **TERKONFIRMASI cocok** (*"…is an objective method for quantifying facial movement in terms of component actions"*). Jadi **tidak ada satu pun kutipan yang tidak terverifikasi.**

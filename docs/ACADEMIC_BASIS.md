@@ -7,7 +7,7 @@ Dokumen ini menjabarkan **landasan akademis setiap keputusan metode** dalam apli
 
 > **Catatan kutipan:** Nomor referensi dalam tanda kurung siku seperti `[17]` dan penanda internal paper seperti `(Link 3)` dihilangkan mengikuti praktik standar. Semua kata dalam blok kutipan adalah verbatim dari sumber asli.
 
-> **✅ Status verifikasi (terakhir dicek):** Seluruh blok kutipan di dokumen ini **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`, ekstraksi `pdftotext` + pencocokan substring ternormalisasi). **Semua kutipan akurat.** Perbedaan yang muncul saat pengecekan otomatis seluruhnya artefak ekstraksi PDF (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan, header halaman nyelip) — bukan salah kutip. Pengecualian: **Bartlett 1999** adalah PDF hasil pindai (tanpa lapisan teks) → tidak terverifikasi otomatis; kutipannya kanonik, dibiarkan apa adanya.
+> **✅ Status verifikasi (terakhir dicek):** Seluruh blok kutipan di dokumen ini **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`, ekstraksi `pdftotext` + pencocokan substring ternormalisasi). **Semua kutipan akurat.** Perbedaan yang muncul saat pengecekan otomatis seluruhnya artefak ekstraksi PDF (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan, header halaman nyelip) — bukan salah kutip. **Bartlett 1999** adalah PDF hasil pindai (tanpa lapisan teks); ia di-**OCR** (EasyOCR, 300 dpi, 11 hal → 9.701 kata) dan kutipan FACS-nya **TERKONFIRMASI cocok**. Jadi **tidak ada kutipan yang tersisa tanpa verifikasi.**
 
 ---
 
