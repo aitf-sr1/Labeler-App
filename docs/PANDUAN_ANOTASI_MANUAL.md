@@ -128,28 +128,38 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 | **Kelopak menyipit (AU7)** | Kelopak menegang/menyipit, bukan menutup | **KUAT** | Craig 78%; AU7→AU4 |
 | **AU4 + AU7 bersama** | Alis turun **dan** kelopak menyipit = "mengernyit fokus" | **KUAT** | Craig 73%; ConfusionBench: kombinasi paling reliable |
 | **Mulut sedikit terbuka (AU25+26)** | Bibir/rahang sedikit turun, "mikir keras" jawab soal sulit | SEDANG | Namba 2024 "komponen paling signifikan" thinking face — **1 studi, ambigu** (mangap banyak sebab) |
-| **1 tangan/telunjuk di dagu** | Telunjuk menyentuh/mengetuk/mengusap dagu-pipi, kontak ringan | LEMAH (auto) → SEDANG (manual) | Mahmoud 2011 (N=15 kecil) + Behera 2020 (chain sulit→bingung) |
+| **1 tangan/telunjuk di dagu (AKTIF)** | Telunjuk **menyentuh/mengetuk/mengusap** dagu-pipi (bukan menyangga pasif) | LEMAH (auto) → SEDANG (manual) | Mahmoud 2011: aktif = *thinking/unsure*; **pasif = relaxed** (N=15 kecil) |
 
 **BUKAN Confusion:**
 - Alis **naik** → Frustration/terkejut (AU1+AU2, bukan AU4)
 - Mata **menutup penuh** → Boredom (AU43, bukan AU7)
-- Mulut mangap **tanpa** alis berkerut → cek konteks dulu (bisa menguap/ngomong)
+- **Tangan + mulut terbuka TAPI alis/sipit NOL & pose berpikir tenang** → **bukan** Confusion (zona "Unsure"); butuh minimal jejak alis/sipit ATAU pose "berjuang" jelas (lihat aturan di bawah)
+- Tangan **menyangga kepala pasif** (santai/lelah) → bukan kognitif (Mahmoud: *relaxed*)
 - Wajah datar menatap layar → bisa Engagement saja
 
 > **Inti:** jangkar Confusion = **alis berkerut (AU4)**. Mulut terbuka & tangan hanya **menambah**, tidak cukup sendiri.
 
-### Aturan "gestalt berpikir" (untuk anotasi manual)
+### Aturan cue lemah (tangan & mulut): kapan CUKUP, kapan TIDAK
 
-Tangan-saja **tidak cukup**, mulut-saja **tidak cukup** — itu posisi jurnal. **Tapi** karena ini anotasi manual dan kamu bisa melihat keseluruhan pose, **kombinasi** berikut **boleh** kamu tandai **Confusion** walau alisnya **hanya sedikit** berkerut:
+Tangan-saja **tidak cukup**, mulut-saja **tidak cukup** — itu posisi jurnal. Pertanyaannya: kalau **tangan + mulut ada tapi alis/sipit (AU4/AU7) NOL**, boleh Confusion atau tidak? Pakai tabel ini:
 
-> **Tangan di dagu/telunjuk (kontak ringan) + mulut sedikit terbuka + tatapan ke soal sulit** = pola "lagi mikir/unsure" → **boleh Confusion** (keputusan anotator).
+| Alis turun (AU4) / sipit (AU7) | Ditambah tangan & mulut | Confusion? |
+|---|---|---|
+| **JELAS** (mengerut/menyipit terlihat) | tidak perlu | **YA — KUAT.** Alis/sipit sudah cukup sendiri. |
+| **SAMAR** (sedikit tegang, ragu-ragu) | tangan dagu **aktif** + mulut sedikit buka + tatap soal | **YA — tapi lemah** (gestalt; keputusan anotator). |
+| **NOL** (sama sekali tak ada) | hanya tangan + mulut | **TIDAK (default)** — ini zona **"Unsure"**. Baca aturan di bawah. |
 
-Dasarnya: ConfusionBench 2026 mengakui kategori **"Unsure"** = *"additional information is needed for a more confident judgment"* — zona abu-abu yang sah dinilai manusia. Mahmoud 2011 juga mengaitkan telunjuk-ke-wajah dengan **"thinking and unsure"**.
+**Jawaban untuk kasus "ada tangan, ada mulut, TAPI alis & mata sipit tidak ada":**
 
-**Tetap hati-hati:**
-- **Satu** cue saja (cuma tangan, ATAU cuma mulut) → **jangan** langsung Confusion; cek dulu apa benar lagi memproses soal (bukan menguap/ngobrol/santai).
-- Kalau ada **alis berkerut jelas (AU4)** → tidak perlu ragu, itu sudah Confusion KUAT tanpa bantuan tangan/mulut.
-- Gestalt ini menaikkan keyakinan dari "lemah" ke "cukup" **hanya saat beberapa cue muncul bersamaan** + konteks on-task.
+- **Default: JANGAN tandai Confusion.** Tangan + mulut hanyalah sinyal **"berpikir"** — dan berpikir **tanpa** tanda *disequilibrium* (alis turun / sipit) belum tentu bingung: bisa berpikir tenang (= **Engagement** kalau on-task), bisa ngobrol/menguap. ConfusionBench 2026 menaruh kasus persis begini di kategori **"Unsure"** (*"additional information is needed for a more confident judgment"*) — **bukan "Yes"** (di datasetnya: 224 Yes vs 46 Unsure).
+- **Boleh "lemah-Confusion" HANYA bila ketiganya terpenuhi:**
+  1. Tangan **AKTIF** — telunjuk **menyentuh/mengetuk/mengusap** dagu-pipi (Mahmoud 2011: ini *"thinking and unsure"*), **BUKAN** menyangga kepala pasif (Mahmoud 2011: bersandar pasif = *"relaxed mood"*, **bukan** kognitif);
+  2. Mulut sedikit terbuka **sambil menatap soal sulit** (bukan menguap/ngobrol);
+  3. Kamu benar-benar membaca pose **"sedang berjuang memahami"** (bukan berpikir santai).
+  → Kalau ya semua, tandai Confusion tapi anggap **ragu/lemah**.
+- Kalau pose tampak **berpikir tenang / santai / pasif** → **Confusion = 0** (kalau menatap layar/soal = Engagement).
+
+> **Ringkas:** **minimal harus ada JEJAK alis/sipit, ATAU pose "berjuang" yang jelas.** Tangan + mulut **tanpa** keduanya = *Unsure*, default **tidak** Confusion. Jangan kejar kuantitas sampel dengan melabeli "thinking tenang" sebagai Confusion — itu menambah false-positive ke dataset.
 
 ---
 
@@ -195,7 +205,7 @@ Tangan **tidak pernah** jadi alasan tunggal. Gunakan hanya untuk **menguatkan** 
 
 > ⚠️ **Jebakan:** banyak siswa menyangga kepala karena lelah/santai, bukan berpikir. Kalau tidak ada alis berkerut (Confusion) atau alis naik/distressed (Frustration), **jangan** melabeli dari tangan saja.
 
-> ✅ **Pengecualian "gestalt berpikir" (lihat §3):** kalau **tangan-di-dagu + mulut sedikit terbuka + tatapan ke soal** muncul **bersamaan**, itu pola *thinking/unsure* → **boleh Confusion** walau alis cuma sedikit berkerut. Yang dilarang adalah melabeli dari **satu** cue tunggal; **kombinasi**-nya boleh.
+> ✅ **Pengecualian "gestalt berpikir" (aturan lengkap di §3):** **tangan dagu AKTIF + mulut sedikit terbuka + tatap soal** → boleh Confusion **bila ada minimal JEJAK alis/sipit ATAU pose "berjuang" jelas**. **Tapi kalau alis/sipit NOL dan pose berpikir tenang → default TIDAK Confusion** (zona *Unsure*). Tangan menyangga **pasif** = *relaxed*, jangan dihitung.
 
 ---
 
@@ -231,9 +241,12 @@ Lihat frame →
 3. Alis bergerak?
      TURUN/mengerut → Confusion (KUAT)
      NAIK penuh + distressed → Frustration (KUAT*)
-4. Tanda tambahan (jangan jadi alasan tunggal):
+4. Cue LEMAH (menambah, TIDAK jadi alasan tunggal):
      Mulut sedikit terbuka → +Confusion (SEDANG)
-     1 tangan dagu → +Confusion (LEMAH)   |   2 tangan dahi → +Frustration (SEDANG)
+     1 tangan dagu AKTIF → +Confusion (LEMAH)   |   2 tangan dahi → +Frustration (SEDANG)
+5. KASUS tangan+mulut TAPI alis/sipit NOL?
+     pose "berjuang" jelas / tangan aktif → Confusion LEMAH (ragu)
+     pose berpikir tenang / tangan pasif  → Confusion = 0  (zona "Unsure"; on-task = Engagement)
 ```
 
 ---
