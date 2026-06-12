@@ -41,3 +41,7 @@ python-dotenv>=1.0            # membaca file .env
 # fastapi>=0.110
 # uvicorn>=0.29
 # pydantic>=2.0
+
+# --- (Opsional) ekspor docs ke PDF: tools/panduan_to_pdf.py ---
+# Hanya untuk membuat ulang PANDUAN_ANOTASI_MANUAL.pdf. Tidak dipakai aplikasi.
+# reportlab>=4.0

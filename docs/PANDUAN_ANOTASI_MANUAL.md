@@ -1,382 +1,221 @@
 # Panduan Anotasi Manual — Pemeriksaan Hasil Sistem
 
-Dokumen ini digunakan saat **memeriksa hasil pelabelan aplikasi secara manual**. Untuk tiap video/frame, penilai melihat tampilan wajah dan menentukan emosi mana yang aktif berdasarkan ciri-ciri di bawah ini.
+Dipakai saat **memeriksa hasil pelabelan aplikasi secara manual**. Untuk tiap frame: lihat wajah → cocokkan dengan ciri di tabel → tentukan emosi mana yang aktif.
 
-Semua ciri yang dicantumkan **berdasarkan verbatim dari paper** — bukan opini. Setiap ciri dilengkapi sumber papernya.
+Semua ciri **verbatim dari paper** (sudah diverifikasi kata-per-kata ke 37 PDF sumber — lihat catatan verifikasi di akhir). Tiap ciri diberi **kolom Kekuatan** supaya kamu tahu mana sinyal yang bisa dipercaya sendirian dan mana yang cuma pendukung.
 
-> **Cara pakai:** Buka video di aplikasi → lihat frame yang dilabeli AI → bandingkan dengan daftar ciri di bawah → jika ciri terpenuhi = emosi tersebut harusnya aktif.
+> **Cara pakai:** Buka video → lihat frame berlabel AI → cocokkan ke tabel emosi → kalau ciri **KUAT** terpenuhi, emosi itu harusnya aktif. Ciri **LEMAH** tidak cukup berdiri sendiri.
+
+---
+
+## Legenda Kekuatan Bukti
+
+| Tanda | Arti | Boleh jadi dasar sendiri? |
+|---|---|---|
+| **KUAT** | Banyak studi independen / coverage tinggi / sinyal langsung | Ya — kalau ciri ini jelas, label boleh aktif |
+| **SEDANG** | Satu studi, atau coverage menengah, atau rantai argumen tak-langsung tapi didukung | Hati-hati — idealnya ada 1 ciri pendukung |
+| **LEMAH** | Sampel kecil / rantai panjang / sulit dilihat / keterbatasan detektor | TIDAK — hanya menguatkan, jangan jadi alasan tunggal |
+
+> **Tentang TANGAN (sering ditanya):** semua sinyal tangan **LEMAH untuk deteksi OTOMATIS** — detektor app cuma menghitung *jumlah* tangan dekat wajah, tidak bisa bedakan posisi (dagu vs dahi) atau aktif vs pasif (Mahmoud 2011: tangan menyangga pasif = *relaxed*, bukan berpikir). Tapi **kamu (manusia) bisa melihat posisinya** → di tangan anotator manual, sinyal tangan naik jadi **SEDANG**. Tetap: jangan melabeli hanya karena ada tangan.
 
 ---
 
 ## SISTEM LABEL
 
-Tiap frame punya **4 label independen** (bisa lebih dari satu aktif bersamaan):
+4 label **independen** (boleh lebih dari satu aktif). Boredom & Engagement biasanya **tidak bersamaan**; Confusion & Engagement **boleh bersamaan** (*productive confusion*).
 
 | Label | Aktif = 1 | Tidak aktif = 0 |
 |---|---|---|
-| **Boredom** | Tanda kebosanan terlihat | Tidak ada tanda kebosanan |
-| **Engagement** | Tanda terlibat/fokus terlihat | Tidak ada tanda keterlibatan |
-| **Confusion** | Tanda kebingungan terlihat | Tidak ada tanda kebingungan |
-| **Frustration** | Tanda frustrasi terlihat | Tidak ada tanda frustrasi |
+| **Boredom** | Tanda kebosanan terlihat | Tidak ada |
+| **Engagement** | Tanda terlibat/fokus terlihat | Tidak ada |
+| **Confusion** | Tanda kebingungan terlihat | Tidak ada |
+| **Frustration** | Tanda frustrasi terlihat | Tidak ada |
 
-Boredom dan Engagement biasanya **tidak aktif bersamaan** — kalau satu tinggi, yang lain rendah (DAiSEE: *"When engagement is low, boredom is generally high and vice-versa"*). Confusion dan Engagement **bisa aktif bersamaan** (*productive confusion*, D'Mello 2012).
+---
+
+## TABEL INDUK — Semua Sinyal Sekilas (cheat sheet)
+
+| Yang terlihat di wajah | Emosi | Kekuatan | Paper |
+|---|---|---|---|
+| Alis **turun/mengerut** (di antara alis berkerut) | **Confusion** | KUAT | Craig 2008 (95%), Grafsgaard 2011, ConfusionBench 2026 |
+| Kelopak mata **menyipit** (bukan menutup) | **Confusion** | KUAT | Craig 2008 (AU7) |
+| Alis turun **+** kelopak menyipit bersama | **Confusion** | KUAT | Craig 2008 (AU4+AU7), ConfusionBench |
+| Menatap layar + mata terbuka (wajah "ada") | **Engagement** | KUAT | Whitehill 2014 (κ=0.96) |
+| Alis **naik penuh** (dalam + luar terangkat) | **Frustration** | KUAT* | Craig 2008 (100%) — *lihat catatan |
+| Mulut sedikit terbuka, "mikir keras" | **Confusion** | SEDANG | Namba 2024 (AU25+AU26) |
+| Mata **berat/setengah menutup** (lesu) | **Boredom** | SEDANG | Craig 2008 (AU43, 40%) |
+| Menoleh jauh ke **samping / atas** (melamun) | **Boredom** | SEDANG | GazeTutor, Whitehill, Sümer |
+| Nunduk ke catatan/keyboard | **Engagement** (bukan Boredom) | SEDANG | Sümer 2021 |
+| Alis turun sekunder saat distressed | **Frustration** | SEDANG | Grafsgaard 2013 (AU4) |
+| **2 tangan** menekan dahi / menutup wajah | **Frustration** | SEDANG | Grafsgaard 2013b, ConfusionBench |
+| **1 tangan/telunjuk** di dagu (kontak ringan) | **Confusion** | LEMAH→SEDANG (manual) | Mahmoud 2011, Behera 2020 |
+| Lesung pipit (sudut bibir tertarik) | **Frustration** | LEMAH | Grafsgaard 2013, Bosch 2023 |
+
+> **\*Catatan Frustration:** arah alis **NAIK** (AU1+AU2) punya coverage 100% di Craig 2008, **tapi hanya dari satu studi**. Grafsgaard 2013 (deteksi otomatis, konteks belajar) justru menemukan alis **TURUN** (AU4) berkorelasi positif dengan frustrasi. Praktik aman: **alis naik penuh + wajah distressed** = Frustration; kalau cuma alis turun, pertimbangkan Confusion dulu.
 
 ---
 
 ## 1. BOREDOM (Kebosanan)
 
-### Definisi (Craig 2008)
-> *"Boredom — the state of being weary and restless through lack of interest."*
+**Definisi (Craig 2008):** *"the state of being weary and restless through lack of interest."* — lelah/malas karena tidak tertarik, khusus situasi belajar.
 
-Siswa terlihat **lelah/malas karena tidak tertarik** — bukan sedih, bukan mengantuk karena habis olahraga. Boredom spesifik untuk situasi belajar.
+| Ciri | Yang dilihat | Kekuatan | Catatan |
+|---|---|---|---|
+| **Mata berat / menutup (AU43)** | Kelopak berat / setengah menutup tanpa sebab fisik, lesu/droopy | SEDANG | Craig: satu-satunya AU signifikan utk boredom, **tapi coverage cuma 40%, 1 studi** |
+| **Pandang ke samping / atas** | Kepala/mata menoleh jauh dari layar, melamun, *zoning out* | SEDANG | Konstruk didukung 3 paper; **tapi gaze webcam kasar** |
 
-### Ciri Utama — HARUS ada setidaknya satu:
+**BUKAN Boredom:**
+- Nunduk membaca/menulis → itu **Engagement** (lihat §2)
+- Berkedip normal (terlalu singkat) → bukan AU43
+- Menyipit karena cahaya/fokus → itu AU7 (Confusion)
+- ~~Menguap~~, ~~gerak-gerak~~ → Craig: "non-significant", **tidak dipakai**
 
-**A. Mata berat / menutup (AU43 Eye Closure)**
-> *"While boredom displayed a significant association with action unit 43 (eye closure)."*
-> — Craig et al. (2008), Table 2
+**Tabel arah pandang (sering keliru!):**
 
-- Kelopak mata **terlihat berat atau setengah menutup** tanpa alasan fisik
-- Mata yang seharusnya terbuka normal terlihat droopy/lesu
-- **Bukan** berkedip normal (terlalu singkat)
-- **Bukan** menyipit karena cahaya atau fokus (itu AU7 → Confusion)
-
-**B. Pandangan menjauh dari layar (Gaze Away)**
-> *"monitor a student's gaze patterns and identify when the student is bored, disengaged, or is zoning out."*
-> — D'Mello et al. (2012), GazeTutor
-
-> *"1: Not engaged at all – e.g., looking away from computer and obviously not thinking about task."*
-> — Whitehill et al. (2014)
-
-- Kepala/mata menoleh **jauh dari arah kamera/layar** — ke samping, ke atas melamun
-- **Bukan** menunduk membaca (itu bisa Engagement juga)
-- **Bukan** menoleh sesaat (harus jelas tidak memperhatikan)
-
-**Tabel ARAH PANDANG — patokan cepat (penting!):**
-
-| Arah pandang | Label | Alasan & paper |
+| Arah pandang | Label | Alasan |
 |---|---|---|
-| **Lurus ke depan/layar** | Engagement | Whitehill 2014: forward gaze = engaged |
-| **Ke SAMPING** (menoleh kiri/kanan) | **Boredom** | GazeTutor/Whitehill: "looking away from computer" = disengaged |
-| **Ke ATAS** (mendongak, melamun) | **Boredom** | Whitehill: looking away/zoning out |
-| **Ke BAWAH** (nunduk ke keyboard/catatan) | **Engagement** ✓ | Sümer 2021: "head-down = taking notes or reading learning material" = on-task |
+| Lurus ke layar | Engagement | forward gaze = engaged (Whitehill) |
+| Ke **samping** | **Boredom** | "looking away from computer" (GazeTutor/Whitehill) |
+| Ke **atas** (mendongak) | **Boredom** | zoning out (Whitehill lvl 1) |
+| Ke **bawah** (nunduk baca/ketik) | **Engagement** | "head-down = taking notes/reading" (Sümer 2021) |
 
-⚠️ **Catatan paling sering keliru:** nunduk ke bawah = **Engagement** (baca/ketik), BUKAN Boredom. Hanya **samping & atas** yang Boredom. Sistem sudah dikalibrasi persis begini.
-
-### Ciri yang TIDAK dipakai (tidak ada basis paper):
-- ~~Menguap~~ — Craig menyebut "non-significant trends"
-- ~~Bergerak-gerak~~ — tidak divalidasi Craig untuk boredom
-
-### Contoh JELAS Boredom:
-- Siswa menatap langit-langit, mata setengah tutup
-- Siswa menoleh ke jendela, ekspresi kosong
-- Siswa terlihat mengantuk, kepala nyaris ke bawah
-
-### Contoh yang BUKAN Boredom:
-- Siswa menunduk membaca/menulis → lebih ke Engagement
-- Siswa berkedip normal → bukan AU43 signifikan
-- Siswa fokus tapi wajah datar → bisa Engagement tanpa ekspresi berlebihan
+> ⚠️ Nunduk = **Engagement**, BUKAN Boredom. Hanya **samping & atas** yang Boredom.
 
 ---
 
 ## 2. ENGAGEMENT (Keterlibatan/Fokus)
 
-### Definisi (D'Mello & Graesser 2012)
-> **Engagement/flow** = *"state of interest that results from involvement in an activity"*
+**Definisi (D'Mello & Graesser 2012):** *"state of interest that results from involvement in an activity."*
 
-### Definisi level (Whitehill 2014)
-> *"3: Engaged in task – student requires no admonition to 'stay on task'."*
-> *"4: Very engaged – student could be 'commended' for his/her level of engagement in task."*
+| Ciri | Yang dilihat | Kekuatan | Catatan |
+|---|---|---|---|
+| **Menatap layar + mata terbuka** | Kepala tegak menghadap layar, mata terbuka normal, "ada" secara kognitif | KUAT | Whitehill: manusia κ=0.96 menilai engaged dari wajah; info ada di "static pixels" |
+| **Nunduk ke materi** | Menunduk baca soal / catat / keyboard | SEDANG | Sümer 2021: head-down = on-task, **bukan** boredom |
 
-### Ciri Utama — HARUS ada:
+**Penting:**
+- Engagement **tidak perlu** ekspresi dramatis — wajah datar tapi menatap layar = valid (Whitehill).
+- **Boleh co-occur dengan Confusion** (*productive confusion*).
 
-**A. Menatap ke arah layar/kamera**
-> *"1: Not engaged at all – e.g., looking away from computer and obviously not thinking about task."*
-> — Whitehill et al. (2014)
-
-> *"looking away from the computer"* = sinyal TIDAK engaged.
-> — Whitehill et al. (2014)
-
-- Kepala relatif tegak menghadap layar
-- Pandangan ke arah kamera (proxy layar)
-- **Minimal tidak terlihat jelas menoleh jauh**
-
-**B. Mata terbuka (tidak droopy)**
-> *"2: Nominally engaged – e.g., eyes barely open, clearly not 'into' the task."*
-> — Whitehill et al. (2014)
-
-- Mata terbuka normal — tidak setengah tertutup
-- Terlihat "ada" secara kognitif, bukan melamun
-
-### Catatan penting:
-- Engagement **tidak perlu** ekspresi dramatis — wajah datar tapi menatap layar = valid Engagement
-- Whitehill (2014): *"most of the information about engagement is contained in the static pixels, not the motion"* → penampilan umum wajah, bukan gerakan spesifik
-- Engagement **bisa co-occur** dengan Confusion (*productive confusion*)
-
-**Kasus khusus: Lihat ke bawah ≠ Boredom**
-> *"Students can still focus on content when looking around or taking notes."*
-> *"head-down (i.e., taking notes or reading learning material)"*
-> — Sümer et al. (2021)
-
-Lihat ke bawah (menunduk ke keyboard/catatan) **tidak** berarti Boredom — bisa sangat Engaged sedang baca soal atau menulis. Yang menjadi sinyal Boredom adalah lihat ke **samping** atau **atas** (melamun/zoning out), bukan menunduk ke materi. Sistem sudah menangani ini: komponen vertikal ke bawah tidak masuk ke perhitungan gaze Boredom.
-
-### Contoh JELAS Engagement:
-- Siswa menatap lurus ke layar, mata terbuka penuh
-- Siswa sedikit menunduk membaca, kepala tidak menoleh
-- Siswa dengan ekspresi serius memperhatikan
-
-### Contoh yang BUKAN Engagement:
-- Kepala menoleh jauh ke samping
-- Mata sangat menutup/droopy
-- Jelas tidak memperhatikan materi
+**BUKAN Engagement:** kepala menoleh jauh ke samping; mata sangat droopy/menutup; jelas tidak memperhatikan.
 
 ---
 
 ## 3. CONFUSION (Kebingungan)
 
-### Definisi (D'Mello & Graesser 2012)
-> *"Learners experience cognitive disequilibrium when they are confronted with a contradiction, anomaly, system breakdown, or error, and when they are uncertain about what to do next. Confusion is a key signature of the cognitive disequilibrium that occurs when an impasse is detected."*
+**Definisi (D'Mello & Graesser 2012):** *"cognitive disequilibrium... uncertain about what to do next."* — aktif memproses sesuatu yang bertentangan/tidak dipahami (bukan sekadar "tidak tahu").
 
-Bukan sekadar "tidak tahu" — confusion adalah kondisi aktif mencoba **memproses sesuatu yang bertentangan atau tidak dipahami**.
+| Ciri | Yang dilihat | Kekuatan | Catatan |
+|---|---|---|---|
+| **Alis turun/mengerut (AU4)** | Alis ditarik ke bawah & tengah, galur vertikal di dahi | **KUAT** | Craig 95% + Grafsgaard 2011 (HMM) + ConfusionBench 2026 "most reliable" — **3 studi**, sinyal terkuat sistem |
+| **Kelopak menyipit (AU7)** | Kelopak menegang/menyipit, bukan menutup | **KUAT** | Craig 78%; AU7→AU4 |
+| **AU4 + AU7 bersama** | Alis turun **dan** kelopak menyipit = "mengernyit fokus" | **KUAT** | Craig 73%; ConfusionBench: kombinasi paling reliable |
+| **Mulut sedikit terbuka (AU25+26)** | Bibir/rahang sedikit turun, "mikir keras" jawab soal sulit | SEDANG | Namba 2024 "komponen paling signifikan" thinking face — **1 studi, ambigu** (mangap banyak sebab) |
+| **1 tangan/telunjuk di dagu** | Telunjuk menyentuh/mengetuk/mengusap dagu-pipi, kontak ringan | LEMAH (auto) → SEDANG (manual) | Mahmoud 2011 (N=15 kecil) + Behera 2020 (chain sulit→bingung) |
 
-### Ciri Utama dari FACS — setidaknya satu:
+**BUKAN Confusion:**
+- Alis **naik** → Frustration/terkejut (AU1+AU2, bukan AU4)
+- Mata **menutup penuh** → Boredom (AU43, bukan AU7)
+- Mulut mangap **tanpa** alis berkerut → cek konteks dulu (bisa menguap/ngomong)
+- Wajah datar menatap layar → bisa Engagement saja
 
-**A. Alis turun/mengerut (AU4 Brow Lowerer) — 95% coverage**
-> *"Confusion displayed associations with AUs 4, 7, and 12... Action units 4 and 7 occur simultaneously."*
-> — Craig et al. (2008), p. 784
-
-- Alis ditarik ke **bawah dan tengah** — terlihat mengerut/berkerut
-- Biasanya muncul di antara kedua alis (galur vertikal di tengah dahi)
-- **Bukan** alis naik (itu Frustration/terkejut)
-- Coverage 95%: muncul di hampir semua episode confusion yang dikode
-
-**B. Kelopak mata sedikit menyipit (AU7 Lid Tightener) — 78% coverage**
-> *"the presence of AU7 (tightened lids) tends to trigger AU4 (lowered brow)."*
-> — Craig et al. (2008), p. 784
-
-- Kelopak **sedikit menegang/menyipit** — bukan menutup, tapi terlihat lebih kecil dari normal
-- Sering muncul bersamaan dengan AU4
-- **Bukan** squinting karena cahaya terang
-- **Bukan** mata menutup karena mengantuk (itu AU43 → Boredom)
-
-**C. Kombinasi AU4+AU7 — 73% coverage**
-- Alis turun **DAN** kelopak menyipit bersamaan = sinyal confusion paling kuat
-- Ini ekspresi "mengernyit fokus mencoba memahami sesuatu"
-
-### Ciri Tambahan (cue KUAT — setara sinyal AU utama, tetap idealnya disertai sinyal lain):
-
-**D. Mulut sedikit terbuka (AU25+AU26)**
-> *"Component 2 indicated opening the mouth (AU25, AU26)... can be considered the most significant component"* saat menjawab pertanyaan sulit.
-> — Namba et al. (2024), Study 1 Discussion
-
-- Bibir terbuka sedikit atau rahang sedikit turun
-- Terlihat saat orang **berpikir keras** menjawab pertanyaan sulit
-- Cue **KUAT** (Namba 2024: "komponen paling signifikan" thinking face, `mouth_open_conf_w=0.78`) — tapi pertimbangkan konteks (mulut mangap bisa juga sebab lain)
-
-**E. Tangan di wajah — POSISI yang menandakan Confusion**
-> *"There is a prominent increase in hand-over-face gestures when the difficulty level of the given exercise increases."* (sulit 30.46% vs mudah 23.79%)
-> — Behera et al. (2020)
-
-> *"index finger touching face appeared in 12 thinking segments and 2 unsure segments out of a total of 15 segments in this category... actions like stroking, tapping and touching facial regions - especially with index finger - are all associated with cognitive mental states, namely thinking and unsure."*
-> — Mahmoud & Robinson (2011)
-
-> *"Hand-to-face actions such as touching the chin, pressing the forehead, and covering the mouth may indicate thinking, frustration, or hesitation."*
-> — Dong et al. (2026, ConfusionBench)
-
-**Posisi tangan yang condong ke Confusion (pose "berpikir", kontak RINGAN, biasanya 1 tangan):**
-- **Jari telunjuk** menyentuh / mengetuk / mengusap wajah (terutama dagu/pipi) → "thinking/unsure" (Mahmoud — 12–14/15 segmen kognitif)
-- **Menyangga atau menyentuh dagu** sambil menatap soal → "touching the chin = thinking" (ConfusionBench)
-- **Menutupi mulut ringan** dengan jari/tangan → "covering the mouth = hesitation" (ragu, masih memproses)
-
-> ⚠️ **Catatan untuk anotator:** detektor otomatis app ini hanya **menghitung jumlah tangan** dekat wajah — ia TIDAK bisa membedakan posisi. **Kamu (manusia) bisa.** Maka penilaian posisi ini adalah nilai tambah anotator manual di atas skor AI.
-
-- Tetap hanya **menguatkan**, tidak cukup sendiri (harus ada sinyal wajah/gaze pendukung).
-
-### Catatan penting:
-- Confusion **bisa co-occur dengan Engagement** (*productive confusion*) — D'Mello 2012 membuktikan transisi Confusion→Engagement signifikan. Siswa yang bingung tapi masih engaged = normal!
-- Confusion **tidak berkaitan dengan Boredom** — D'Mello: *"Confusion → Boredom transition occurred at chance levels"*
-
-### Contoh JELAS Confusion:
-- Alis berkerut kuat, mata sedikit menyipit, menatap layar → alis turun + AU7
-- Ekspresi "mikir keras", dahi berkerut, mulut sedikit terbuka → AU4+AU25
-- Tangan di dagu sambil menatap soal → hand + gaze
-
-### Contoh yang BUKAN Confusion:
-- Alis naik (terkejut/frustasi — bukan AU4)
-- Mata menutup penuh (boredom — AU43, bukan AU7)
-- Ekspresi datar menatap layar (bisa Engagement saja)
+> **Inti:** jangkar Confusion = **alis berkerut (AU4)**. Mulut terbuka & tangan hanya **menambah**, tidak cukup sendiri.
 
 ---
 
 ## 4. FRUSTRATION (Frustrasi)
 
-### Definisi (Craig 2008)
-> *"Frustration — making vain or ineffectual efforts, however vigorous; a deep chronic sense or state of insecurity and dissatisfaction arising from unresolved problems or unfulfilled needs."*
+**Definisi (Craig 2008):** *"making vain or ineffectual efforts... dissatisfaction arising from unresolved problems."* Muncul saat siswa **stuck, tidak bisa maju** (beda dari Confusion yang masih mencoba).
 
-### Konteks kemunculan (D'Mello & Graesser 2012)
-> *"Hopeless confusion occurs when the impasse cannot be resolved, the student gets stuck, there is no available plan, and important goals are blocked. The model hypothesizes that learners will experience frustration in these situations."*
+| Ciri | Yang dilihat | Kekuatan | Catatan |
+|---|---|---|---|
+| **Alis naik penuh (AU1+AU2)** | Alis dalam **dan** luar terangkat, wajah distressed | KUAT* | Craig 100% coverage — **tapi 1 studi**; Grafsgaard malah soroti AU4 turun |
+| **Alis turun sekunder (AU4)** | Bisa muncul bareng alis-naik → "mengernyit marah" | SEDANG | Grafsgaard 2013 (auto, konteks belajar) |
+| **2 tangan menekan dahi / menutup wajah** | Telapak menekan dahi/pelipis, facepalm, dua tangan | SEDANG | Grafsgaard 2013b (2-tangan = self-efficacy rendah, "significant") |
+| **Lesung pipit (AU14)** | Sudut bibir tertarik, lesung kecil | LEMAH | Halus, sulit dilihat manual |
 
-Frustrasi muncul saat siswa **stuck dan tidak bisa maju** — berbeda dari confusion (masih mencoba memproses). Frustrasi = sudah menyerah mencari jalan / sangat tidak puas.
+**BUKAN Frustration:**
+- Alis **turun/mengerut** saja → itu Confusion (AU4, bukan AU1/AU2)
+- Senyum → bukan frustration
+- Wajah datar → tidak cukup sinyal
 
-### Ciri Utama — KEDUANYA harus aktif untuk sinyal kuat:
-
-**A. Alis bagian dalam naik (AU1 Inner Brow Raiser) — 100% coverage**
-> *"AUs 1, 2, and 14 were primarily associated with frustration, but a strong association was found for a link between AUs 1 and 2 occurring together."*
-> — Craig et al. (2008), p. 784
-
-- Bagian **dalam** alis (dekat tengah hidung) terangkat ke atas
-- Membentuk sudut V terbalik di tengah dahi
-- **Bukan** keseluruhan alis naik rata (itu terkejut/AU2 saja)
-
-**B. Alis bagian luar naik (AU2 Outer Brow Raiser) — 100% coverage**
-- Keseluruhan alis terangkat, termasuk bagian luar
-- Craig: *"these AUs mutually trigger each other"* — satu muncul, yang lain ikut
-- **Coverage 100%**: muncul di SEMUA episode frustration yang dikode Craig
-
-**→ Ekspresi gabungan AU1+AU2: kedua bagian alis terangkat = "alis naik penuh"**
-
-### Ciri Tambahan (sinyal sekunder, Grafsgaard 2013):
-
-**C. Alis turun sekunder (AU4 Brow Lowerer)**
-> *"The present work investigates whether an automated system can identify facial features related to a learning-centric measure of student frustration."* — AU4 berkorelasi positif.
-> — Grafsgaard et al. (2013)
-
-- Bisa muncul bersamaan dengan AU1+AU2 → ekspresi "mengernyit marah/frustrasi"
-
-**D. Lesung pipit (AU14 Dimpler)**
-- Sudut bibir tertarik membentuk lesung pipit kecil
-- Sering muncul saat menahan emosi negatif
-- Lebih halus, sulit dilihat manual
-
-**E. Tangan di wajah — POSISI yang menandakan Frustration**
-> *"two-hands-to-face gestures occurred significantly more frequently among students with low self-efficacy."*
-> — Grafsgaard et al. (2013b)
-
-> *"Hand-to-face actions such as touching the chin, pressing the forehead, and covering the mouth may indicate thinking, frustration, or hesitation."*
-> — Dong et al. (2026, ConfusionBench)
-
-**Posisi tangan yang condong ke Frustration (pose "kewalahan/menyerah", kontak BERAT/menekan):**
-- **Menekan dahi** (telapak/jari menekan dahi atau pelipis) → "pressing the forehead = frustration" (ConfusionBench)
-- **Kedua tangan** ke wajah / **menutupi wajah** (facepalm, menutup mata, menopang kepala dengan dua tangan) → low self-efficacy ≈ frustrasi (Grafsgaard 2013b)
-- Bedanya dengan Confusion: lebih **menekan/menutup** dan cenderung **2 tangan**, bukan sentuhan ringan 1 jari.
-
-> ⚠️ **Catatan untuk anotator:** sama seperti Confusion, detektor otomatis hanya menghitung jumlah tangan (2-tangan → cue Frustration pendukung). Posisi "menekan dahi / menutup wajah" hanya bisa kamu nilai secara manual.
-
-- Tetap **menguatkan**, tidak cukup sendiri (idealnya disertai alis naik AU1+AU2 atau ekspresi distressed).
-
-### Perbedaan Confusion vs Frustration — penting untuk tidak salah:
+### Confusion vs Frustration — pembeda kunci
 
 | Aspek | Confusion | Frustration |
 |---|---|---|
-| Alis | **Turun** (AU4, mengerut) | **Naik** (AU1+AU2, terangkat) |
-| Ekspresi | Mengernyit fokus, berpikir | Alis naik, tampak distressed |
+| **Alis** | **Turun** (AU4, mengerut) | **Naik** (AU1+AU2, terangkat) |
 | Kondisi | Masih mencoba memproses | Stuck, tidak bisa maju |
-| **Posisi tangan** | **Dagu / telunjuk**, kontak ringan, biasanya 1 tangan ("mikir") | **Dahi ditekan / menutup wajah**, kontak berat, cenderung 2 tangan ("kewalahan") |
-| Gaze | Ke layar (masih mencoba) | Bisa ke mana saja |
-| D'Mello | Cognitive disequilibrium | Goals blocked, hopeless |
-
-### Contoh JELAS Frustration:
-- Kedua alis terangkat penuh, wajah tampak distressed → AU1+AU2
-- Alis naik sambil menghela napas / gerak kepala negatif
-- Ekspresi "mau menyerah" — alis naik, mungkin sedikit gelengan kepala
-
-### Contoh yang BUKAN Frustration:
-- Alis turun/mengerut (itu Confusion — AU4 bukan AU1/AU2)
-- Senyum → bukan frustration
-- Ekspresi datar → tidak cukup sinyal
+| **Tangan** | **Dagu / telunjuk**, ringan, biasanya 1 tangan | **Dahi ditekan / wajah ditutup**, berat, cenderung 2 tangan |
+| Gaze | Cenderung ke layar | Bisa ke mana saja |
 
 ---
 
-## Tabel Ringkasan Cepat
+## 5. Posisi Tangan — Tabel Khusus (jawaban "kalau tangan gimana")
 
-| Ciri yang dilihat | Emosi yang aktif | Paper |
-|---|---|---|
-| Mata berat/setengah menutup | **Boredom** | Craig 2008 (AU43) |
-| Menatap layar + mata terbuka | **Engagement** | Whitehill 2014 |
-| Jelas tidak lihat layar (menoleh jauh) | **Boredom** / tidak Engagement | GazeTutor, Whitehill |
-| Alis **turun/mengerut** + kelopak sedikit menyipit | **Confusion** | Craig 2008 (AU4+AU7) |
-| Mulut sedikit terbuka sambil menatap soal | **Confusion** (tambah) | Namba 2024 (AU25+AU26) |
-| Telunjuk/tangan di **dagu** (ringan, "mikir") saat materi sulit | **Confusion** (tambah) | Behera 2020, Mahmoud 2011, ConfusionBench 2026 |
-| Alis **naik** (inner + outer) | **Frustration** | Craig 2008 (AU1+AU2) |
-| **Menekan dahi** / **2 tangan** menutup wajah | **Frustration** (tambah) | ConfusionBench 2026, Grafsgaard 2013b |
-| Alis naik + turun bersamaan ("konfliktif") | Confusion **DAN** Frustration | Craig+Grafsgaard |
-| Bingung tapi masih menatap layar | Confusion + Engagement | D'Mello 2012 |
+Tangan **tidak pernah** jadi alasan tunggal. Gunakan hanya untuk **menguatkan** setelah ada sinyal wajah. Yang membedakan Confusion vs Frustration adalah **posisi + jumlah tangan** — dan itu hanya bisa **kamu** nilai (detektor otomatis buta posisi).
 
----
+| Posisi tangan | Condong ke | Kekuatan | Paper |
+|---|---|---|---|
+| Telunjuk menyentuh/mengetuk **dagu-pipi**, kontak ringan, 1 tangan | **Confusion** ("mikir/unsure") | LEMAH→SEDANG | Mahmoud 2011 (12 thinking + 2 unsure / 15) |
+| Menyangga/menyentuh **dagu** sambil menatap soal | **Confusion** | SEDANG (manual) | ConfusionBench 2026 "touching chin = thinking" |
+| Menutupi mulut ringan dengan jari | **Confusion** (ragu) | LEMAH | ConfusionBench "covering mouth = hesitation" |
+| **Menekan dahi** (telapak/jari menekan dahi/pelipis) | **Frustration** | SEDANG | ConfusionBench "pressing forehead = frustration" |
+| **2 tangan** ke wajah / menutup wajah / menopang kepala | **Frustration** | SEDANG | Grafsgaard 2013b (self-efficacy rendah, "significant") |
+| Tangan menyangga kepala **pasif, santai** | **Bukan sinyal kognitif** | — | Mahmoud 2011: gestur pasif = *relaxed mood* |
 
-## Co-occurrence & Suppression — Emosi Mana yang Bisa Bersamaan?
-
-Ini patokan utama yang harus diingat sebelum menilai. Setiap baris punya **dasar paper** yang menjelaskan kenapa aturannya begitu.
-
-### Tabel Patokan Utama
-
-| Kombinasi | Boleh bersamaan? | Patokan untuk penilai | Basis paper |
-|---|:---:|---|---|
-| **Boredom + Engagement** | ❌ Hampir tidak mungkin | Kalau salah satu jelas tinggi, yang lain harusnya rendah. Kalau keduanya terlihat, nilai yang paling dominan = 1, yang lain = 0. | DAiSEE: *"When engagement is low, boredom is generally high and vice-versa"* — Gupta 2016 |
-| **Confusion + Engagement** | ✅ Bisa & normal | Siswa yang bingung tapi masih menatap layar/mencoba = **keduanya aktif**. Ini kondisi belajar yang produktif. JANGAN suppress salah satu. | D'Mello 2012: *"productive confusion hypothesis"* — Confusion→Engagement transisi signifikan |
-| **Confusion + Frustration** | ✅ Bisa | Confusion yang tidak terselesaikan → Frustration. Keduanya bisa terlihat bersamaan di frame transisi. | D'Mello 2012: Confusion→Frustration signifikan (*"hopeless confusion"*) |
-| **Frustration + Boredom** | ⚠️ Jarang, tapi bisa | Frustrasi berkepanjangan bisa mengarah ke bosan. Kalau keduanya terlihat, biasanya frustrasi lebih jelas. | D'Mello 2012: Frustration→Boredom marginal (*"persistent frustration → disengagement"*) |
-| **Frustration + Engagement** | ❓ Tidak ada aturan jelas | Bisa terjadi (masih mencoba tapi frustrasi). Tidak ada paper yang melarang atau mendukung eksplisit. Nilai apa yang terlihat. | D'Mello 2012: Engagement→Frustration "at chance" — tidak ada hubungan kuat |
-| **Confusion + Boredom** | ❌ Tidak berkaitan | Kebingungan dan kebosanan tidak saling berhubungan. Jangan assume salah satu menyebabkan yang lain. Nilai berdasarkan ciri masing-masing secara independen. | D'Mello 2012: Confusion→Boredom *"occurred at chance levels"* — tidak ada hubungan |
+> ⚠️ **Jebakan:** banyak siswa menyangga kepala karena lelah/santai, bukan berpikir. Kalau tidak ada alis berkerut (Confusion) atau alis naik/distressed (Frustration), **jangan** melabeli dari tangan saja.
 
 ---
 
-### Tabel Cepat: Apa yang Suppress Apa di Sistem?
+## 6. Co-occurrence — Emosi Mana Boleh Bersamaan
 
-Ini yang dilakukan sistem secara otomatis (kode), bukan keputusan penilai manual:
+| Kombinasi | Boleh bersamaan? | Kekuatan aturan | Basis |
+|---|---|---|---|
+| **Boredom + Engagement** | ❌ Hampir tidak | SEDANG | DAiSEE: "engagement low → boredom high & vice-versa" (observasi, ada pengecualian) |
+| **Confusion + Engagement** | ✅ Normal | KUAT | D'Mello: *productive confusion*, transisi signifikan |
+| **Confusion + Frustration** | ✅ Bisa | KUAT | D'Mello (*hopeless confusion*) + Richey "confrustion" |
+| **Frustration + Boredom** | ⚠️ Jarang | SEDANG | D'Mello: persistent frustration → disengagement (marginal) |
+| **Frustration + Engagement** | ❓ Tidak ada aturan | LEMAH | D'Mello: "at chance" — nilai apa yang terlihat |
+| **Confusion + Boredom** | ❌ Tidak berkaitan | KUAT | D'Mello: "at chance levels" — nilai independen |
+
+### Yang di-suppress otomatis oleh SISTEM (bukan keputusanmu)
 
 | Mekanisme | Cara kerja | Basis |
 |---|---|---|
-| **Boredom suppress Engagement** | Kalau Boredom tinggi → skor Engagement dikurangi | DAiSEE "complementary" + D'Mello near-mutually exclusive |
-| **Smile gate Confusion** | Kalau senyum sangat kuat (AU12 tinggi) → skor Confusion dibatasi (bukan di-nol-kan, ada floor 30%) | Craig 2008: AU12 non-diskriminatif (muncul di Confusion DAN Frustration) |
-| **Gaze gate Engagement** | Kalau lihat jauh dari layar → Engagement berkurang | Whitehill 2014: "looking away from computer" = not engaged |
-| **Lihat ke bawah** | TIDAK mengurangi Engagement | Sümer 2021: "head-down = taking notes or reading" — on-task |
-| Lainnya (Conf/Frus suppress, dll.) | **TIDAK ADA** — sengaja dihapus | D'Mello: Conf↔Bore "at chance", Conf↔Eng co-occur → suppress tidak berdasar |
+| Boredom suppress Engagement | Boredom tinggi → Engagement dikurangi (kecil, 0.40) | DAiSEE complementary |
+| Smile gate Confusion | Senyum sangat kuat → Confusion dibatasi (floor 30%, tidak di-nol) | Craig: AU12 muncul di Conf & Frus (non-diskriminatif) |
+| Gaze gate Engagement | Lihat jauh dari layar → Engagement berkurang | Whitehill "looking away" |
+| Lihat ke bawah | TIDAK mengurangi Engagement | Sümer "head-down = on-task" |
 
 ---
 
-### Contoh Aplikasi Patokan
-
-**Contoh 1:** Siswa mengerutkan alis (AU4), menatap soal, kepala condong → **Confusion=1, Engagement=1** (productive confusion, bukan salah satu)
-
-**Contoh 2:** Siswa melamun ke samping, mata berat → **Boredom=1, Engagement=0** (bukan keduanya 1)
-
-**Contoh 3:** Alis naik (AU1+AU2), tampak distressed tapi masih menatap layar → **Frustration=1, Engagement=1** (tidak ada aturan melarang, nilai apa yang terlihat)
-
-**Contoh 4:** Siswa jelas bosan (lihat ke atas/samping) tapi juga ada sedikit alis naik → **Boredom=1, Frustration bisa 1** (Frustration→Boredom diakui D'Mello)
-
----
-
-## Alur Keputusan untuk Penilai
+## 7. Alur Keputusan Cepat
 
 ```
 Lihat frame →
-
-1. Mata berat / menutup?
-   YA → cek Boredom
-   
-2. Lihat ke layar (kepala relatif tegak)?
-   YA → cek Engagement
-   TIDAK (menoleh jelas) → kurangi Engagement, tambah kemungkinan Boredom
-   
+1. Mata berat/menutup?            YA → cek Boredom (SEDANG)
+2. Menatap layar, kepala tegak?   YA → cek Engagement (KUAT)
+                                  TIDAK (noleh samping/atas) → Boredom
 3. Alis bergerak?
-   TURUN/mengerut → cek Confusion
-   NAIK (terangkat) → cek Frustration
-   
-4. Ada tanda lain?
-   Mulut sedikit terbuka → tambah Confusion
-   Tangan di wajah → tambah Confusion atau Frustration
+     TURUN/mengerut → Confusion (KUAT)
+     NAIK penuh + distressed → Frustration (KUAT*)
+4. Tanda tambahan (jangan jadi alasan tunggal):
+     Mulut sedikit terbuka → +Confusion (SEDANG)
+     1 tangan dagu → +Confusion (LEMAH)   |   2 tangan dahi → +Frustration (SEDANG)
 ```
 
 ---
 
-## Limitasi yang Perlu Diketahui Penilai
+## 8. Limitasi yang Perlu Diingat
 
-Berdasarkan DESIGN_RATIONALE §15 dan §17:
+1. **Threshold = kalibrasi empiris** (mis. 0.45), bukan dari paper — bisa disesuaikan.
+2. **Gaze webcam** lebih kasar dari eye-tracker (Sümer 2021).
+3. **Variasi antar-orang** besar untuk frustrasi (Bosch 2023) → sistem pakai baseline netral per-orang.
+4. **Wajah datar** bisa tetap Engaged (Whitehill).
+5. **AU dari blendshape MediaPipe** = perkiraan FACS — bisa salah pada wajah miring/jauh/terhalang.
+6. **Tangan = sinyal terlemah** untuk deteksi otomatis (count-based, buta posisi) — andalkan penilaian manualmu.
 
-1. **Threshold adalah kalibrasi empiris** — batas 0.45 bukan dari paper, bisa disesuaikan
-2. **Gaze dari webcam** lebih kasar dari eye-tracker (Sümer 2021: metode webcam sebagai pendekatan)
-3. **Variasi individual** — Bosch (2023) menemukan ekspresi frustrasi sangat bervariasi antar individu
-4. **Wajah datar** — siswa yang terlibat bisa terlihat flat/datar (Whitehill: engagement tidak selalu ekspresif)
-5. **AU dari MediaPipe blendshape** = perkiraan FACS (ARKit↔FACS), bisa salah pada wajah dari sisi, terlalu jauh, atau terhalang sebagian
-6. **Confusion + Engagement bisa co-occur** — ini normal dan diharapkan (*productive confusion*)
+---
+
+## Catatan Verifikasi Verbatim
+
+Seluruh kutipan di panduan ini dan di `ACADEMIC_BASIS.md` telah **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`) memakai ekstraksi teks + pencocokan substring ternormalisasi. **Hasil: semua kutipan akurat.** Perbedaan kecil yang muncul saat pengecekan otomatis semuanya **artefak ekstraksi PDF** (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan sesuai konvensi, header halaman nyelip) — bukan kesalahan kutipan. Satu paper (Bartlett 1999) adalah PDF hasil pindai (tanpa lapisan teks) sehingga tidak bisa dicek otomatis; kutipannya kanonik dan dibiarkan apa adanya.

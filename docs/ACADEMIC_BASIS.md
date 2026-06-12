@@ -7,6 +7,31 @@ Dokumen ini menjabarkan **landasan akademis setiap keputusan metode** dalam apli
 
 > **Catatan kutipan:** Nomor referensi dalam tanda kurung siku seperti `[17]` dan penanda internal paper seperti `(Link 3)` dihilangkan mengikuti praktik standar. Semua kata dalam blok kutipan adalah verbatim dari sumber asli.
 
+> **✅ Status verifikasi (terakhir dicek):** Seluruh blok kutipan di dokumen ini **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`, ekstraksi `pdftotext` + pencocokan substring ternormalisasi). **Semua kutipan akurat.** Perbedaan yang muncul saat pengecekan otomatis seluruhnya artefak ekstraksi PDF (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan, header halaman nyelip) — bukan salah kutip. Pengecualian: **Bartlett 1999** adalah PDF hasil pindai (tanpa lapisan teks) → tidak terverifikasi otomatis; kutipannya kanonik, dibiarkan apa adanya.
+
+---
+
+## Ringkasan Kekuatan Bukti per Sinyal
+
+Tiap sinyal punya kekuatan bukti berbeda. **KUAT** = banyak studi / coverage tinggi / langsung; **SEDANG** = satu studi atau rantai tak-langsung tapi didukung; **LEMAH** = sampel kecil / rantai panjang / sulit dilihat / keterbatasan detektor.
+
+| Emosi | Sinyal | Kekuatan | Alasan singkat |
+|---|---|---|---|
+| Confusion | Alis turun **AU4** | **KUAT** | Craig 95% + Grafsgaard 2011 + ConfusionBench 2026 (3 studi independen) |
+| Confusion | Kelopak menyipit **AU7** / **AU4+AU7** | **KUAT** | Craig 78%/73%; ConfusionBench "most reliable combination" |
+| Confusion | Mulut terbuka **AU25+AU26** | SEDANG | Namba 2024 (1 studi, konteks *thinking face*, ambigu di praktik) |
+| Confusion | Tangan dagu/telunjuk (1 tangan) | LEMAH | Rantai Behera+D'Mello; Mahmoud N kecil; detektor buta posisi |
+| Engagement | Menatap layar + mata terbuka (holistik) | **KUAT** | Whitehill κ=0.96; info di "static pixels" |
+| Engagement | Nunduk = on-task | SEDANG | Sümer 2021 (satu studi kelas) |
+| Boredom | Mata berat/menutup **AU43** | SEDANG | Craig: satu-satunya AU signifikan, **tapi coverage 40%, 1 studi** |
+| Boredom | Gaze ke samping/atas | SEDANG | Konstruk 3 paper; **gaze webcam kasar** |
+| Frustration | Alis naik **AU1+AU2** | **KUAT\*** | Craig 100% — **\*tapi 1 studi**; Grafsgaard 2013 justru soroti AU4 turun |
+| Frustration | Alis turun sekunder **AU4** | SEDANG | Grafsgaard 2013 (auto/CERT, korelasi positif) |
+| Frustration | 2 tangan menekan dahi / tutup wajah | SEDANG | Grafsgaard 2013b (self-efficacy rendah, "significant") |
+| Frustration | Lesung pipit **AU14** | LEMAH | Halus, sulit dilihat; range MediaPipe sempit |
+
+Detail tiap penilaian ada di section masing-masing di bawah. Versi praktis (untuk anotasi) ada di `PANDUAN_ANOTASI_MANUAL.md`.
+
 ---
 
 ## Peta Rantai Argumen — baca ini dulu
