@@ -874,7 +874,7 @@ class VideoLabelerApp:
                 if self._lp_current_source != k:
                     lp.stop_loading("")          # user sudah pindah frame — jangan timpa
                     return
-                lp.set_driving_frames(drv_frames, d["emo"])
+                lp.set_driving_frames(drv_frames, d["emo"], path=d["driving"])
                 lp.set_result_frames(res_frames, d["emo"])
                 lp.stop_loading(
                     f"Hasil sebelumnya ditampilkan ({d['emo']}, {len(res_frames)} frame).",
@@ -1299,7 +1299,7 @@ class VideoLabelerApp:
                 drv_frames = _decode_video(dp)             # preview driving
                 def on_done(rf=res_frames, df=drv_frames, emo2=e, key=src, ov=out_vid, dpp=dp):
                     self._lp_cache_result(key, emo2, ov, dpp)   # simpan PATH saja (hemat RAM)
-                    lp.set_driving_frames(df, emo2)
+                    lp.set_driving_frames(df, emo2, path=dpp)
                     lp.set_result_frames(rf, emo2)
                     lp.stop_loading(
                         f"Selesai · {emo2} · {len(rf)} frame. Tandai frame lalu Simpan.", "#10b981")

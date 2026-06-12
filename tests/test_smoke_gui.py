@@ -46,6 +46,24 @@ def main():
         assert len(a._lp_extract_indices([0.0, 0.5, 1.0], 4, 80)) == 3
         assert a._lp_extract_indices([0.0, 0.5, 1.0], 4, 80) == [0, 40, 79]
 
+        # Tanda PER VIDEO DRIVING: ganti driving -> tanda video itu dipulihkan persis
+        lp.driving_aktif = "/d/Confusion1.mp4"
+        lp.tanda_per_driving["/d/Confusion1.mp4"] = [2, 8]
+        lp.set_result_frames(vid_b, "Confusion")
+        assert lp.get_picked_indices() == [2, 8], lp.get_picked_indices()
+        lp.driving_aktif = ""; lp.tanda_per_driving.clear()
+        # Scrub driving SEBELUM proses: tanpa hasil, slider pakai panjang driving
+        lp.frame_hasil = []
+        lp.set_driving_frames(vid_a, "Confusion", path="/d/Confusion1.mp4")
+        assert lp._total_aktif() == 10 and lp.driving_aktif.endswith("Confusion1.mp4")
+        lp._tandai_frame_sekarang()
+        assert lp.tanda_per_driving["/d/Confusion1.mp4"], "tanda harus tersimpan per driving"
+        lp.driving_aktif = ""; lp.tanda_per_driving.clear(); lp._bersihkan_tanda()
+        # Dropdown tanpa 'Semua': maks 1 video per emosi; '(tidak ada)' -> kosong
+        assert all(len(lp.get_driving_list(e)) <= 1 for e in mod.LABELS)
+        lp.pilihan_driving["Confusion"].set("(tidak ada)")
+        assert lp.get_driving_list("Confusion") == []
+
         # Status & loading
         lp.update_progress("uji"); lp.start_loading("uji loading"); lp.stop_loading("selesai")
         lp.clear_source("uji"); lp.set_source_label("abcd1234", 0); lp.reset()

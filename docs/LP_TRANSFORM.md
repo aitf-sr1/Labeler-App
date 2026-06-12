@@ -60,7 +60,10 @@ refrensi/
   Engagement1.mp4
 ```
 
-Klik **Pindai** untuk mendeteksi. Per emosi pilih **Semua** atau **satu** video via dropdown.
+Klik **Pindai** untuk mendeteksi. Per emosi pilih **satu** video via dropdown (TIDAK ada opsi
+"Semua" — tiap video referensi beda pose, jadi wajib dipreview dulu). Begitu pilihan dropdown
+diganti: **preview DRIVING langsung dimuat**, slider bisa dipakai men-scrub pose **sebelum**
+diproses, dan **tanda frame untuk video itu dipulihkan otomatis**.
 Folder default dari `LP_DRIVING_DIR` (default `4-Create/refrensi`).
 
 ---
@@ -94,7 +97,12 @@ Geser slider video hasil, lalu **＋ Tandai Frame** (pilih frame tertentu, mis. 
 **Tandai Merata** (N dari "Jumlah target"). **Simpan Frame Tertanda** menyimpan ke dataset.
 Frame index yang ditandai juga dipakai saat **Batch Semua** dan **Proses Wajah Terpilih**.
 
-**Kunci posisi proporsional** (checkbox, default aktif): kalau **video driving diganti** lalu
+**Tanda frame disimpan PER VIDEO DRIVING**: tiap video punya simpanan "frame ke berapa"-nya
+sendiri — ganti video di dropdown, tanda video itu kembali; ganti lagi, tanda video lain tak
+tercampur. Tanda bisa dibuat **sebelum diproses** (scrub preview driving) dan dipakai persis
+saat hasil keluar (hasil ~1:1 dengan driving).
+
+**Kunci posisi proporsional** (checkbox, fallback): kalau video belum punya tanda tersimpan lalu
 diproses ulang, frame yang sudah ditandai **otomatis dipetakan ulang** ke posisi proporsional
 di video baru — **jumlah frame tetap sama, hanya letaknya yang menyesuaikan** panjang/timing
 driving baru. Contoh: tandai 2 frame di driving 10-frame (posisi ~22% & ~89%) → ganti ke driving

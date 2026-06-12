@@ -143,6 +143,10 @@ class LPPanel:
         # driving lain (jumlah sama, posisi proporsional). var_kunci_posisi dibuat di build().
         self.fraksi_terpilih = []
         self.var_kunci_posisi = None
+        # Tanda frame DISIMPAN PER VIDEO DRIVING (tiap referensi beda pose/timing):
+        # ganti video di dropdown → tanda untuk video itu dipulihkan otomatis.
+        self.tanda_per_driving = {}    # {path_driving: [index, ...]}
+        self.driving_aktif     = ""    # path driving yang sedang dipreview/dipakai
 
         # Gambar BGR yang sedang tampil di tiap kolom pratinjau (untuk tombol Unduh)
         self.bgr_tampil = [None, None, None]   # 0=sumber, 1=driving, 2=hasil
@@ -237,7 +241,7 @@ class LPPanel:
         self.var_kunci_posisi   = tk.BooleanVar(value=True)  # pertahankan posisi proporsional
         self.var_filter_tinjau  = tk.StringVar(value="Semua")
         for emosi in LABELS:
-            self.pilihan_driving[emosi] = tk.StringVar(value="Semua")
+            self.pilihan_driving[emosi] = tk.StringVar(value="(tidak ada)")
 
         area = ctk.CTkScrollableFrame(self.parent, fg_color=("#f3f4f6", "#161622"),
                                       corner_radius=0)
@@ -308,16 +312,20 @@ class LPPanel:
                       font=("Poppins", 9, "bold"), fg_color="#3b82f6", hover_color="#2563eb",
                       command=self._pindai_folder_driving).pack(side="left")
 
+        # Tanpa opsi "Semua": tiap video referensi beda pose, jadi WAJIB dipilih dan
+        # dipreview satu per satu. Ganti pilihan → preview DRIVING langsung dimuat +
+        # tanda frame untuk video itu dipulihkan.
         for emosi in LABELS:
             r = ctk.CTkFrame(induk, fg_color="transparent")
             r.pack(fill="x", padx=14, pady=1)
             ctk.CTkLabel(r, text=emosi[:4], font=("Poppins", 9, "bold"),
                          text_color=LABEL_COLORS[emosi], width=44, anchor="w").pack(side="left")
             menu = ctk.CTkOptionMenu(
-                r, variable=self.pilihan_driving[emosi], values=["Semua"],
+                r, variable=self.pilihan_driving[emosi], values=["(tidak ada)"],
                 font=("Poppins", 9), height=26, width=300, corner_radius=6,
                 fg_color=("#e5e7eb", "#23233a"), button_color=LABEL_COLORS[emosi],
-                button_hover_color="#d97706")
+                button_hover_color="#d97706",
+                command=lambda _v, e=emosi: self._saat_driving_berganti(e))
             menu.pack(side="left", padx=(4, 0))
             self.menu_driving[emosi] = menu
 
@@ -704,15 +712,22 @@ class LPPanel:
             self.label_pratinjau[1].configure(
                 text=f"{self.emosi_driving}  ·  frame {idr+1}/{len(self.frame_driving)}")
 
+    def _total_aktif(self) -> int:
+        """Jumlah frame yang bisa di-scrub/ditandai: video HASIL bila ada,
+        kalau belum diproses pakai video DRIVING (pratinjau pose sebelum proses)."""
+        return len(self.frame_hasil) or len(self.frame_driving)
+
     def _geser_slider(self, nilai):
-        """Saat slider digeser: tampilkan frame mentah (instan), viz dihitung belakangan."""
-        if not self.frame_hasil:
+        """Saat slider digeser: tampilkan frame mentah (instan), viz dihitung belakangan.
+        Bekerja juga SEBELUM proses (scrub video driving untuk melihat pose tiap frame)."""
+        total = self._total_aktif()
+        if not total:
             return
         index = int(float(nilai))
         self.index_hasil = index
-        total = len(self.frame_hasil)
         tanda = "  ●ditandai" if index in self.frame_terpilih else ""
-        self.label_info_hasil.configure(text=f"Frame {index+1} / {total}  ·  {self.emosi_hasil}{tanda}")
+        mode = self.emosi_hasil if self.frame_hasil else f"pratinjau driving {self.emosi_driving}"
+        self.label_info_hasil.configure(text=f"Frame {index+1} / {total}  ·  {mode}{tanda}")
         self._render_index(index)               # gambar mentah dulu (tanpa lag)
         self._jadwalkan_viz(index)              # viz menyusul bila saklar aktif
 
@@ -746,31 +761,40 @@ class LPPanel:
 
     def _simpan_fraksi(self):
         """Rekam posisi tertanda sebagai fraksi 0-1 (template lintas-driving)."""
-        total = len(self.frame_hasil)
+        total = self._total_aktif()
         if total > 1 and self.frame_terpilih:
             self.fraksi_terpilih = [i / (total - 1) for i in sorted(self.frame_terpilih)]
         elif not self.frame_terpilih:
             self.fraksi_terpilih = []
 
+    def _simpan_tanda_driving(self):
+        """Simpan tanda frame untuk video driving yang sedang aktif (per-video,
+        karena tiap referensi beda pose — ganti video, tanda ikut video itu)."""
+        if self.driving_aktif:
+            self.tanda_per_driving[self.driving_aktif] = sorted(self.frame_terpilih)
+
     def _tandai_frame_sekarang(self):
-        if not self.frame_hasil:
+        if not self._total_aktif():
             return
         self.frame_terpilih.add(self.index_hasil)
         self._simpan_fraksi()
+        self._simpan_tanda_driving()
         self._segarkan_tanda()
 
     def _tandai_merata(self):
-        if not self.frame_hasil:
+        total = self._total_aktif()
+        if not total:
             return
         jumlah = self.get_target_n()
-        total = len(self.frame_hasil)
         self.frame_terpilih = {int(round(i * (total - 1) / max(jumlah - 1, 1))) for i in range(jumlah)}
         self._simpan_fraksi()
+        self._simpan_tanda_driving()
         self._segarkan_tanda()
 
     def _bersihkan_tanda(self):
         self.frame_terpilih.clear()
         self.fraksi_terpilih = []
+        self._simpan_tanda_driving()
         self._segarkan_tanda()
 
     def _segarkan_tanda(self):
@@ -1082,7 +1106,7 @@ class LPPanel:
         if self.var_kunci_posisi and self.var_kunci_posisi.get() and self.fraksi_terpilih:
             return list(self.fraksi_terpilih)
         # kunci mati → pakai posisi absolut frame yang sedang tertanda, dinormalkan
-        total = len(self.frame_hasil)
+        total = self._total_aktif()
         if total > 1 and self.frame_terpilih:
             return [i / (total - 1) for i in sorted(self.frame_terpilih)]
         return []
@@ -1091,11 +1115,12 @@ class LPPanel:
         return self.var_folder_driving.get().strip() if self.var_folder_driving else self._folder_driving_awal
 
     def get_driving_choice(self, emosi: str) -> str:
-        """'' = pakai SEMUA video emosi itu; selain itu = path video yang dipilih."""
+        """Path video driving yang DIPILIH untuk emosi ini ('' = belum dipilih).
+        Tidak ada mode 'Semua' — tiap video harus dipreview dulu (beda pose)."""
         if emosi not in self.pilihan_driving:
             return ""
         pilihan = self.pilihan_driving[emosi].get()
-        if pilihan in ("Semua", "(tidak ada)", ""):
+        if pilihan in ("(tidak ada)", ""):
             return ""
         for path in self.video_driving.get(emosi, []):
             if os.path.basename(path) == pilihan:
@@ -1103,8 +1128,9 @@ class LPPanel:
         return ""
 
     def get_driving_list(self, emosi: str) -> list:
+        """Maks 1 video (yang dipilih di dropdown). Kosong = belum dipilih."""
         satu = self.get_driving_choice(emosi)
-        return [satu] if satu else list(self.video_driving.get(emosi, []))
+        return [satu] if satu else []
 
     def update_marks_count(self, jumlah: int):
         if self.label_jml_tanda:
@@ -1165,12 +1191,30 @@ class LPPanel:
                                text="—", fill="#4b5563", font=("Poppins", 10))
             self.label_pratinjau[0].configure(text="")
 
-    def set_driving_frames(self, frames: list, emosi: str):
+    def set_driving_frames(self, frames: list, emosi: str, path: str = ""):
+        """Tampilkan video driving. Bila `path` diberikan: jadikan driving AKTIF —
+        tanda frame untuk video itu dipulihkan, dan slider bisa dipakai men-scrub
+        driving SEBELUM diproses (lihat pose per frame dulu)."""
         self.frame_driving, self.emosi_driving = frames or [], emosi
+        if path:
+            self.driving_aktif = path
+            # pulihkan tanda khusus video ini (beda video = beda pose = beda tanda)
+            self.frame_terpilih = set(self.tanda_per_driving.get(path, []))
+            self._simpan_fraksi()
         if self.frame_driving:
             self._tampilkan(1, self._viz_jika_aktif(self.frame_driving[0]))
             self.label_pratinjau[1].configure(text=f"{emosi}  ·  frame 1/{len(self.frame_driving)}")
             self.kanvas_pratinjau[1].configure(highlightbackground=LABEL_COLORS.get(emosi, "#6b7280"))
+            # Belum ada hasil? Aktifkan slider untuk PRATINJAU driving + tandai frame.
+            if not self.frame_hasil:
+                total = len(self.frame_driving)
+                langkah = max(total - 1, 1)
+                self.slider_hasil.configure(state="normal", to=langkah, number_of_steps=langkah)
+                self.slider_hasil.set(0)
+                self.index_hasil = 0
+                self.label_info_hasil.configure(
+                    text=f"Frame 1 / {total}  ·  pratinjau driving {emosi} — geser untuk lihat pose")
+            self._segarkan_tanda()
         else:
             kanvas = self.kanvas_pratinjau[1]
             kanvas.delete("all")
@@ -1181,9 +1225,14 @@ class LPPanel:
     def set_result_frames(self, frames: list, emosi: str):
         self.frame_hasil, self.emosi_hasil, self.index_hasil = frames or [], emosi, 0
         total = len(self.frame_hasil)
-        # Kunci posisi: petakan ulang frame tertanda ke posisi PROPORSIONAL di video baru
-        # (jumlah sama, letak menyesuaikan panjang driving baru). Jika mati → mulai kosong.
-        if self.var_kunci_posisi.get() and self.fraksi_terpilih and total > 0:
+        # Prioritas tanda frame saat hasil baru dimuat:
+        # 1) tanda TERSIMPAN untuk video driving aktif (persis — hasil ~1:1 dgn driving)
+        # 2) kunci posisi proporsional (fraksi) bila aktif
+        # 3) kosong
+        tersimpan = self.tanda_per_driving.get(self.driving_aktif, []) if self.driving_aktif else []
+        if tersimpan and total > 0:
+            self.frame_terpilih = {min(total - 1, max(0, i)) for i in tersimpan}
+        elif self.var_kunci_posisi.get() and self.fraksi_terpilih and total > 0:
             self.frame_terpilih = {min(total - 1, max(0, int(round(f * (total - 1)))))
                                    for f in self.fraksi_terpilih}
         else:
@@ -1205,10 +1254,10 @@ class LPPanel:
         self.video_driving = {l: list(pemetaan.get(l, [])) for l in LABELS}
         for emosi in LABELS:
             nama = [os.path.basename(p) for p in self.video_driving[emosi]]
-            nilai = ["Semua"] + nama if nama else ["(tidak ada)"]
+            nilai = nama if nama else ["(tidak ada)"]
             self.menu_driving[emosi].configure(values=nilai)
             if self.pilihan_driving[emosi].get() not in nilai:
-                self.pilihan_driving[emosi].set(nilai[0])
+                self.pilihan_driving[emosi].set(nilai[0])   # default: video pertama
         self._segarkan_ringkasan()
 
     def reset(self):
@@ -1244,6 +1293,45 @@ class LPPanel:
         if folder:
             self.var_folder_driving.set(folder)
             self._pindai_folder_driving()
+
+    def _saat_driving_berganti(self, emosi: str):
+        """Dipanggil saat dropdown driving diganti: muat PREVIEW video itu (di thread
+        latar), pulihkan tanda frame untuk video itu, dan kosongkan hasil lama
+        (hasil dari driving sebelumnya tidak berlaku untuk pose video baru)."""
+        import threading
+        path = self.get_driving_choice(emosi)
+        if not path:
+            return
+        # simpan tanda video sebelumnya sebelum pindah
+        self._simpan_tanda_driving()
+        # hasil lama dari driving lain tidak relevan → kosongkan kolom HASIL
+        self.frame_hasil = []
+        kanvas = self.kanvas_pratinjau[2]
+        kanvas.delete("all")
+        kanvas.create_text(UKURAN_PRATINJAU // 2, UKURAN_PRATINJAU // 2,
+                           text="(belum diproses\nuntuk driving ini)", fill="#4b5563",
+                           font=("Poppins", 9), justify="center")
+        self.label_pratinjau[2].configure(text="")
+        self.start_loading(f"Memuat pratinjau driving {os.path.basename(path)}")
+
+        def _muat(p=path, e=emosi):
+            from ui.lp_panel import _decode_video
+            frames = _decode_video(p)
+            def _pasang():
+                if self.get_driving_choice(e) != p:
+                    return   # user sudah ganti lagi
+                self.set_driving_frames(frames, e, path=p)
+                n_tanda = len(self.tanda_per_driving.get(p, []))
+                self.stop_loading(
+                    f"Driving {os.path.basename(p)}: {len(frames)} frame"
+                    + (f", {n_tanda} tanda dipulihkan" if n_tanda else
+                       " — geser slider untuk lihat pose, lalu Tandai Frame"),
+                    "#10b981")
+            try:
+                self.app.root.after(0, _pasang)
+            except (RuntimeError, tk.TclError):
+                pass
+        threading.Thread(target=_muat, daemon=True).start()
 
     def _pindai_folder_driving(self):
         pemetaan = self.app._lp_scan_driving(self.get_driving_folder())
@@ -1315,9 +1403,8 @@ class LPPanel:
         bagian_driving = []
         for e in terpilih:
             pilih = self.pilihan_driving[e].get()
-            jumlah = len(self.video_driving.get(e, []))
-            if pilih in ("Semua", "(tidak ada)", ""):
-                bagian_driving.append(f"{e[:4]}→Semua({jumlah})")
+            if pilih in ("(tidak ada)", ""):
+                bagian_driving.append(f"{e[:4]}→(belum dipilih)")
             else:
                 bagian_driving.append(f"{e[:4]}→{pilih}")
         driving = "  ".join(bagian_driving) or "—"
