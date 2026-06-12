@@ -63,6 +63,11 @@ def main():
         assert all(len(lp.get_driving_list(e)) <= 1 for e in mod.LABELS)
         lp.pilihan_driving["Confusion"].set("(tidak ada)")
         assert lp.get_driving_list("Confusion") == []
+        # Emosi single-select: pilih kedua -> hanya yang terakhir aktif; klik lagi -> mati
+        lp._ganti_emosi("Confusion"); lp._ganti_emosi("Frustration")
+        assert lp.get_selected_emotions() == ["Frustration"], lp.get_selected_emotions()
+        lp._ganti_emosi("Frustration")
+        assert lp.get_selected_emotions() == []
 
         # Status & loading
         lp.update_progress("uji"); lp.start_loading("uji loading"); lp.stop_loading("selesai")

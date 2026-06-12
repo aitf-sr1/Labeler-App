@@ -997,7 +997,7 @@ class VideoLabelerApp:
             return
         emos = lp.get_selected_emotions()
         if not emos:
-            lp.update_progress("Pilih minimal satu emosi (pill) dulu", "#f59e0b")
+            lp.update_progress("Pilih emosi (pill) dulu", "#f59e0b")
             return
         result_dir = os.path.dirname(self.path_json_augment) if self.path_json_augment else ""
         if not result_dir:
@@ -1247,7 +1247,7 @@ class VideoLabelerApp:
             lp.build()
         emos = lp.get_selected_emotions()
         if not emos:
-            lp.update_progress("Pilih minimal satu emosi (pill) dulu", "#f59e0b")
+            lp.update_progress("Pilih emosi (pill) dulu", "#f59e0b")
             return
         src = self._lp_resolve_source(lp)
         if src is None:
@@ -1281,11 +1281,8 @@ class VideoLabelerApp:
         self._lp_set_source_preview()
         if not self._lp_begin(lp):
             return
-        # Jelaskan bila >1 emosi dipilih: tombol ini memproses SATU emosi (yang pertama);
-        # emosi lain ikut saat Batch — supaya user tidak mengira semuanya diproses diam-diam.
-        info_lain = (f" — {len(emos) - 1} emosi lain ikut saat Batch" if len(emos) > 1 else "")
-        lp.start_loading(f"Memproses {emo} (driving {os.path.basename(drv_path)})"
-                         f"{info_lain} — model di-load sekali, mohon tunggu")
+        lp.start_loading(f"Memproses {emo} (driving {os.path.basename(drv_path)}) — "
+                         f"model di-load sekali, mohon tunggu")
 
         def _worker(sp=src_path, dp=drv_path, od=out_dir, e=emo, src=(vid_idx, fi)):
             from ui.lp_panel import _decode_video
@@ -1323,7 +1320,7 @@ class VideoLabelerApp:
             lp.build()
         emos = lp.get_selected_emotions()
         if not emos:
-            lp.update_progress("Pilih minimal satu emosi (pill) dulu", "#f59e0b")
+            lp.update_progress("Pilih emosi (pill) dulu", "#f59e0b")
             return
         targets = self._lp_targets()
         if not targets:

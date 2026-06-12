@@ -70,7 +70,7 @@ Folder default dari `LP_DRIVING_DIR` (default `4-Create/refrensi`).
 
 ## 3. Memproses
 
-1. Pilih satu/lebih **emosi** (pill).
+1. Pilih **SATU emosi** (pill, single-select) — memilih emosi langsung memuat preview video driving-nya.
 2. **Proses Frame Ini** — generate satu video hasil dari frame sumber aktif, untuk dicoba &
    dipilih frame terbaiknya. **Hasil di-cache**: kalau pindah frame lalu kembali, hasilnya
    muncul lagi tanpa proses ulang.

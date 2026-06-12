@@ -330,7 +330,7 @@ class LPPanel:
             self.menu_driving[emosi] = menu
 
     def _bangun_pemilih_emosi(self, induk):
-        _judul_seksi(induk, "Emosi yang Diproses")
+        _judul_seksi(induk, "Emosi yang Diproses (pilih SATU)")
         baris = ctk.CTkFrame(induk, fg_color="transparent")
         baris.pack(fill="x", padx=14, pady=(2, 8))
         for emosi in LABELS:
@@ -1343,13 +1343,21 @@ class LPPanel:
             "#10b981" if total else "#f59e0b")
 
     def _ganti_emosi(self, emosi: str):
+        """SATU emosi aktif pada satu waktu (single-select). Generate memang bekerja
+        per-emosi dengan satu video driving yang harus dipreview dulu — multi-pilih
+        hanya membingungkan. Memilih emosi langsung memuat preview driving-nya."""
         aktif = not self.emosi_aktif[emosi]
-        self.emosi_aktif[emosi] = aktif
-        tombol, warna = self.tombol_emosi[emosi], LABEL_COLORS[emosi]
+        for e in LABELS:
+            self.emosi_aktif[e] = False
+            self.tombol_emosi[e].configure(fg_color="transparent",
+                                           text_color=LABEL_COLORS[e],
+                                           border_color=LABEL_COLORS[e])
         if aktif:
-            tombol.configure(fg_color=warna, text_color="#0b0b12", border_color=warna)
-        else:
-            tombol.configure(fg_color="transparent", text_color=warna, border_color=warna)
+            warna = LABEL_COLORS[emosi]
+            self.emosi_aktif[emosi] = True
+            self.tombol_emosi[emosi].configure(fg_color=warna, text_color="#0b0b12",
+                                               border_color=warna)
+            self._saat_driving_berganti(emosi)   # langsung muat preview driving emosi ini
         self._segarkan_ringkasan()
 
     # ── Dataset wajah baru ──────────────────────────────────────────────────────
