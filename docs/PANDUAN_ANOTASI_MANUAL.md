@@ -28,7 +28,7 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 
 | Klaim label | Apa kata jurnal (verbatim) | Sumber |
 |---|---|---|
-| Alis (AU4/AU7) = **KUAT** (tier 1) | *"brow lowering (AU4), eyelid tightening (AU7), and especially their combination (AU4+AU7) as **the most reliable indicators**"* | ConfusionBench 2026, protokol anotasi |
+| Alis (AU4/AU7) = **KUAT** (tier 1) | *"brow lowering or frowning (AU4), eyelid tightening or squinting (AU7), and especially their combination (AU4+AU7) as **the most reliable indicators**"* | ConfusionBench 2026, protokol anotasi |
 | Tangan = **auxiliary** (tier 4 dari 5) | *"(4) **auxiliary** hand-to-face behaviors, such as chin touching, forehead pressing, and covering the mouth"* | ConfusionBench 2026 |
 | Gaze = pendukung | *"gaze direction and head pose **may also provide supportive evidence**"* | ConfusionBench 2026 |
 | "1 tangan→confusion, 2 tangan→frustration" itu **inferensi**, bukan klaim langsung | *"one-hand-to-face gestures **may be** associated with less negative affect, while two-hands-to-face gestures **may be** indicative of reduced focus"* — confusion/frustration adalah simpulan KITA, jurnal cuma bilang "thoughtful" & "reduced focus" + korelasi **self-efficacy rendah** (sifat, bukan emosi sesaat) | Grafsgaard 2013b |
@@ -95,7 +95,7 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 - Nunduk membaca/menulis → itu **Engagement** (lihat §2)
 - Berkedip normal (terlalu singkat) → bukan AU43
 - Menyipit karena cahaya/fokus → itu AU7 (Confusion)
-- ~~Menguap~~, ~~gerak-gerak~~ → Craig: "non-significant", **tidak dipakai**
+- ~~Menguap~~, ~~gerak-gerak~~ → Craig: "nonsignificant", **tidak dipakai**
 
 **Tabel arah pandang (sering keliru!):**
 
@@ -104,7 +104,7 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 | Lurus ke layar | Engagement | forward gaze = engaged (Whitehill) |
 | Ke **samping** | **Boredom** | "looking away from computer" (GazeTutor/Whitehill) |
 | Ke **atas** (mendongak) | **Boredom** | zoning out (Whitehill lvl 1) |
-| Ke **bawah** (nunduk baca/ketik) | **Engagement** | "head-down = taking notes/reading" (Sümer 2021) |
+| Ke **bawah** (nunduk baca/ketik) | **Engagement** | nunduk = baca/catat = on-task (Sümer 2021) |
 
 > ⚠️ Nunduk = **Engagement**, BUKAN Boredom. Hanya **samping & atas** yang Boredom.
 
@@ -206,9 +206,9 @@ Tangan **tidak pernah** jadi alasan tunggal. Gunakan hanya untuk **menguatkan** 
 | Posisi tangan | Condong ke | Kekuatan | Paper |
 |---|---|---|---|
 | Telunjuk menyentuh/mengetuk **dagu-pipi**, kontak ringan, 1 tangan | **Confusion** ("mikir/unsure") | LEMAH→SEDANG | Mahmoud 2011 (12 thinking + 2 unsure / 15) |
-| Menyangga/menyentuh **dagu** sambil menatap soal | **Confusion** | SEDANG (manual) | ConfusionBench 2026 "touching chin = thinking" |
-| Menutupi mulut ringan dengan jari | **Confusion** (ragu) | LEMAH | ConfusionBench "covering mouth = hesitation" |
-| **Menekan dahi** (telapak/jari menekan dahi/pelipis) | **Frustration** | SEDANG | ConfusionBench "pressing forehead = frustration" |
+| Menyangga/menyentuh **dagu** sambil menatap soal | **Confusion** | SEDANG (manual) | ConfusionBench 2026: chin-touch → thinking |
+| Menutupi mulut ringan dengan jari | **Confusion** (ragu) | LEMAH | ConfusionBench: cover-mouth → hesitation |
+| **Menekan dahi** (telapak/jari menekan dahi/pelipis) | **Frustration** | SEDANG | ConfusionBench: press-forehead → frustration |
 | **2 tangan** ke wajah / menutup wajah / menopang kepala | **Frustration** | SEDANG | Grafsgaard 2013b (self-efficacy rendah, "significant") |
 | Tangan menyangga kepala **pasif, santai** | **Bukan sinyal kognitif** | — | Mahmoud 2011: gestur pasif = *relaxed mood* |
 
@@ -222,7 +222,7 @@ Tangan **tidak pernah** jadi alasan tunggal. Gunakan hanya untuk **menguatkan** 
 
 | Kombinasi | Boleh bersamaan? | Kekuatan aturan | Basis |
 |---|---|---|---|
-| **Boredom + Engagement** | ❌ Hampir tidak | SEDANG | DAiSEE: "engagement low → boredom high & vice-versa" (observasi, ada pengecualian) |
+| **Boredom + Engagement** | ❌ Hampir tidak | SEDANG | DAiSEE: *"When engagement is low, boredom is generally high and vice-versa"* (observasi, ada pengecualian) |
 | **Confusion + Engagement** | ✅ Normal | KUAT | D'Mello: *productive confusion*, transisi signifikan |
 | **Confusion + Frustration** | ✅ Bisa | KUAT | D'Mello (*hopeless confusion*) + Richey "confrustion" |
 | **Frustration + Boredom** | ⚠️ Jarang | SEDANG | D'Mello: persistent frustration → disengagement (marginal) |
@@ -236,7 +236,7 @@ Tangan **tidak pernah** jadi alasan tunggal. Gunakan hanya untuk **menguatkan** 
 | Boredom suppress Engagement | Boredom tinggi → Engagement dikurangi (kecil, 0.40) | DAiSEE complementary |
 | Smile gate Confusion | Senyum sangat kuat → Confusion dibatasi (floor 30%, tidak di-nol) | Craig: AU12 muncul di Conf & Frus (non-diskriminatif) |
 | Gaze gate Engagement | Lihat jauh dari layar → Engagement berkurang | Whitehill "looking away" |
-| Lihat ke bawah | TIDAK mengurangi Engagement | Sümer "head-down = on-task" |
+| Lihat ke bawah | TIDAK mengurangi Engagement | Sümer 2021: nunduk = on-task |
 
 ---
 
@@ -273,4 +273,4 @@ Lihat frame →
 
 ## Catatan Verifikasi Verbatim
 
-Seluruh kutipan di panduan ini dan di `ACADEMIC_BASIS.md` telah **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`) memakai ekstraksi teks + pencocokan substring ternormalisasi. **Hasil: semua kutipan akurat.** Perbedaan kecil yang muncul saat pengecekan otomatis semuanya **artefak ekstraksi PDF** (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan sesuai konvensi, header halaman nyelip) — bukan kesalahan kutipan. Satu paper (**Bartlett 1999**) adalah PDF hasil **pindai** (tanpa lapisan teks); ia di-**OCR** (EasyOCR, 300 dpi, 11 halaman → 9.701 kata) dan kutipannya **TERKONFIRMASI cocok** (*"…is an objective method for quantifying facial movement in terms of component actions"*). Jadi **tidak ada satu pun kutipan yang tidak terverifikasi.**
+Seluruh kutipan di panduan ini dan di `ACADEMIC_BASIS.md` telah **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`) memakai ekstraksi teks + pencocokan substring ternormalisasi (semua teks paper diekstrak ke satu folder dulu, lalu tiap span dalam tanda kutip dicocokkan ke seluruh korpus). **Hasil: semua kutipan akurat.** Pemeriksaan menyeluruh menemukan & memperbaiki beberapa slip kecil (mis. *"looking away from **the** computer"* → *"…from computer"*; *"uncertainty"* → *"uncertain"*; ejaan *"nonsignificant"*; pemulihan *"or frowning/or squinting"* pada kutipan ConfusionBench) — parafrase di sel tabel kini **tidak** lagi diberi tanda kutip agar tak rancu dengan verbatim. Perbedaan kecil yang muncul saat pengecekan otomatis semuanya **artefak ekstraksi PDF** (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan sesuai konvensi, header halaman nyelip) — bukan kesalahan kutipan. Satu paper (**Bartlett 1999**) adalah PDF hasil **pindai** (tanpa lapisan teks); ia di-**OCR** (EasyOCR, 300 dpi, 11 halaman → 9.701 kata) dan kutipannya **TERKONFIRMASI cocok** (*"…is an objective method for quantifying facial movement in terms of component actions"*). Jadi **tidak ada satu pun kutipan yang tidak terverifikasi.**

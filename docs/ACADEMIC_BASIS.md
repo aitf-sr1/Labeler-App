@@ -7,7 +7,7 @@ Dokumen ini menjabarkan **landasan akademis setiap keputusan metode** dalam apli
 
 > **Catatan kutipan:** Nomor referensi dalam tanda kurung siku seperti `[17]` dan penanda internal paper seperti `(Link 3)` dihilangkan mengikuti praktik standar. Semua kata dalam blok kutipan adalah verbatim dari sumber asli.
 
-> **✅ Status verifikasi (terakhir dicek):** Seluruh blok kutipan di dokumen ini **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`, ekstraksi `pdftotext` + pencocokan substring ternormalisasi). **Semua kutipan akurat.** Perbedaan yang muncul saat pengecekan otomatis seluruhnya artefak ekstraksi PDF (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan, header halaman nyelip) — bukan salah kutip. **Bartlett 1999** adalah PDF hasil pindai (tanpa lapisan teks); ia di-**OCR** (EasyOCR, 300 dpi, 11 hal → 9.701 kata) dan kutipan FACS-nya **TERKONFIRMASI cocok**. Jadi **tidak ada kutipan yang tersisa tanpa verifikasi.**
+> **✅ Status verifikasi (terakhir dicek):** Seluruh blok kutipan di dokumen ini **dicek kata-per-kata** terhadap 37 PDF paper sumber (`2-anotasi-data/paper/`, ekstraksi `pdftotext` + pencocokan substring ternormalisasi). **Semua kutipan akurat.** Perbedaan yang muncul saat pengecekan otomatis seluruhnya artefak ekstraksi PDF (soft-hyphen pemenggalan baris, penanda sitasi inline yang sengaja dihilangkan, header halaman nyelip) — bukan salah kutip. **Bartlett 1999** adalah PDF hasil pindai (tanpa lapisan teks); ia di-**OCR** (EasyOCR, 300 dpi, 11 hal → ~9.700 kata) dan kutipan FACS-nya **TERKONFIRMASI cocok**. Jadi **tidak ada kutipan yang tersisa tanpa verifikasi.** Pemeriksaan ulang menyeluruh (semua 37 teks diekstrak ke satu folder + cek tiap span) memperbaiki beberapa slip kecil: *"looking away from **the** computer"* → tanpa "the"; *"uncertainty"* → *"uncertain about what to do next"*; ejaan *"nonsignificant"* sesuai sumber; serta merapikan glosa/parafrase yang tadinya diberi tanda kutip (mis. *forced-effort theories*).
 
 ---
 
@@ -18,7 +18,7 @@ Tiap sinyal punya kekuatan bukti berbeda. **KUAT** = banyak studi / coverage tin
 | Emosi | Sinyal | Kekuatan | Alasan singkat |
 |---|---|---|---|
 | Confusion | Alis turun **AU4** | **KUAT** | Craig 95% + Grafsgaard 2011 + ConfusionBench 2026 (3 studi independen) |
-| Confusion | Kelopak menyipit **AU7** / **AU4+AU7** | **KUAT** | Craig 78%/73%; ConfusionBench "most reliable combination" |
+| Confusion | Kelopak menyipit **AU7** / **AU4+AU7** | **KUAT** | Craig 78%/73%; ConfusionBench: AU4+AU7 *"most reliable"* |
 | Confusion | Mulut terbuka **AU25+AU26** | SEDANG | Namba 2024 (1 studi, konteks *thinking face*, ambigu di praktik) |
 | Confusion | Tangan dagu/telunjuk (1 tangan) | LEMAH | Rantai Behera+D'Mello; Mahmoud N kecil; detektor buta posisi |
 | Engagement | Menatap layar + mata terbuka (holistik) | **KUAT** | Whitehill κ=0.96; info di "static pixels" |
@@ -205,7 +205,7 @@ AU25+AU26 → Confusion   ←   jawOpen                      (Namba 2024)
 
 ---
 
-> "Our analyses were able to determine significant relationships with AUs for frustration, confusion, and boredom. It appears that AUs 1, 2, and 14 were primarily associated with frustration, but a strong association was found for a link between AUs 1 and 2 occurring together. Additionally, these AUs mutually trigger each other. That is, a raised inner brow tends to trigger a raised outer brow, and vice versa. Confusion displayed associations with AUs 4, 7, and 12. Action units 4 and 7 occur simultaneously and the presence of AU7 (tightened lids) tends to trigger AU4 (lowered brow). While boredom displayed a significant association with action unit 43 (eye closure), no association rules between AUs were observed, but some weaker non-significant trends between eye movement, such as blinks and eye closure, and AUs related to mouth movement."
+> "Our analyses were able to determine significant relationships with AUs for frustration, confusion, and boredom. It appears that AUs 1, 2, and 14 were primarily associated with frustration, but a strong association was found for a link between AUs 1 and 2 occurring together. Additionally, these AUs mutually trigger each other. That is, a raised inner brow tends to trigger a raised outer brow, and vice versa. Confusion displayed associations with AUs 4, 7, and 12. Action units 4 and 7 occur simultaneously and the presence of AU7 (tightened lids) tends to trigger AU4 (lowered brow). While boredom displayed a significant association with action unit 43 (eye closure), no association rules between AUs were observed, but some weaker nonsignificant trends between eye movement, such as blinks and eye closure, and AUs related to mouth movement."
 
 — Craig et al. (2008). (p. 784)  [PDF](../../paper/08-%20Craig%202008%20-%20Emote%20Aloud%20during%20Learning%20with%20AutoTutor%20%28FACS%29.pdf#page=8)
 
@@ -221,7 +221,7 @@ AU25+AU26 → Confusion   ←   jawOpen                      (Namba 2024)
 | **AU12** | Lip Corner Puller | **Sudut bibir tertarik ke samping** (senyum) | Confusion (sekunder, *gate*) |
 | **AU43** | Eyes Closed | **Mata menutup** / mengantuk | Boredom (satu-satunya signifikan) |
 
-AU1+AU2 "saling memicu" berarti: begitu satu terangkat, yang lain ikut — ini kenapa kode memakai perkalian geometris `(AU1·AU2)^0.5` (baru kuat kalau keduanya aktif bersamaan). Boredom hanya punya AU43 yang signifikan — sinyal lain (gerakan mulut, dll.) disebut Craig "non-significant" sehingga tidak dipakai di kode.
+AU1+AU2 "saling memicu" berarti: begitu satu terangkat, yang lain ikut — ini kenapa kode memakai perkalian geometris `(AU1·AU2)^0.5` (baru kuat kalau keduanya aktif bersamaan). Boredom hanya punya AU43 yang signifikan — sinyal lain (gerakan mulut, dll.) disebut Craig "nonsignificant" sehingga tidak dipakai di kode.
 
 **Koreksi penting:** Versi lama dokumen ini mencantumkan "Confusion | AU12 | 95%". **Itu keliru** — 95% di Table 2 milik **AU4**, bukan AU12. AU12 hanya disebut di *prosa* sebagai asosiasi sekunder yang lebih lemah:
 
@@ -436,11 +436,11 @@ Setelah menemukan bahwa Craig 2008 tidak menemukan sinyal mulut yang signifikan 
 
 **Konteks:** Dari semua emosi belajar, boredom memiliki sinyal AU paling sederhana: hanya AU43. Namun boredom juga berkaitan erat dengan arah pandang dan disengagement dari materi.
 
-> "While boredom displayed a significant association with action unit 43 (eye closure), no association rules between AUs were observed, but some weaker non-significant trends between eye movement, such as blinks and eye closure, and AUs related to mouth movement."
+> "While boredom displayed a significant association with action unit 43 (eye closure), no association rules between AUs were observed, but some weaker nonsignificant trends between eye movement, such as blinks and eye closure, and AUs related to mouth movement."
 
 — Craig et al. (2008). (p. 784)  [PDF](../../paper/08-%20Craig%202008%20-%20Emote%20Aloud%20during%20Learning%20with%20AutoTutor%20%28FACS%29.pdf#page=8)
 
-**Penjelasan:** **AU43** = mata menutup / kelopak turun berat — ekspresi mengantuk atau mata berat. Craig menemukan ini satu-satunya AU yang signifikan untuk boredom. AU lain (gerakan mulut seperti menguap, dll.) disebut "non-significant trends" — artinya tidak cukup kuat untuk dijadikan sinyal. **Di kode:** `blink_corrected = au["AU43"]` dari blendshape `eyeBlinkLeft/Right` MediaPipe (baseline-normalized via `compute_action_units()`). Yawn (`jawOpen`) sengaja *tidak* dipakai sebagai sinyal Boredom primer karena Craig tidak memvalidasinya — meskipun `jawOpen` (AU26) tersedia dan dipakai sebagai cue Confusion kuat (Namba 2024).
+**Penjelasan:** **AU43** = mata menutup / kelopak turun berat — ekspresi mengantuk atau mata berat. Craig menemukan ini satu-satunya AU yang signifikan untuk boredom. AU lain (gerakan mulut seperti menguap, dll.) disebut "nonsignificant trends" — artinya tidak cukup kuat untuk dijadikan sinyal. **Di kode:** `blink_corrected = au["AU43"]` dari blendshape `eyeBlinkLeft/Right` MediaPipe (baseline-normalized via `compute_action_units()`). Yawn (`jawOpen`) sengaja *tidak* dipakai sebagai sinyal Boredom primer karena Craig tidak memvalidasinya — meskipun `jawOpen` (AU26) tersedia dan dipakai sebagai cue Confusion kuat (Namba 2024).
 
 ---
 
@@ -450,7 +450,7 @@ Setelah menemukan bahwa Craig 2008 tidak menemukan sinyal mulut yang signifikan 
 
 — D'Mello & Graesser (2012). (p. 147–149)  [PDF](../../paper/01-%20DMello%20Graesser%202012%20-%20Dynamics%20of%20Affective%20States%20during%20Complex%20Learning.pdf#page=3)
 
-**Penjelasan:** D'Mello mendeskripsikan boredom sebagai titik di mana siswa **melepaskan diri dari proses belajar** (*disengages*) — sering sebagai ujung dari frustration yang berlarut. "Forced-effort theory": boredom terjadi ketika siswa terpaksa tetap mengerjakan sesuatu tapi tidak berhasil, sehingga akhirnya menyerah. Ini adalah transisi temporal (menit ke menit), bukan per-frame.
+**Penjelasan:** D'Mello mendeskripsikan boredom sebagai titik di mana siswa **melepaskan diri dari proses belajar** (*disengages*) — sering sebagai ujung dari frustration yang berlarut. Sesuai *forced-effort theories* (Larson & Richards 1991; Robinson 1975): boredom terjadi ketika siswa terpaksa tetap mengerjakan sesuatu tapi tidak berhasil, sehingga akhirnya menyerah. Ini adalah transisi temporal (menit ke menit), bukan per-frame.
 
 ---
 
@@ -580,7 +580,7 @@ Tidak semua "tidak menatap kamera" sama. Sümer 2021 membedakan **nunduk** (on-t
 
 **Penjelasan & wujud di kode:**
 - **Ke BAWAH (nunduk)** = baca soal / catat / keyboard = **ON-TASK → Engagement** (Sümer 2021). TIDAK memicu Boredom, TIDAK mengurangi Engagement.
-- **Ke SAMPING / ATAS** = *"looking away from the computer"* / zoning out = **disengaged → Boredom** (Whitehill 2014 level 1, GazeTutor).
+- **Ke SAMPING / ATAS** = *"looking away from computer"* / zoning out = **disengaged → Boredom** (Whitehill 2014 level 1, GazeTutor).
 
 Maka di kode, perhitungan gaze Boredom (`gaze_dev_bore`) & gate Engagement HANYA memakai komponen **horizontal (samping) + vertikal-ATAS**, dan **mengecualikan komponen ke bawah**. Hasilnya: nunduk-baca tetap Engagement; menoleh-samping/mendongak → Boredom. Angka threshold (yaw 14°, dll.) = kalibrasi empiris (arah-nya paper-justified, angkanya bukan dari paper).
 
@@ -606,7 +606,7 @@ Maka di kode, perhitungan gaze Boredom (`gaze_dev_bore`) & gate Engagement HANYA
 
 — Mahmoud, M. & Robinson, P. (2011). *Interpreting Hand-Over-Face Gestures.* ACII 2011 (Doctoral Consortium). (§3.1)  [PDF](../../paper/11-%20Mahmoud%202011%20-%20Interpreting%20Hand-Over-Face%20Gestures.pdf)
 
-**Penjelasan:** Ini link **paling langsung** tangan → Confusion. Mahmoud & Robinson 2011 menemukan secara kuantitatif: gestur tangan aktif ke wajah (jari telunjuk menyentuh/stroking/tapping) muncul di **"thinking" dan "unsure"** (cognitive states). *"Unsure"* ≈ Confusion (definisi D'Mello: *"uncertainty about what to do next"* / *"noticeable lack of understanding"*). Jadi tangan→Confusion = **1 langkah** (bukan chain difficulty). Catatan jujur: Mahmoud juga menemukan gestur **pasif** (bersandar di telapak/kepalan) = *relaxed mood*, BUKAN cognitive — sedangkan deteksi sistem kita count-based (tak bedakan aktif vs pasif), jadi cue ini sedikit noisy.
+**Penjelasan:** Ini link **paling langsung** tangan → Confusion. Mahmoud & Robinson 2011 menemukan secara kuantitatif: gestur tangan aktif ke wajah (jari telunjuk menyentuh/stroking/tapping) muncul di **"thinking" dan "unsure"** (cognitive states). *"Unsure"* ≈ Confusion (definisi D'Mello: *"uncertain about what to do next"* / *"noticeable lack of understanding"*). Jadi tangan→Confusion = **1 langkah** (bukan chain difficulty). Catatan jujur: Mahmoud juga menemukan gestur **pasif** (bersandar di telapak/kepalan) = *relaxed mood*, BUKAN cognitive — sedangkan deteksi sistem kita count-based (tak bedakan aktif vs pasif), jadi cue ini sedikit noisy.
 
 ---
 
@@ -643,7 +643,7 @@ Dua verbatim berikut saling menguatkan argumen:
 — Grafsgaard et al. (2013b). (abstract)  [PDF](../../paper/06-%20Grafsgaard%202013b%20-%20Embodied%20Affect%20in%20Tutorial%20Dialogue%20Student%20Gesture%20and%20Posture.pdf#page=1)
 
 **Penjelasan:**
-- **1 tangan** = *"thoughtful state / less negative affect"* → sedang berpikir. Berpikir/unsure saat materi sulit = Confusion (Mahmoud 2011 "unsure" + Behera/D'Mello chain).
+- **1 tangan** = *"thoughtful state"* / *"less negative affect"* → sedang berpikir. Berpikir/unsure saat materi sulit = Confusion (Mahmoud 2011 "unsure" + Behera/D'Mello chain).
 - **2 tangan** = temuan **signifikan**: muncul lebih sering pada siswa *self-efficacy* rendah → Frustration D'Mello (*"insecurity and dissatisfaction"*).
 
 **Tangan → Frustration juga didukung paper lain:**
