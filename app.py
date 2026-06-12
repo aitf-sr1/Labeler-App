@@ -1128,6 +1128,38 @@ class VideoLabelerApp:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _lp_prepare_face_source(self, face_path: str, result_dir: str) -> str:
+        """Crop foto wajah baru dengan pipeline & RASIO SAMA seperti frame video:
+        crop_face() (square + padding 0.20) lalu resize 224×224 — persis seperti
+        `cropped_faces/clean/*.jpg`. Tanpa ini, foto luar diumpankan mentah ke LP
+        sehingga hasilnya beda bingkai/zoom (gepeng) dengan crop dataset video.
+        Hasil crop di-cache supaya tidak mengulang deteksi wajah tiap proses."""
+        import cv2 as _cv2
+        cache_dir = os.path.join(result_dir, "augmented", "_wajah_crop")
+        os.makedirs(cache_dir, exist_ok=True)
+        dst = os.path.join(cache_dir, f"{self._lp_face_uuid(face_path)}.jpg")
+        # cache valid bila crop sudah ada DAN tidak lebih tua dari foto sumber
+        if os.path.exists(dst):
+            try:
+                if os.path.getmtime(dst) >= os.path.getmtime(face_path):
+                    return dst
+            except OSError:
+                return dst
+        bgr = _cv2.imread(face_path)
+        if bgr is None:
+            return face_path                      # fallback: pakai foto asli
+        try:
+            from core.face_detector import crop_face
+            cropped, _found, _n, _bb = crop_face(bgr)
+        except Exception as e:
+            print(f"[LP Face] crop_face gagal ({face_path}): {e}")
+            cropped = bgr
+        if cropped is None or cropped.size == 0:
+            cropped = bgr
+        sq = _cv2.resize(cropped, (224, 224), interpolation=_cv2.INTER_AREA)
+        _cv2.imwrite(dst, sq)
+        return dst
+
     @staticmethod
     def _lp_face_uuid(face_path: str) -> str:
         """UUID unik per foto wajah baru (prefix 'newface-' agar bisa difilter saat merge).
@@ -1189,12 +1221,14 @@ class VideoLabelerApp:
                 self.root.after(0, lambda m=f"Wajah {k}/{len(jobs)} · {stem} · {emo}":
                                 lp.start_loading(m))
                 try:
-                    # Cache persisten: foto+driving+emosi yang sama tidak diproses ulang
-                    out_vid = self._lp_pcache_get(face, drv, emo)
+                    # Samakan rasio crop dengan frame video DULU (crop_face 224 square)
+                    face_src = self._lp_prepare_face_source(face, result_dir)
+                    # Cache persisten: foto(crop)+driving+emosi yang sama tidak diproses ulang
+                    out_vid = self._lp_pcache_get(face_src, drv, emo)
                     if out_vid is None:
-                        out_vid = self._lp_infer(face, drv, out_d)
+                        out_vid = self._lp_infer(face_src, drv, out_d)
                         if out_vid:
-                            self._lp_pcache_put(face, drv, emo, out_vid)
+                            self._lp_pcache_put(face_src, drv, emo, out_vid)
                     if not out_vid:
                         continue
                     frames = _decode_video(out_vid)
@@ -1216,7 +1250,7 @@ class VideoLabelerApp:
                         if drv not in drv_terkirim:
                             drv_terkirim.add(drv)
                             df = _decode_video(drv)
-                    src_bgr = _cv2.imread(face) if tampil_preview else None
+                    src_bgr = _cv2.imread(face_src) if tampil_preview else None
                     def _tampil(rf=frames, dfx=df, e2=emo, dpp=drv, sb=src_bgr, u=uuid,
                                 show=tampil_preview):
                         if show:

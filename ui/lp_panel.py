@@ -196,6 +196,8 @@ class LPPanel:
         self.PER_HAL       = 40        # thumbnail per halaman grid
         self._thumb_review = {}        # path -> thumb_bgr (cache halaman)
         self._hal_token    = 0         # anti-race saat ganti halaman cepat
+        self._kanvas_idx   = {}        # idx_abs -> (kanvas, warna_normal, label) utk sorot cepat
+        self._hal_terender = -1        # halaman yang SEDANG tergambar (hindari rebuild sia-sia)
         self._ref_thumbnail = []       # tahan referensi ImageTk agar tidak di-GC
         self.entri_loncat  = None
         self.label_posisi_tinjau = None
@@ -911,7 +913,9 @@ class LPPanel:
         self.review_label = labels or {}
         self.review_ai = ai_labels or {}
         self.review_ditolak = set(ditolak or set())
-        self._thumb_review.clear()
+        # JANGAN clear cache thumbnail di sini: refresh berkala saat batch akan memicu
+        # decode ulang ratusan thumbnail → lag + terasa "tidak ter-load". Cache di-keyed
+        # per-path (stabil); dibatasi FIFO di _render_halaman. Refresh MANUAL yang clear.
         self._terapkan_filter()
 
     def _cocok_filter(self, item) -> bool:
@@ -954,12 +958,38 @@ class LPPanel:
         except Exception:
             pass
 
+    def _sync_halaman(self, idx_lama: int):
+        """Setelah pindah posisi: kalau MASIH di halaman yang sama, cukup geser SOROTAN
+        (ubah warna tepi 2 thumbnail) — JANGAN bangun ulang 40 thumbnail tiap tekan panah
+        (itu biang lag saat cek manual). Kalau ganti halaman, baru render halaman baru."""
+        hal_baru = self.idx_tinjau // self.PER_HAL
+        if hal_baru == self._hal_terender and self._kanvas_idx:
+            self._sorot_aktif(idx_lama)
+        else:
+            self._render_halaman()
+
+    def _sorot_aktif(self, idx_lama: int):
+        """Pindahkan sorotan thumbnail aktif tanpa rebuild (hanya 2 kanvas yang berubah)."""
+        for idx in {idx_lama, self.idx_tinjau}:
+            info = self._kanvas_idx.get(idx)
+            if not info:
+                continue
+            kanvas, warna_normal, lab = info
+            aktif = (idx == self.idx_tinjau)
+            try:
+                kanvas.configure(highlightthickness=3 if aktif else 2,
+                                 highlightbackground=WARNA_LP if aktif else warna_normal)
+                lab.configure(text_color=(WARNA_LP if aktif else ("#6b7280", "#9ca3af")))
+            except tk.TclError:
+                pass
+
     def _tinjau_geser(self, delta: int):
         if not self.review_items:
             return
+        idx_lama = self.idx_tinjau
         self.idx_tinjau = max(0, min(len(self.review_items) - 1, self.idx_tinjau + delta))
         self._render_pemeriksa()
-        self._render_halaman()   # pindah halaman bila perlu
+        self._sync_halaman(idx_lama)   # sorot saja bila halaman sama (anti-lag)
         self._lepas_fokus()
 
     def _tinjau_loncat(self):
@@ -970,18 +1000,20 @@ class LPPanel:
         except (ValueError, AttributeError):
             self.update_progress("Isi nomor untuk loncat (1.." + str(len(self.review_items)) + ")", "#f59e0b")
             return
+        idx_lama = self.idx_tinjau
         self.idx_tinjau = max(0, min(len(self.review_items) - 1, n - 1))
         self._render_pemeriksa()
-        self._render_halaman()
+        self._sync_halaman(idx_lama)
         self._lepas_fokus()     # penting: panah keyboard kembali aktif setelah Loncat
 
     def _buka_di_pemeriksa(self, idx: int):
         """Loncat ke index absolut (dipanggil dari klik thumbnail grid)."""
         if not self.review_items:
             return
+        idx_lama = self.idx_tinjau
         self.idx_tinjau = max(0, min(len(self.review_items) - 1, idx))
         self._render_pemeriksa()
-        self._render_halaman()
+        self._sync_halaman(idx_lama)
         self._lepas_fokus()
 
     def _gambar_pemeriksa(self, bgr, ditolak: bool, emosi: str, teks_overlay: str = "DITOLAK"):
@@ -1079,6 +1111,8 @@ class LPPanel:
         for anak in self.grid_tinjau.winfo_children():
             anak.destroy()
         self._ref_thumbnail.clear()
+        self._kanvas_idx = {}          # widget lama dihancurkan → peta sorot tak valid lagi
+        self._hal_terender = -1
         n = len(self.review_items)
         if not n:
             self.label_hal.configure(text="")
@@ -1122,6 +1156,7 @@ class LPPanel:
         for w in self.grid_tinjau.winfo_children():
             w.destroy()
         self._ref_thumbnail.clear()
+        self._kanvas_idx = {}          # ulang: peta idx→widget utk sorot cepat
         for j, (path, emosi, rel, thumb) in enumerate(hasil):
             idx_abs = awal + j
             r, c = divmod(j, KOLOM)
@@ -1130,11 +1165,11 @@ class LPPanel:
             dibuang = "_trash" in path.replace("\\", "/").split("/")
             ditolak = (rel in self.review_ditolak) or dibuang
             aktif = (idx_abs == self.idx_tinjau)
-            warna_tepi = (WARNA_LP if aktif else ("#ef4444" if ditolak
-                          else LABEL_COLORS.get(emosi, "#333")))
+            warna_normal = ("#ef4444" if ditolak else LABEL_COLORS.get(emosi, "#333"))
             kanvas = tk.Canvas(sel, width=UKURAN_THUMBNAIL, height=UKURAN_THUMBNAIL, bg="#111",
                                highlightthickness=3 if aktif else 2,
-                               highlightbackground=warna_tepi, cursor="hand2")
+                               highlightbackground=(WARNA_LP if aktif else warna_normal),
+                               cursor="hand2")
             kanvas.pack()
             if thumb is not None:
                 rgb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
@@ -1151,8 +1186,11 @@ class LPPanel:
             kanvas.bind("<Double-Button-1>", lambda e, p=path: self.app._lp_toggle_reject(p))
             lab = self._label_item(rel, emosi)
             ringkas = "·".join(l[:1] for l in LABELS if lab.get(l, 0) == 1) or "-"
-            ctk.CTkLabel(sel, text=f"#{idx_abs+1} {emosi[:4]} [{ringkas}]", font=("Poppins", 7),
-                         text_color=(WARNA_LP if aktif else ("#6b7280", "#9ca3af"))).pack()
+            lab_w = ctk.CTkLabel(sel, text=f"#{idx_abs+1} {emosi[:4]} [{ringkas}]", font=("Poppins", 7),
+                                 text_color=(WARNA_LP if aktif else ("#6b7280", "#9ca3af")))
+            lab_w.pack()
+            self._kanvas_idx[idx_abs] = (kanvas, warna_normal, lab_w)
+        self._hal_terender = awal // self.PER_HAL   # halaman ini sudah tergambar
 
     def terapkan_state(self, rel: str, label: dict = None, ditolak: bool = None):
         """Dipanggil app setelah menyimpan label/tolak → update lokal + render ulang TANPA
@@ -1185,6 +1223,7 @@ class LPPanel:
     def refresh_review(self):
         if not self._sudah_dibangun:
             self.build()
+        self._thumb_review.clear()   # refresh MANUAL = mulai bersih (tangkap regenerasi gambar)
         self.app._lp_refresh_review()
 
     # ── API yang dipanggil app.py ───────────────────────────────────────────────

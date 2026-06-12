@@ -157,12 +157,21 @@ lebih umum / tidak overfit:
 4. **Proses Wajah Terpilih** → tiap foto diberi UUID baru (`newface-…`) = **orang baru**,
    lalu diaugmentasi dan disimpan seperti hasil LP biasa.
 
+**Crop disamakan dengan frame video.** Sebelum diproses, tiap foto wajah baru otomatis
+di-crop dengan pipeline yang **sama persis** seperti frame video: deteksi wajah (`crop_face`,
+square + padding 0.20) lalu di-resize **224×224** — identik dengan `cropped_faces/clean/*.jpg`.
+Jadi hasil augmentasi wajah baru **sebingkai/serasio** dengan crop dataset video (tidak gepeng,
+zoom sama). Hasil crop di-cache di `augmented/_wajah_crop/` agar tidak mengulang deteksi.
+
 ---
 
 ## 6. Tinjau & label (cek sebelum buat dataset)
 
 - **Muat / Refresh** menyiapkan **seluruh** gambar hasil (ribuan pun cepat — thumbnail dimuat
-  per-halaman di latar, tidak sekaligus).
+  per-halaman di latar, tidak sekaligus). Thumbnail yang sudah dimuat **di-cache** dan
+  dipakai ulang antar-refresh (refresh berkala saat batch tidak men-decode ulang → tidak lag).
+- **Navigasi anti-lag:** berpindah gambar di halaman yang **sama** (panah/klik) hanya menggeser
+  **sorotan** — grid tidak dibangun ulang. Halaman baru di-render hanya saat memang ganti halaman.
 - **Navigasi (untuk ribuan gambar):** pemeriksa besar punya **◀ Sebelumnya / Berikutnya ▶**,
   kotak **Loncat** ke nomor tertentu, dan penunjuk posisi **"12 / 1340"**. Grid thumbnail
   **berhalaman** (◀ Halaman / Halaman ▶) — klik thumbnail untuk lompat ke gambar itu di pemeriksa.

@@ -146,6 +146,11 @@ def main():
         os.rename(drv, drv_baru)                      # rename = video yang sama
         assert a._lp_pcache_get(src, drv_baru, "Confusion") == out
         assert a._lp_pcache_get(src, drv_baru, "Frustration") is None
+        # Crop wajah baru: file rusak → fallback ke path asli (tanpa crash / tanpa model)
+        bad = os.path.join(tdir, "bukan_gambar.txt")
+        with open(bad, "w") as f:
+            f.write("x")
+        assert a._lp_prepare_face_source(bad, tdir) == bad, "fallback crop wajah gagal"
         # Reverse-lookup: render 'tetep ada' saat frame sumber dibuka lagi (lepas emosi)
         tdir2 = tempfile.mkdtemp(prefix="lp_any_")
         a.path_json_augment = os.path.join(tdir2, "augment_marks.json")
@@ -193,10 +198,11 @@ def main():
                   "_lp_show_stats", "_lp_auto_reject_mismatch",
                   "_lp_restore_trash", "_lp_restore_one", "_lp_list_trashed",
                   "_lp_pcache_get", "_lp_pcache_put", "_lp_pcache_lookup_any_for_source",
-                  "_on_arrow", "_lp_update_save_info", "_lp_refresh_review_throttled"]:
+                  "_on_arrow", "_lp_update_save_info", "_lp_refresh_review_throttled",
+                  "_lp_prepare_face_source"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
         for m in ["_lepas_fokus", "_tinjau_geser", "_tinjau_loncat", "_buka_di_pemeriksa",
-                  "_geser_halaman"]:
+                  "_geser_halaman", "_sync_halaman", "_sorot_aktif"]:
             assert hasattr(lp, m), f"metode panel hilang: {m}"
 
         # Ganti-ganti mode tidak boleh error; di galeri panah kembali ke navigasi video
