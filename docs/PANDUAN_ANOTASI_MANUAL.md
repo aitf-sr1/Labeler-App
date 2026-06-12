@@ -13,8 +13,10 @@ Semua ciri **verbatim dari paper** (sudah diverifikasi kata-per-kata ke 37 PDF s
 | Tanda | Arti | Boleh jadi dasar sendiri? |
 |---|---|---|
 | **KUAT** | Banyak studi independen / coverage tinggi / sinyal langsung | Ya — kalau ciri ini jelas, label boleh aktif |
-| **SEDANG** | Satu studi, atau coverage menengah, atau rantai argumen tak-langsung tapi didukung | Hati-hati — idealnya ada 1 ciri pendukung |
+| **SEDANG** | Satu studi, atau coverage menengah, atau rantai argumen tak-langsung tapi didukung | **Cukup** kalau ciri **JELAS**; idealnya + 1 cue pendukung kalau ragu |
 | **LEMAH** | Sampel kecil / rantai panjang / sulit dilihat / keterbatasan detektor | TIDAK — hanya menguatkan, jangan jadi alasan tunggal |
+
+> **"SEDANG itu sudah cukup atau harus KUAT?"** — **SEDANG sudah cukup** untuk melabeli, asalkan cirinya **terlihat JELAS** (bukan samar). KUAT artinya boleh yakin walau hanya 1 ciri; SEDANG artinya yakin kalau jelas, dan **lebih yakin lagi kalau ada 2 cue**. **Boredom** sengaja tak punya cue KUAT (lihat §1) — jadi untuk Boredom kamu memang mengandalkan cue SEDANG, idealnya 2 sekaligus. LEMAH **tidak pernah** cukup sendiri.
 
 > **Tentang TANGAN (sering ditanya):** semua sinyal tangan **LEMAH untuk deteksi OTOMATIS** — detektor app cuma menghitung *jumlah* tangan dekat wajah, tidak bisa bedakan posisi (dagu vs dahi) atau aktif vs pasif (Mahmoud 2011: tangan menyangga pasif = *relaxed*, bukan berpikir). Tapi **kamu (manusia) bisa melihat posisinya** → di tangan anotator manual, sinyal tangan naik jadi **SEDANG**. Tetap: jangan melabeli hanya karena ada tangan.
 
@@ -81,6 +83,13 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 |---|---|---|---|
 | **Mata berat / menutup (AU43)** | Kelopak berat / setengah menutup tanpa sebab fisik, lesu/droopy | SEDANG | Craig: satu-satunya AU signifikan utk boredom, **tapi coverage cuma 40%, 1 studi** |
 | **Pandang ke samping / atas** | Kepala/mata menoleh jauh dari layar, melamun, *zoning out* | SEDANG | Konstruk didukung 3 paper; **tapi gaze webcam kasar** |
+
+> **Kenapa Boredom "SEDANG semua" (tidak ada KUAT)?** Bukan diremehkan — **jurnalnya memang begitu.** Craig 2008 menemukan AU43 sebagai **satu-satunya** AU signifikan untuk boredom, tapi coverage-nya **cuma 40%** (terendah di Table 2; bandingkan Confusion AU4 **95%**, Frustration AU1+AU2 **100%**) dan *"no association rules between AUs were observed"*. Boredom lebih merupakan **disengagement** (gaze/postur lintas-waktu) daripada satu ekspresi wajah sesaat — D'Mello: *"disengagement (boredom) when they abandon pursuit of the... learning goal"*. Jadi memang tak ada sinyal wajah tunggal yang kuat untuk boredom.
+>
+> **Cara melabelinya (karena tak ada cue KUAT):**
+> - **Paling yakin:** 2 cue SEDANG bareng → **mata berat (AU43) + pandang ke samping/atas**.
+> - **Boleh:** 1 cue SEDANG yang **jelas** + konteks (mis. mata lesu droopy yang nyata, berlangsung beberapa saat).
+> - **Jangan:** dari 1 cue **samar/ambigu** saja (mata sedikit menyipit bisa AU7/cahaya; nunduk = malah Engagement).
 
 **BUKAN Boredom:**
 - Nunduk membaca/menulis → itu **Engagement** (lihat §2)
