@@ -43,6 +43,10 @@ Di galeri (panel kiri) klik tab **LP Transform**, atau tombol **Buka Panel ▸**
 frame netral yang ingin diubah. Tombol **Hapus Semua Tanda** di header panel menghapus semua
 tanda sekaligus.
 
+**Judul tiap seksi bisa diklik untuk dilipat/dibuka** (▾/▸) — seksi yang sudah selesai diset
+(mis. folder driving) bisa ditutup supaya panel padat dan tidak perlu scroll bolak-balik.
+Seksi "Dataset Wajah Baru" terlipat secara default karena opsional.
+
 Bagian **SUMBER** menampilkan UUID + frame yang sedang aktif; **◀ Sebelumnya / Berikutnya ▶**
 berpindah antar tanda. Sumber selalu mengikuti video yang sedang dilihat.
 
@@ -76,9 +80,20 @@ Folder default dari `LP_DRIVING_DIR` (default `4-Create/refrensi`).
    muncul lagi tanpa proses ulang.
 3. **Batch Semua** — proses **semua** frame bertanda dengan **satu** video driving; frame index
    yang Anda tandai dipakai untuk semua (ekspresi konsisten). Ganti driving → Batch lagi.
+   **Hasil tampil REALTIME**: tiap job selesai, pratinjau SUMBER + HASIL langsung berganti ke
+   job itu dan grid "Tinjau & Label" langsung terisi — tidak perlu menunggu seluruh batch.
 4. **Batal** menghentikan; **Reset** mengosongkan pilihan & hasil (file tidak dihapus).
 
 Saat proses berjalan, muncul **indikator loading beranimasi** supaya jelas tidak hang.
+
+### Hasil generate disimpan permanen (cache lintas-sesi)
+Setiap video hasil LP dicatat di `lp_result_cache.json` dengan kunci **identitas file**
+(ukuran + waktu modifikasi) dari gambar sumber + video driving + emosi — **BUKAN nama file**.
+Akibatnya:
+- Memproses kombinasi yang sama lagi (termasuk **Batch ulang**) = instan, hasil lama dipakai.
+- **Me-rename video driving tidak masalah** — file yang sama tetap dikenali dari waktunya.
+- Video driving **baru/diganti isinya** otomatis dianggap berbeda dan diproses normal.
+- Cache bertahan walau aplikasi ditutup-buka (tersimpan di folder hasil).
 
 ### Kecepatan — model di-load sekali
 LivePortrait dijalankan oleh **worker persisten** (`4-Create/lp_worker.py`, env `.venv-lp`):
@@ -110,7 +125,10 @@ driving baru. Contoh: tandai 2 frame di driving 10-frame (posisi ~22% & ~89%) �
 fraksi ini ke index-nya sendiri, jadi konsisten walau tiap driving beda panjang. Matikan
 checkbox bila ingin menandai dari nol tiap ganti driving.
 
-Hasil disimpan ke `{OUTPUT_DIR}/augmented/liveportrait_app/{uuid}/{emosi}/...jpg`.
+Hasil disimpan ke `{OUTPUT_DIR}/augmented/liveportrait_app/{uuid}/{emosi}/...jpg` dengan nama
+`{video}_f{frame}_{driving}_lp{index}.jpg` — **nama file memuat video driving-nya**, jadi:
+- Simpan dari **driving berbeda** → file berbeda (tidak saling menimpa).
+- Simpan ulang dari **driving yang sama** → menimpa file lama (otomatis bebas duplikat).
 
 ---
 
@@ -135,6 +153,9 @@ lebih umum / tidak overfit:
   kotak **Loncat** ke nomor tertentu, dan penunjuk posisi **"12 / 1340"**. Grid thumbnail
   **berhalaman** (◀ Halaman / Halaman ▶) — klik thumbnail untuk lompat ke gambar itu di pemeriksa.
   Jadi tidak perlu scroll satu-satu mencari di antara ribuan hasil.
+- **Tombol panah keyboard ◀/▶**: saat panel LP terbuka, panah kiri/kanan menggerakkan
+  pemeriksa (seperti save & next di galeri) — periksa ribuan gambar tanpa menyentuh mouse.
+  Di galeri, panah tetap pindah video seperti biasa.
 - Klik **1×** thumbnail → tampil **BESAR** di pemeriksa. Di sana ditampilkan **dua hal**:
   - **Deteksi AI** (chip, read-only) — hasil SigLIP+MediaPipe.
   - **Label final manual** (pill, bisa diklik) — yang dipakai saat buat dataset.
@@ -143,10 +164,13 @@ lebih umum / tidak overfit:
   terpisah dari label final manual `lp_labels.json`). Berjalan **inkremental** — gambar yang
   sudah berlabel AI dilewati, jadi menjalankan ulang cepat.
 - Klik **2×** gambar = **tolak/terima** (merah = ditolak, tidak ikut dataset). **Buang Ditolak →
-  _trash** memindahkan gambar yang ditolak ke folder `_trash/` (BUKAN hapus permanen — bisa
-  dipulihkan manual bila berubah pikiran).
-- **Filter** tampilan: Semua / Diterima / Ditolak / **AI != target** / per-emosi — supaya
-  pemeriksaan ribuan hasil terarah (mis. langsung lihat yang dicurigai salah).
+  _trash** memindahkan gambar yang ditolak ke folder `_trash/` (BUKAN hapus permanen).
+- **Gambar yang dibuang TIDAK hilang**: filter **"Dibuang (_trash)"** menampilkannya kembali
+  (overlay DIBUANG). **Dobel-klik** gambar di filter itu = pulihkan satu; tombol
+  **Pulihkan Dibuang** = pulihkan semua. Gambar yang dipulihkan berstatus *ditolak* lagi
+  supaya keputusannya bisa ditinjau ulang sebelum ikut dataset.
+- **Filter** tampilan: Semua / Diterima / Ditolak / **AI != target** / **Dibuang (_trash)** /
+  per-emosi — supaya pemeriksaan ribuan hasil terarah (mis. langsung lihat yang dicurigai salah).
 - **Auto-Tolak (AI != target)**: tandai tolak otomatis semua hasil yang menurut deteksi AI
   **tidak mengandung emosi targetnya** (jalankan "Deteksi AI Semua" dulu). QA ribuan gambar
   dalam satu klik; ada konfirmasi jumlah, tidak menghapus file, dan tiap gambar bisa
@@ -185,6 +209,8 @@ atau malah overfit).
 | `lp_labels.json` | Label final manual per gambar (dipakai saat buat dataset) |
 | `lp_ai_labels.json` | Hasil deteksi AI per gambar (pembanding) |
 | `lp_review.json` | Daftar gambar yang ditolak |
+| `lp_result_cache.json` | Cache hasil LP lintas-sesi (kunci identitas file ukuran+mtime, bukan nama) |
+| `augmented/liveportrait_app/_trash/` | Gambar yang dibuang (bisa dilihat via filter "Dibuang" & dipulihkan) |
 | `Label2d_merged_{base,lp,lp_new}/` | Dataset gabungan per komposisi |
 | `augment_marks.json` → `lp_transform_frames` | Frame sumber video yang ditandai LP |
 

@@ -164,8 +164,10 @@ class VideoLabelerApp:
         self._build_bottombar()
 
         self.root.bind("<space>", lambda e: self.toggle_play())
-        self.root.bind("<Right>", lambda e: self.save_and_next())
-        self.root.bind("<Left>",  lambda e: self.prev_video())
+        # Panah ◀/▶ sadar-mode: di galeri = pindah video (save & next); di panel LP =
+        # pindah gambar di pemeriksa hasil (review ribuan gambar tanpa klik mouse).
+        self.root.bind("<Right>", lambda e: self._on_arrow(+1))
+        self.root.bind("<Left>",  lambda e: self._on_arrow(-1))
 
     def _build_topbar(self):
         """Bangun bar atas: tombol buka folder, label nama video, dan progress counter."""
@@ -854,14 +856,95 @@ class VideoLabelerApp:
             tua = self._lp_result_cache_order.pop(0)
             self._lp_result_cache.pop(tua, None)
 
+    # ── Cache hasil PERSISTEN (lintas-sesi). Kunci = identitas file (ukuran+mtime),
+    #    BUKAN nama — file di-rename tetap dikenali; video baru pasti beda kunci. ──
+    @staticmethod
+    def _lp_sig(path: str) -> str:
+        """Identitas isi file dari ukuran + waktu modifikasi. Rename TIDAK mengubahnya;
+        file baru / di-encode ulang pasti berubah."""
+        try:
+            st = os.stat(path)
+            return f"{st.st_size}-{int(st.st_mtime)}"
+        except OSError:
+            return ""
+
+    def _lp_pcache_path(self) -> str | None:
+        p = getattr(self, "path_json_augment", None)   # baru ada setelah open_folder
+        return os.path.join(os.path.dirname(p), "lp_result_cache.json") if p else None
+
+    def _lp_pcache_key(self, src: str, drv: str, emo: str) -> str:
+        return f"{self._lp_sig(src)}|{self._lp_sig(drv)}|{emo}"
+
+    def _lp_pcache_get(self, src: str, drv: str, emo: str) -> str | None:
+        """Path video hasil LP yang SUDAH pernah dibuat untuk kombinasi (sumber, driving,
+        emosi) yang identik — proses ulang jadi instan, walau file driving di-rename."""
+        import json as _json
+        p = self._lp_pcache_path()
+        k = self._lp_pcache_key(src, drv, emo)
+        if not p or not os.path.exists(p) or k.startswith("|") or "||" in k:
+            return None
+        try:
+            with self._lp_json_lock, open(p) as f:
+                ent = _json.load(f).get(k)
+        except Exception:
+            return None
+        if ent and os.path.exists(ent.get("video", "")):
+            return ent["video"]
+        return None
+
+    def _lp_pcache_put(self, src: str, drv: str, emo: str, out_vid: str):
+        import json as _json
+        p = self._lp_pcache_path()
+        k = self._lp_pcache_key(src, drv, emo)
+        if not p or not out_vid or k.startswith("|") or "||" in k:
+            return
+        with self._lp_json_lock:
+            data = {}
+            if os.path.exists(p):
+                try:
+                    with open(p) as f:
+                        data = _json.load(f)
+                except Exception:
+                    data = {}
+            data[k] = {"video": out_vid, "driving": drv}
+            try:
+                with open(p, "w") as f:
+                    _json.dump(data, f, indent=1)
+            except Exception as e:
+                print(f"[LP cache] gagal menyimpan lp_result_cache.json: {e}")
+
+    def _lp_pcache_lookup_for_source(self, key):
+        """Cari hasil tersimpan (cache persisten) untuk frame sumber `key`, memakai
+        emosi + driving yang sedang dipilih di panel. Untuk restore lintas-sesi."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if not lp or not getattr(lp, "_built", False) or not getattr(self, "path_json_augment", None):
+            return None
+        emos = lp.get_selected_emotions()
+        if not emos:
+            return None
+        emo = emos[0]
+        drv = lp.get_driving_choice(emo)
+        vid_idx, fi = key
+        if not drv or vid_idx >= len(self.video_files):
+            return None
+        rel  = os.path.relpath(self.video_files[vid_idx], self.root_folder).replace("\\", "/")
+        base = os.path.splitext(rel)[0]
+        result_dir = os.path.dirname(self.path_json_augment)
+        src = os.path.join(result_dir, "cropped_faces", "clean", base, f"frame_{fi:02d}.jpg")
+        out = self._lp_pcache_get(src, drv, emo)
+        return {"emo": emo, "video": out, "driving": drv} if out else None
+
     def _lp_restore_cached_result(self, key):
-        """Tampilkan kembali hasil LP frame ini bila pernah diproses.
+        """Tampilkan kembali hasil LP frame ini bila pernah diproses — dari cache sesi,
+        atau dari cache persisten (hasil sesi lalu / file di-rename tetap dikenali).
         Decode video di THREAD LATAR supaya pindah-pindah frame tetap mulus."""
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if not lp or not getattr(lp, "_built", False):
             return
         data = self._lp_result_cache.get(key)
         if not data or not os.path.exists(data.get("video", "")):
+            data = self._lp_pcache_lookup_for_source(key)
+        if not data:
             return
         lp.start_loading("Memuat hasil yang sudah pernah diproses")
 
@@ -1019,8 +1102,10 @@ class VideoLabelerApp:
         lp.start_loading(f"Proses {len(plan)} job wajah baru")
 
         def _worker(jobs=plan, frac=fracs, ndump=n_even):
+            import cv2 as _cv2
             from ui.lp_panel import _decode_video
             done = 0
+            drv_terkirim = set()
             for k, (face, emo, drv) in enumerate(jobs, 1):
                 if self._lp_cancel_flag:
                     break
@@ -1032,7 +1117,12 @@ class VideoLabelerApp:
                 self.root.after(0, lambda m=f"Wajah {k}/{len(jobs)} · {stem} · {emo}":
                                 lp.start_loading(m))
                 try:
-                    out_vid = self._lp_infer(face, drv, out_d)
+                    # Cache persisten: foto+driving+emosi yang sama tidak diproses ulang
+                    out_vid = self._lp_pcache_get(face, drv, emo)
+                    if out_vid is None:
+                        out_vid = self._lp_infer(face, drv, out_d)
+                        if out_vid:
+                            self._lp_pcache_put(face, drv, emo, out_vid)
                     if not out_vid:
                         continue
                     frames = _decode_video(out_vid)
@@ -1044,6 +1134,20 @@ class VideoLabelerApp:
                     self._lp_write_frames(sel, emo, "", 0, drv_stem,
                                           uuid_override=uuid, stem_override=uuid)
                     done += 1
+                    # REALTIME: tampilkan hasil job ini segera + isi grid tinjau
+                    df = None
+                    if drv not in drv_terkirim:
+                        drv_terkirim.add(drv)
+                        df = _decode_video(drv)
+                    src_bgr = _cv2.imread(face)
+                    def _tampil(rf=frames, dfx=df, e2=emo, dpp=drv, sb=src_bgr, u=uuid):
+                        if sb is not None:
+                            lp.set_source_frame(sb, u, 0)
+                        if dfx is not None:
+                            lp.set_driving_frames(dfx, e2, path=dpp)
+                        lp.set_result_frames(rf, e2)
+                        self._lp_refresh_review()
+                    self.root.after(0, _tampil)
                 except Exception as ex:
                     print(f"[LP Face] {face} {emo} {drv_stem}: {ex}")
 
@@ -1287,19 +1391,30 @@ class VideoLabelerApp:
         def _worker(sp=src_path, dp=drv_path, od=out_dir, e=emo, src=(vid_idx, fi)):
             from ui.lp_panel import _decode_video
             try:
-                out_vid = self._lp_infer(sp, dp, od)
+                # Cache persisten: kombinasi (sumber, driving, emosi) identik → hasil lama
+                # langsung dipakai, tanpa menjalankan LP lagi (dikenali dari isi file,
+                # bukan nama — di-rename pun tetap kena).
+                out_vid = self._lp_pcache_get(sp, dp, e)
+                dari_cache = out_vid is not None
+                if not dari_cache:
+                    out_vid = self._lp_infer(sp, dp, od)
                 if not out_vid:
                     self.root.after(0, lambda: lp.stop_loading(
                         "LP tidak menghasilkan video output", "#ef4444"))
                     return
+                if not dari_cache:
+                    self._lp_pcache_put(sp, dp, e, out_vid)
                 res_frames = _decode_video(out_vid)        # full-res (untuk disimpan)
                 drv_frames = _decode_video(dp)             # preview driving
-                def on_done(rf=res_frames, df=drv_frames, emo2=e, key=src, ov=out_vid, dpp=dp):
+                def on_done(rf=res_frames, df=drv_frames, emo2=e, key=src, ov=out_vid,
+                            dpp=dp, cache=dari_cache):
                     self._lp_cache_result(key, emo2, ov, dpp)   # simpan PATH saja (hemat RAM)
                     lp.set_driving_frames(df, emo2, path=dpp)
                     lp.set_result_frames(rf, emo2)
+                    asal = " (hasil lama dipakai — sumber & driving sama)" if cache else ""
                     lp.stop_loading(
-                        f"Selesai · {emo2} · {len(rf)} frame. Tandai frame lalu Simpan.", "#10b981")
+                        f"Selesai · {emo2} · {len(rf)} frame{asal}. Tandai frame lalu Simpan.",
+                        "#10b981")
                 self.root.after(0, on_done)
             except Exception as ex:
                 err = str(ex)[:160]
@@ -1350,7 +1465,10 @@ class VideoLabelerApp:
         lp.start_loading(f"Batch {len(plan)} job · ekstrak {mode}")
 
         def _worker(jobs=plan, frac=fracs, ndump=n_even):
+            import cv2 as _cv2
+            from ui.lp_panel import _decode_video
             done = 0
+            drv_terkirim = set()    # driving yang preview-nya sudah dikirim ke panel (decode 1x)
             for k, (vid_idx, fi, emo, drv) in enumerate(jobs, 1):
                 if self._lp_cancel_flag:
                     break
@@ -1366,10 +1484,15 @@ class VideoLabelerApp:
                 self.root.after(0, lambda m=f"Batch {k}/{len(jobs)} · {(uuid or '?')[:6]} · {emo}":
                                 lp.start_loading(m))
                 try:
-                    out_vid = self._lp_infer(sp, drv, out_d)
+                    # Cache persisten: job yang persis sama (sumber+driving+emosi, dikenali
+                    # dari isi file bukan nama) tidak diproses ulang — batch ulang jadi cepat.
+                    out_vid = self._lp_pcache_get(sp, drv, emo)
+                    if out_vid is None:
+                        out_vid = self._lp_infer(sp, drv, out_d)
+                        if out_vid:
+                            self._lp_pcache_put(sp, drv, emo, out_vid)
                     if not out_vid:
                         continue
-                    from ui.lp_panel import _decode_video
                     frames = _decode_video(out_vid)
                     if not frames:
                         continue
@@ -1378,6 +1501,24 @@ class VideoLabelerApp:
                     sel = [(i, frames[i]) for i in idxs if i < total]
                     self._lp_write_frames(sel, emo, rel, fi, drv_stem)
                     done += 1
+                    # REALTIME: tampilkan job yang BARU SELESAI di pratinjau (sumber +
+                    # hasil) dan langsung isi grid 'Tinjau & Label' — tidak perlu
+                    # menunggu seluruh batch selesai untuk melihat hasilnya.
+                    df = None
+                    if drv not in drv_terkirim:
+                        drv_terkirim.add(drv)
+                        df = _decode_video(drv)
+                    src_bgr = _cv2.imread(sp)
+                    def _tampil(rf=frames, dfx=df, e2=emo, dpp=drv, sb=src_bgr,
+                                u=(uuid or ""), f2=fi, kk=(vid_idx, fi), ov=out_vid):
+                        self._lp_cache_result(kk, e2, ov, dpp)
+                        if sb is not None:
+                            lp.set_source_frame(sb, u, f2)
+                        if dfx is not None:
+                            lp.set_driving_frames(dfx, e2, path=dpp)
+                        lp.set_result_frames(rf, e2)
+                        self._lp_refresh_review()
+                    self.root.after(0, _tampil)
                 except Exception as ex:
                     print(f"[LP Batch] {rel} f{fi} {emo} {drv_stem}: {ex}")
 
@@ -1436,14 +1577,19 @@ class VideoLabelerApp:
         return len(rel_baru)
 
     def _lp_save_frames(self, frames: list, emo: str):
-        """Simpan frame hasil (interaktif) memakai sumber aktif."""
+        """Simpan frame hasil (interaktif) memakai sumber aktif. Nama file diberi tag
+        video DRIVING-nya — simpan dari driving berbeda TIDAK saling menimpa, sedangkan
+        simpan ulang dari driving yang sama menimpa file lama (otomatis bebas duplikat)."""
         src = self._lp_current_source
         if not src or not self.path_json_augment:
             return
         vid_idx, fi = src
         rel = os.path.relpath(self.video_files[vid_idx], self.root_folder).replace("\\", "/")
-        saved = self._lp_write_frames(frames, emo, rel, fi)
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        drv_stem = ""
+        if lp and getattr(lp, "driving_aktif", ""):
+            drv_stem = os.path.splitext(os.path.basename(lp.driving_aktif))[0]
+        saved = self._lp_write_frames(frames, emo, rel, fi, drv_stem)
         if lp:
             lp.update_progress(f"Tersimpan {saved} frame ke dataset ({emo}). "
                                f"Klik 'Muat / Refresh' untuk tinjau.", "#10b981")
@@ -1513,16 +1659,22 @@ class VideoLabelerApp:
             ai_labels = self._lp_load_ai_labels()
         items = [(path, emo, os.path.relpath(path, gen_dir).replace("\\", "/") if gen_dir else path)
                  for path, emo in gen]
-        lp.set_review_data(items, labels, ai_labels, rejected)
-        lp.update_progress(
-            f"{len(items)} hasil siap ditinjau — pakai ◀/▶ atau Loncat untuk navigasi.",
-            "#10b981" if items else "#6b7280")
+        dibuang = self._lp_list_trashed()
+        lp.set_review_data(items, labels, ai_labels, rejected, dibuang)
+        ket = f"{len(items)} hasil siap ditinjau — pakai tombol panah ◀/▶ keyboard atau Loncat."
+        if dibuang:
+            ket += f"  ·  {len(dibuang)} di _trash (lihat filter 'Dibuang (_trash)')."
+        lp.update_progress(ket, "#10b981" if items else "#6b7280")
 
     def _lp_toggle_reject(self, path: str):
         """Tolak/terima satu gambar hasil. Aman lintas-thread (lock). Update panel di tempat
-        (tanpa reload seluruh daftar) supaya posisi navigasi tidak hilang."""
+        (tanpa reload seluruh daftar) supaya posisi navigasi tidak hilang.
+        Untuk gambar yang sudah DIBUANG ke _trash: dobel-klik = pulihkan."""
         gen_dir = self._lp_generated_dir() or ""
         rel = os.path.relpath(path, gen_dir).replace("\\", "/")
+        if rel.split("/")[0] == "_trash":
+            self._lp_restore_one(path)
+            return
         with self._lp_json_lock:
             rejected = self._lp_load_review()
             baru = rel not in rejected
@@ -1923,6 +2075,9 @@ class VideoLabelerApp:
         if not ada_base:
             baris.append("\n(Label2d/train.csv belum ada — kolom 'asli' = 0. "
                          "Buat split 2D dulu untuk angka asli.)")
+        n_trash = len(self._lp_list_trashed())
+        if n_trash:
+            baris.append(f"\nDi _trash (dibuang, bisa dipulihkan): {n_trash} gambar.")
         baris.append("\n'LP diterima' = yang akan masuk saat Buat Dataset. "
                      "Pakai angka ini untuk menyeimbangkan kelas minoritas.")
         messagebox.showinfo("Statistik Dataset", "\n".join(baris))
@@ -2003,7 +2158,79 @@ class VideoLabelerApp:
         self._lp_refresh_review()
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         if lp:
-            lp.update_progress(f"{n} gambar ditolak dipindah ke _trash (bisa dipulihkan).", "#10b981")
+            lp.update_progress(f"{n} gambar ditolak dipindah ke _trash — masih bisa dilihat "
+                               f"lewat filter 'Dibuang (_trash)' dan dipulihkan.", "#10b981")
+
+    def _lp_trash_dir(self) -> str | None:
+        d = self._lp_generated_dir()
+        return os.path.join(d, "_trash") if d else None
+
+    def _lp_list_trashed(self) -> list:
+        """List (abs_path, emo, rel_asli) gambar yang pernah dibuang ke _trash —
+        supaya tetap BISA DILIHAT di panel (filter 'Dibuang') dan dipulihkan."""
+        import glob as _glob
+        t = self._lp_trash_dir()
+        if not t or not os.path.isdir(t):
+            return []
+        out = []
+        for p in sorted(_glob.glob(os.path.join(t, "**", "*.jpg"), recursive=True)):
+            rel = os.path.relpath(p, t).replace("\\", "/")
+            emo = next((x for x in rel.split("/") if x in LABELS), "?")
+            out.append((p, emo, rel))
+        return out
+
+    def _lp_restore_trash(self):
+        """Pulihkan SEMUA gambar dari _trash ke tempat asalnya. Gambar yang dipulihkan
+        diberi status DITOLAK lagi supaya keputusannya bisa ditinjau ulang (bukan
+        langsung ikut dataset)."""
+        import shutil
+        trashed = self._lp_list_trashed()
+        if not trashed:
+            messagebox.showinfo("Pulihkan dari _trash", "_trash kosong — tidak ada gambar untuk dipulihkan.")
+            return
+        gen_dir = self._lp_generated_dir() or ""
+        if not messagebox.askyesno(
+                "Pulihkan dari _trash",
+                f"Kembalikan {len(trashed)} gambar dari _trash ke tempat asal?\n\n"
+                "(Statusnya tetap DITOLAK — batalkan tolaknya satu per satu bila ingin dipakai.)"):
+            return
+        n, pulih = 0, set()
+        for p, _emo, rel in trashed:
+            tujuan = os.path.join(gen_dir, rel.replace("/", os.sep))
+            try:
+                os.makedirs(os.path.dirname(tujuan), exist_ok=True)
+                shutil.move(p, tujuan)
+                pulih.add(rel)
+                n += 1
+            except Exception as e:
+                self._lp_report_error(f"Gagal memulihkan {rel}: {e}")
+        with self._lp_json_lock:
+            self._lp_save_review(self._lp_load_review() | pulih)
+        self._lp_refresh_review()
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if lp:
+            lp.update_progress(f"{n} gambar dipulihkan dari _trash (status: ditolak — "
+                               f"batal-tolak yang ingin dipakai).", "#10b981")
+
+    def _lp_restore_one(self, trash_path: str):
+        """Pulihkan SATU gambar dari _trash (dobel-klik gambar di filter 'Dibuang')."""
+        import shutil
+        t = self._lp_trash_dir() or ""
+        gen_dir = self._lp_generated_dir() or ""
+        rel = os.path.relpath(trash_path, t).replace("\\", "/")
+        tujuan = os.path.join(gen_dir, rel.replace("/", os.sep))
+        try:
+            os.makedirs(os.path.dirname(tujuan), exist_ok=True)
+            shutil.move(trash_path, tujuan)
+        except Exception as e:
+            self._lp_report_error(f"Gagal memulihkan {rel}: {e}")
+            return
+        with self._lp_json_lock:
+            self._lp_save_review(self._lp_load_review() | {rel})
+        self._lp_refresh_review()
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if lp:
+            lp.update_progress(f"Dipulihkan dari _trash: {rel} (status: ditolak).", "#10b981")
 
     def _on_manual_check(self, frame_idx: int, label: str, value: bool):
         """Dipanggil saat user centang/uncentang checkbox manual label."""
@@ -2361,6 +2588,36 @@ class VideoLabelerApp:
             self.left_panel.show_video_frame(frame)
 
     # Navigation
+
+    def _arrow_target_lp(self):
+        """Panel LP bila sedang TAMPIL (panah keyboard dialihkan ke pemeriksa hasil)."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        try:
+            tampil = bool(self.left_panel._lp_container.winfo_ismapped())
+        except Exception:
+            tampil = False
+        return lp if (tampil and lp and getattr(lp, "_built", False)) else None
+
+    def _on_arrow(self, delta: int):
+        """Tombol panah kiri/kanan, sadar-mode:
+        - galeri  : pindah video (kanan = save & next, kiri = sebelumnya) — perilaku lama;
+        - panel LP: pindah gambar di pemeriksa 'Tinjau & Label' (kalau daftar tinjau ada),
+                    atau pindah antar frame sumber bertanda bila belum ada hasil.
+        Saat kursor sedang di kotak input, panah dibiarkan menggerakkan kursor teks."""
+        fokus = self.root.focus_get()
+        if isinstance(fokus, tk.Entry):
+            return
+        lp = self._arrow_target_lp()
+        if lp is not None:
+            if lp.review_items:
+                lp._tinjau_geser(delta)
+            else:
+                self._goto_lp_mark(delta)
+            return
+        if delta > 0:
+            self.save_and_next()
+        else:
+            self.prev_video()
 
     def save_and_next(self):
         """Simpan state video saat ini lalu pindah ke video berikutnya."""

@@ -94,6 +94,48 @@ def main():
         assert len(lp.review_items) == 1 and lp.review_items[0][2] == "rel/x1.jpg"
         lp.var_filter_tinjau.set("Semua"); lp._terapkan_filter()
         assert len(lp.review_items) == 120
+        # Filter 'Dibuang (_trash)': gambar yang dibuang TETAP terlihat & bisa dipulihkan
+        buang = [(f"/tmp/_trash/t{i}.jpg", "Confusion", f"rel/t{i}.jpg") for i in range(3)]
+        lp.set_review_data(items, labels, {}, set(), dibuang=buang)
+        lp.var_filter_tinjau.set("Dibuang (_trash)"); lp._terapkan_filter()
+        assert len(lp.review_items) == 3, len(lp.review_items)
+        lp.var_filter_tinjau.set("Semua"); lp._terapkan_filter()
+        assert len(lp.review_items) == 120
+
+        # Panah keyboard sadar-mode: di panel LP panah menggerakkan pemeriksa hasil
+        root.update()
+        assert a._arrow_target_lp() is lp, "panel LP tampil → panah harus ke pemeriksa"
+        lp.idx_tinjau = 0; lp._render_pemeriksa()
+        a._on_arrow(+1); assert lp.idx_tinjau == 1, lp.idx_tinjau
+        a._on_arrow(-1); assert lp.idx_tinjau == 0, lp.idx_tinjau
+
+        # Seksi panel bisa dilipat: toggle 2x tidak error & state kembali
+        assert lp._seksi_toggle, "seksi lipat belum terdaftar"
+        for _nama, toggle in lp._seksi_toggle.items():
+            toggle(); toggle()
+
+        # Cache hasil persisten: kunci = identitas file (ukuran+mtime), BUKAN nama —
+        # file driving di-rename tetap dikenali; emosi lain = kunci lain
+        import tempfile, shutil as _sh
+        tdir = tempfile.mkdtemp(prefix="lp_pcache_")
+        src = os.path.join(tdir, "src.jpg")
+        drv = os.path.join(tdir, "drv.mp4")
+        out = os.path.join(tdir, "out.mp4")
+        for p, isi in [(src, b"a" * 100), (drv, b"b" * 200), (out, b"c" * 300)]:
+            with open(p, "wb") as f:
+                f.write(isi)
+        path_lama = getattr(a, "path_json_augment", None)
+        a.path_json_augment = os.path.join(tdir, "augment_marks.json")
+        assert a._lp_sig(src), "sig file harus terisi"
+        a._lp_pcache_put(src, drv, "Confusion", out)
+        assert a._lp_pcache_get(src, drv, "Confusion") == out
+        drv_baru = os.path.join(tdir, "NamaBaru.mp4")
+        os.rename(drv, drv_baru)                      # rename = video yang sama
+        assert a._lp_pcache_get(src, drv_baru, "Confusion") == out
+        assert a._lp_pcache_get(src, drv_baru, "Frustration") is None
+        a.path_json_augment = path_lama
+        _sh.rmtree(tdir, ignore_errors=True)
+
         lp.set_review_data([], {}, {}, set())  # kasus kosong
         lp.render_faces([("/tmp/a.jpg", False, dummy), ("/tmp/b.jpg", True, dummy)])
 
@@ -104,11 +146,15 @@ def main():
                   "_lp_refresh_review", "_lp_refresh_faces", "_lp_save_frames",
                   "_lp_scan_driving", "_lp_set_label", "_lp_toggle_reject",
                   "_lp_build_merged_dataset", "_rel_to_idx",
-                  "_lp_show_stats", "_lp_auto_reject_mismatch"]:
+                  "_lp_show_stats", "_lp_auto_reject_mismatch",
+                  "_lp_restore_trash", "_lp_restore_one", "_lp_list_trashed",
+                  "_lp_pcache_get", "_lp_pcache_put", "_on_arrow"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
 
-        # Ganti-ganti mode tidak boleh error
+        # Ganti-ganti mode tidak boleh error; di galeri panah kembali ke navigasi video
         a.left_panel.show_gallery_mode()
+        root.update()
+        assert a._arrow_target_lp() is None, "galeri → panah harus ke navigasi video"
         a.left_panel.show_rules_mode()
         a.left_panel.show_gallery_mode()
 

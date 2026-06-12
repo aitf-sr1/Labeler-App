@@ -201,8 +201,11 @@ class LPPanel:
         self.label_posisi_tinjau = None
         self.label_hal     = None
         self._items_tinjau_penuh = []   # SEMUA item sebelum filter
-        self.var_filter_tinjau = None   # Semua|Diterima|Ditolak|AI != target|per-emosi
+        self._items_dibuang = []        # gambar di _trash: list (path_trash, emosi, rel_asli)
+        self.review_dibuang = set()     # rel gambar yang sedang berada di _trash
+        self.var_filter_tinjau = None   # Semua|Diterima|Ditolak|AI != target|Dibuang|per-emosi
         self._periksa_token = 0         # anti-balapan load full-res pemeriksa
+        self._seksi_toggle = {}         # {judul: fungsi lipat/buka seksi}
 
         # --- Referensi widget (diisi saat build) ---
         self.label_sumber   = None
@@ -248,13 +251,15 @@ class LPPanel:
         area.pack(fill="both", expand=True)
         _aktifkan_scroll_mouse(area)
 
+        # Tiap seksi punya judul yang bisa DILIPAT (klik) — panel jadi padat, seksi yang
+        # sudah selesai diset bisa ditutup supaya tidak perlu scroll bolak-balik.
         self._bangun_header_sumber(area)
         self._bangun_konfig_driving(area)
-        self._bangun_pemilih_emosi(area)
-        self._bangun_tombol_proses(area)
+        seksi_emosi = self._bangun_pemilih_emosi(area)
+        self._bangun_tombol_proses(area, seksi_emosi)   # emosi + proses = SATU seksi
         self._bangun_pratinjau(area)
         self._bangun_pemilih_frame(area)
-        self._bangun_dataset_wajah(area)
+        self._bangun_dataset_wajah(area)                # opsional → terlipat default
         self._bangun_tinjau_label(area)
 
         # Ringkasan setelan ikut berubah saat dropdown driving diganti
@@ -263,6 +268,32 @@ class LPPanel:
 
         self._pindai_folder_driving()   # isi menu driving otomatis
         self._segarkan_ringkasan()
+
+    def _seksi_lipat(self, induk, teks: str, terbuka: bool = True, isi_penuh: bool = False):
+        """Judul seksi yang BISA DILIPAT (klik = buka/tutup). Memadatkan panel: seksi
+        yang sudah selesai diset bisa ditutup sehingga tidak perlu scroll bolak-balik.
+        Mengembalikan frame isi — semua widget seksi dipasang ke situ."""
+        tombol = ctk.CTkButton(
+            induk, text=("▾  " if terbuka else "▸  ") + teks, anchor="w",
+            font=("Poppins", 10, "bold"), fg_color="transparent", height=26,
+            corner_radius=6, hover_color=("#e5e7eb", "#1f1f30"),
+            text_color=("#374151", "#cbd5e1"))
+        tombol.pack(fill="x", padx=8, pady=(6, 0))
+        isi = ctk.CTkFrame(induk, fg_color="transparent")
+        sisi = "both" if isi_penuh else "x"
+        if terbuka:
+            isi.pack(fill=sisi, expand=isi_penuh, after=tombol)
+
+        def _toggle():
+            if isi.winfo_manager():
+                isi.pack_forget()
+                tombol.configure(text="▸  " + teks)
+            else:
+                isi.pack(fill=sisi, expand=isi_penuh, after=tombol)
+                tombol.configure(text="▾  " + teks)
+        tombol.configure(command=_toggle)
+        self._seksi_toggle[teks] = _toggle
+        return isi
 
     def _bangun_header_sumber(self, induk):
         kartu = ctk.CTkFrame(induk, fg_color=("#fef3c7", "#1c1400"), corner_radius=10)
@@ -290,7 +321,7 @@ class LPPanel:
         self.label_jml_tanda.pack(side="right", padx=(0, 8))
 
     def _bangun_konfig_driving(self, induk):
-        _judul_seksi(induk, "Folder Video Driving (acuan ekspresi)")
+        induk = self._seksi_lipat(induk, "Folder Video Driving (acuan ekspresi)")
         ctk.CTkLabel(
             induk,
             text="Taruh video acuan di folder ini. PENTING: beri nama file sesuai NAMA EMOSI "
@@ -330,9 +361,11 @@ class LPPanel:
             self.menu_driving[emosi] = menu
 
     def _bangun_pemilih_emosi(self, induk):
-        _judul_seksi(induk, "Emosi yang Diproses (pilih SATU)")
+        """Pill emosi. Mengembalikan frame seksi — tombol proses dipasang ke seksi
+        yang SAMA (emosi + proses memang satu alur, hemat ruang vertikal)."""
+        induk = self._seksi_lipat(induk, "Emosi & Proses (pilih SATU emosi)")
         baris = ctk.CTkFrame(induk, fg_color="transparent")
-        baris.pack(fill="x", padx=14, pady=(2, 8))
+        baris.pack(fill="x", padx=14, pady=(2, 2))
         for emosi in LABELS:
             warna = LABEL_COLORS[emosi]
             tombol = ctk.CTkButton(
@@ -342,9 +375,11 @@ class LPPanel:
                 command=lambda e=emosi: self._ganti_emosi(e))
             tombol.pack(side="left", padx=3)
             self.tombol_emosi[emosi] = tombol
+        return induk
 
-    def _bangun_tombol_proses(self, induk):
-        _judul_seksi(induk, "Proses LivePortrait")
+    def _bangun_tombol_proses(self, luar, induk):
+        """Tombol proses dipasang ke seksi emosi (`induk`); label progres ke `luar`
+        (area scroll) supaya status SELALU terlihat walau seksi dilipat."""
         baris = ctk.CTkFrame(induk, fg_color="transparent")
         baris.pack(fill="x", padx=14, pady=(4, 4))
         ctk.CTkButton(baris, text="Proses Frame Ini", height=32, corner_radius=8,
@@ -362,13 +397,14 @@ class LPPanel:
                       font=("Poppins", 10, "bold"), fg_color=("#fee2e2", "#3a1414"),
                       hover_color=("#fecaca", "#4a1a1a"), text_color=("#b91c1c", "#fca5a5"),
                       command=self.reset).pack(side="left")
-        self.label_progres = ctk.CTkLabel(induk, text="", font=("Poppins", 9),
+        self.label_progres = ctk.CTkLabel(luar, text="", font=("Poppins", 9),
                                           text_color="#10b981", anchor="w", justify="left",
                                           wraplength=680)
-        self.label_progres.pack(fill="x", padx=14, pady=(0, 4))
+        self.label_progres.pack(fill="x", padx=14, pady=(0, 2))
 
     def _bangun_pratinjau(self, induk):
-        _judul_seksi(induk, "Pratinjau  ·  SUMBER | DRIVING | HASIL  (viz ikut saklar Viz)")
+        induk = self._seksi_lipat(induk,
+                                  "Pratinjau  ·  SUMBER | DRIVING | HASIL  (viz ikut saklar Viz)")
         wadah = ctk.CTkFrame(induk, fg_color="transparent")
         wadah.pack(fill="x", padx=10, pady=(0, 4))
         for kolom in range(3):
@@ -394,7 +430,7 @@ class LPPanel:
                           command=lambda k=kolom: self._unduh_gambar(k)).pack(pady=(4, 0))
 
     def _bangun_pemilih_frame(self, induk):
-        _judul_seksi(induk, "Pilih Frame Hasil untuk Dataset")
+        induk = self._seksi_lipat(induk, "Pilih Frame Hasil untuk Dataset")
         kartu = ctk.CTkFrame(induk, fg_color=("#f3f4f6", "#1a1a2e"), corner_radius=10)
         kartu.pack(fill="x", padx=12, pady=(0, 4))
         self.label_info_hasil = ctk.CTkLabel(
@@ -455,7 +491,9 @@ class LPPanel:
             wraplength=680, justify="left").pack(fill="x", padx=12, pady=(0, 8))
 
     def _bangun_dataset_wajah(self, induk):
-        _judul_seksi(induk, "Dataset Wajah Baru  (opsional — tiap foto = 1 orang baru)")
+        # Terlipat default: fitur opsional — buka hanya saat dibutuhkan (hemat scroll)
+        induk = self._seksi_lipat(induk, "Dataset Wajah Baru  (opsional — tiap foto = 1 orang baru)",
+                                  terbuka=False, isi_penuh=True)
         ctk.CTkLabel(
             induk,
             text="Untuk menambah RAGAM orang (mis. dari dataset wajah open-source) agar model "
@@ -508,7 +546,8 @@ class LPPanel:
         self.grid_wajah.pack(fill="both", expand=True, padx=10, pady=(2, 8))
 
     def _bangun_tinjau_label(self, induk):
-        _judul_seksi(induk, "Tinjau & Label Hasil  (cek sebelum buat dataset)")
+        induk = self._seksi_lipat(induk, "Tinjau & Label Hasil  (cek sebelum buat dataset)",
+                                  isi_penuh=True)
         bar = ctk.CTkFrame(induk, fg_color="transparent")
         bar.pack(fill="x", padx=14, pady=(0, 2))
         ctk.CTkButton(bar, text="Muat / Refresh", height=28, width=120, corner_radius=8,
@@ -520,6 +559,10 @@ class LPPanel:
         ctk.CTkButton(bar, text="Buang Ditolak → _trash", height=28, width=156, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#ef4444", hover_color="#dc2626",
                       command=self.app._lp_delete_rejected).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(bar, text="Pulihkan Dibuang", height=28, width=130, corner_radius=8,
+                      font=("Poppins", 9, "bold"), fg_color=("#e5e7eb", "#2a2a3a"),
+                      hover_color=("#d1d5db", "#3a3a4a"), text_color=("#374151", "#9ca3af"),
+                      command=self.app._lp_restore_trash).pack(side="left", padx=(0, 6))
 
         # Baris alat QA: filter tampilan + auto-tolak mismatch AI + statistik dataset
         bar2 = ctk.CTkFrame(induk, fg_color="transparent")
@@ -528,7 +571,7 @@ class LPPanel:
                      text_color=("#6b7280", "#9ca3af")).pack(side="left", padx=(0, 4))
         self.menu_filter = ctk.CTkOptionMenu(
             bar2, variable=self.var_filter_tinjau,
-            values=["Semua", "Diterima", "Ditolak", "AI != target"] + LABELS,
+            values=["Semua", "Diterima", "Ditolak", "AI != target", "Dibuang (_trash)"] + LABELS,
             font=("Poppins", 9), height=26, width=130, corner_radius=6,
             fg_color=("#e5e7eb", "#23233a"), button_color="#3b82f6",
             command=lambda _v: self._terapkan_filter())
@@ -544,8 +587,9 @@ class LPPanel:
         ctk.CTkLabel(
             induk, text="Klik 1x thumbnail = lihat besar + bandingkan deteksi AI vs label manual.  "
                         "Klik 2x = tolak/terima (merah = ditolak, tidak ikut dataset).  "
-                        "Auto-Tolak menandai tolak semua hasil yang menurut AI tidak mengandung "
-                        "emosi targetnya (jalankan 'Deteksi AI Semua' dulu).",
+                        "Tombol panah ◀/▶ keyboard = sebelumnya/berikutnya di pemeriksa.  "
+                        "Filter 'Dibuang (_trash)' menampilkan gambar yang sudah dibuang — "
+                        "dobel-klik di sana = pulihkan satu, 'Pulihkan Dibuang' = pulihkan semua.",
             font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
             wraplength=680, justify="left").pack(fill="x", padx=14, pady=(2, 4))
 
@@ -824,10 +868,14 @@ class LPPanel:
 
     # ── Tinjau & label hasil ────────────────────────────────────────────────────
 
-    def set_review_data(self, items: list, labels: dict, ai_labels: dict, ditolak: set):
+    def set_review_data(self, items: list, labels: dict, ai_labels: dict, ditolak: set,
+                        dibuang: list = None):
         """Terima SELURUH daftar hasil + state (label/ai/tolak). Tidak decode thumbnail di
-        sini (cepat walau ribuan). items: list (path, emosi, rel)."""
+        sini (cepat walau ribuan). items: list (path, emosi, rel).
+        `dibuang`: gambar yang sudah di _trash — tampil lewat filter 'Dibuang (_trash)'."""
         self._items_tinjau_penuh = items or []
+        self._items_dibuang = dibuang or []
+        self.review_dibuang = {rel for _p, _e, rel in self._items_dibuang}
         self.review_label = labels or {}
         self.review_ai = ai_labels or {}
         self.review_ditolak = set(ditolak or set())
@@ -851,7 +899,12 @@ class LPPanel:
 
     def _terapkan_filter(self):
         """Saring daftar tinjau sesuai filter, lalu render ulang (posisi di-clamp)."""
-        self.review_items = [it for it in self._items_tinjau_penuh if self._cocok_filter(it)]
+        f = self.var_filter_tinjau.get() if self.var_filter_tinjau else "Semua"
+        if f == "Dibuang (_trash)":
+            # gambar di _trash: tetap bisa dilihat & dipulihkan (dobel-klik)
+            self.review_items = list(self._items_dibuang)
+        else:
+            self.review_items = [it for it in self._items_tinjau_penuh if self._cocok_filter(it)]
         self.idx_tinjau = min(self.idx_tinjau, len(self.review_items) - 1) if self.review_items else 0
         self._render_pemeriksa()
         self._render_halaman()
@@ -887,8 +940,8 @@ class LPPanel:
         self._render_pemeriksa()
         self._render_halaman()
 
-    def _gambar_pemeriksa(self, bgr, ditolak: bool, emosi: str):
-        """Gambar satu bgr ke kanvas pemeriksa (+ overlay DITOLAK + warna tepi)."""
+    def _gambar_pemeriksa(self, bgr, ditolak: bool, emosi: str, teks_overlay: str = "DITOLAK"):
+        """Gambar satu bgr ke kanvas pemeriksa (+ overlay DITOLAK/DIBUANG + warna tepi)."""
         import cv2
         self.kanvas_pemeriksa.delete("all")
         if bgr is not None:
@@ -900,7 +953,7 @@ class LPPanel:
         if ditolak:
             self.kanvas_pemeriksa.create_rectangle(0, 0, UKURAN_PEMERIKSA, UKURAN_PEMERIKSA,
                                                    fill="#2a0000", stipple="gray50")
-            self.kanvas_pemeriksa.create_text(UKURAN_PEMERIKSA // 2, 20, text="DITOLAK",
+            self.kanvas_pemeriksa.create_text(UKURAN_PEMERIKSA // 2, 20, text=teks_overlay,
                                               fill="#ef4444", font=("Poppins", 11, "bold"))
 
     def _render_pemeriksa(self):
@@ -919,23 +972,25 @@ class LPPanel:
             self.label_pemeriksa.configure(text="—")
             return
         path, emosi, rel = self.review_items[self.idx_tinjau]
-        ditolak = rel in self.review_ditolak
+        dibuang = rel in self.review_dibuang and "_trash" in path.replace("\\", "/").split("/")
+        ditolak = (rel in self.review_ditolak) or dibuang
+        teks_tanda = "DIBUANG — dobel-klik = pulihkan" if dibuang else "DITOLAK"
         label = self._label_item(rel, emosi)
         ai_label = self.review_ai.get(rel, {})
 
         # 1) tampilkan thumbnail dari cache dulu (instan); full-res menyusul
-        self._gambar_pemeriksa(self._thumb_review.get(path), ditolak, emosi)
+        self._gambar_pemeriksa(self._thumb_review.get(path), ditolak, emosi, teks_tanda)
         self._periksa_token += 1
         token = self._periksa_token
 
-        def _muat_penuh(p=path, t=token, tolak=ditolak, emo=emosi):
+        def _muat_penuh(p=path, t=token, tolak=ditolak, emo=emosi, tx=teks_tanda):
             import cv2
             bgr = cv2.imread(p)
             if bgr is None:
                 return
             def _pasang():
                 if t == self._periksa_token:        # masih gambar yang sama?
-                    self._gambar_pemeriksa(bgr, tolak, emo)
+                    self._gambar_pemeriksa(bgr, tolak, emo, tx)
             try:
                 self.app.root.after(0, _pasang)
             except (RuntimeError, tk.TclError):
@@ -956,7 +1011,10 @@ class LPPanel:
                 pill.configure(fg_color=warna, text_color="#0b0b12", border_color=warna)
             else:
                 pill.configure(fg_color="transparent", text_color=warna, border_color=warna)
-        self.tombol_tolak_periksa.configure(text="Batal Tolak" if ditolak else "Tolak Gambar Ini")
+        if dibuang:
+            self.tombol_tolak_periksa.configure(text="Pulihkan dari _trash")
+        else:
+            self.tombol_tolak_periksa.configure(text="Batal Tolak" if ditolak else "Tolak Gambar Ini")
 
     # ── Grid berhalaman (thumbnail di-decode di thread latar) ──
     def _geser_halaman(self, delta: int):
@@ -1024,7 +1082,8 @@ class LPPanel:
             r, c = divmod(j, KOLOM)
             sel = tk.Frame(self.grid_tinjau, bg="#161622")
             sel.grid(row=r, column=c, padx=3, pady=3)
-            ditolak = rel in self.review_ditolak
+            dibuang = "_trash" in path.replace("\\", "/").split("/")
+            ditolak = (rel in self.review_ditolak) or dibuang
             aktif = (idx_abs == self.idx_tinjau)
             warna_tepi = (WARNA_LP if aktif else ("#ef4444" if ditolak
                           else LABEL_COLORS.get(emosi, "#333")))
@@ -1041,7 +1100,8 @@ class LPPanel:
                 kanvas.create_rectangle(0, 0, UKURAN_THUMBNAIL, UKURAN_THUMBNAIL,
                                         fill="#2a0000", stipple="gray50")
                 kanvas.create_text(UKURAN_THUMBNAIL // 2, UKURAN_THUMBNAIL // 2,
-                                   text="DITOLAK", fill="#ef4444", font=("Poppins", 9, "bold"))
+                                   text="DIBUANG" if dibuang else "DITOLAK",
+                                   fill="#ef4444", font=("Poppins", 9, "bold"))
             kanvas.bind("<Button-1>", lambda e, i=idx_abs: self._buka_di_pemeriksa(i))
             kanvas.bind("<Double-Button-1>", lambda e, p=path: self.app._lp_toggle_reject(p))
             lab = self._label_item(rel, emosi)
