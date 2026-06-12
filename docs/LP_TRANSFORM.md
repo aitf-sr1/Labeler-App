@@ -80,8 +80,9 @@ Folder default dari `LP_DRIVING_DIR` (default `4-Create/refrensi`).
    muncul lagi tanpa proses ulang.
 3. **Batch Semua** — proses **semua** frame bertanda dengan **satu** video driving; frame index
    yang Anda tandai dipakai untuk semua (ekspresi konsisten). Ganti driving → Batch lagi.
-   **Hasil tampil REALTIME**: tiap job selesai, pratinjau SUMBER + HASIL langsung berganti ke
-   job itu dan grid "Tinjau & Label" langsung terisi — tidak perlu menunggu seluruh batch.
+   **Hasil tampil REALTIME (di-throttle anti-lag)**: pratinjau SUMBER + HASIL diperbarui ~tiap
+   1,2 detik dan grid "Tinjau & Label" ~tiap 3 detik (bukan tiap job) — jadi batch yang banyak/
+   instan-dari-cache **tidak membuat aplikasi lag**; refresh penuh tetap dijalankan di akhir.
 4. **Batal** menghentikan; **Reset** mengosongkan pilihan & hasil (file tidak dihapus).
 
 Saat proses berjalan, muncul **indikator loading beranimasi** supaya jelas tidak hang.
@@ -133,6 +134,15 @@ Hasil disimpan ke `{OUTPUT_DIR}/augmented/liveportrait_app/{uuid}/{emosi}/...jpg
 `{video}_f{frame}_{driving}_lp{index}.jpg` — **nama file memuat video driving-nya**, jadi:
 - Simpan dari **driving berbeda** → file berbeda (tidak saling menimpa).
 - Simpan ulang dari **driving yang sama** → menimpa file lama (otomatis bebas duplikat).
+
+**Lokasi simpan selalu terlihat:** begitu folder dataset dibuka, panel menampilkan baris
+**"Lokasi simpan: {dataset}/augmented/liveportrait_app/{uuid}/{emosi}/"** yang ikut berubah
+saat Anda ganti emosi / pindah frame sumber — jadi tidak perlu menebak frame disimpan ke mana.
+
+**Siapa menyimpan kapan (penting, sering bingung):**
+- **Batch Semua** & **Proses Wajah Terpilih** → menyimpan **OTOMATIS** (langsung muncul di Tinjau).
+- **Proses Frame Ini** → hanya pratinjau; **klik Simpan Frame Tertanda / Simpan Frame Ini Saja**
+  untuk menyimpan ke dataset. (Hasil pratinjau tetap muncul lagi otomatis bila frame dibuka lagi.)
 
 ---
 

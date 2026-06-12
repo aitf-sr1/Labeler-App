@@ -73,6 +73,13 @@ def main():
         lp.update_progress("uji"); lp.start_loading("uji loading"); lp.stop_loading("selesai")
         lp.clear_source("uji"); lp.set_source_label("abcd1234", 0); lp.reset()
 
+        # Lokasi simpan + throttle refresh (anti-lag) tidak boleh error
+        lp.set_save_info("uji lokasi")
+        a._lp_update_save_info()
+        a._lp_last_review_ts = 0.0
+        a._lp_refresh_review_throttled(jeda=999)   # sekali jalan
+        a._lp_refresh_review_throttled(jeda=999)   # ke-2 harus di-skip (throttle)
+
         # Tinjau & navigasi (ribuan item): set_review_data + prev/next/loncat/terapkan_state
         dummy = np.zeros((80, 80, 3), dtype="uint8")
         label_kosong = {l: 0 for l in mod.LABELS}
@@ -180,7 +187,7 @@ def main():
                   "_lp_show_stats", "_lp_auto_reject_mismatch",
                   "_lp_restore_trash", "_lp_restore_one", "_lp_list_trashed",
                   "_lp_pcache_get", "_lp_pcache_put", "_lp_pcache_lookup_any_for_source",
-                  "_on_arrow"]:
+                  "_on_arrow", "_lp_update_save_info", "_lp_refresh_review_throttled"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
 
         # Ganti-ganti mode tidak boleh error; di galeri panah kembali ke navigasi video

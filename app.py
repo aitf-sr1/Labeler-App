@@ -136,6 +136,10 @@ class VideoLabelerApp:
         # Satu lock untuk SEMUA baca-ubah-tulis file lp_labels / lp_ai_labels / lp_review
         # (UI thread dan worker batch menulis file yang sama → tanpa lock, update bisa hilang).
         self._lp_json_lock     = threading.RLock()
+        # Throttle update UI saat batch (anti-lag): refresh grid tinjau & preview dibatasi
+        # frekuensinya — kalau tidak, batch dari cache (instan) membanjiri ratusan refresh.
+        self._lp_last_review_ts  = 0.0
+        self._lp_last_preview_ts = 0.0
 
         self._build_ui()
         # Initialize inline rules content in left panel (needs threshold_vars from right panel)
@@ -318,6 +322,7 @@ class VideoLabelerApp:
         self._load_data()
         self.current_index = 0
         self.load_video()
+        self._lp_update_save_info()   # tampilkan lokasi simpan LP begitu dataset dibuka
 
     def _load_data(self):
         """Muat semua file persistensi (CSV + JSON) ke memory state aplikasi."""
@@ -844,8 +849,34 @@ class VideoLabelerApp:
                 lp.set_source_label(uuid or "", fi)
         else:
             lp.set_source_label(uuid or "", fi)
+        self._lp_update_save_info()   # lokasi simpan ikut UUID frame sumber ini
         # Tampilkan lagi hasil yang sudah pernah diproses untuk frame ini (dari cache)
         self._lp_restore_cached_result((vid_idx, fi))
+
+    def _lp_update_save_info(self):
+        """Perbarui indikator 'frame disimpan ke mana' di panel LP. Dipanggil saat folder
+        dataset dibuka, saat emosi/sumber berganti, dan setelah menyimpan — supaya user
+        selalu tahu lokasi penyimpanan (menjawab kebingungan mekanisme simpan)."""
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        if not lp or not getattr(lp, "_built", False):
+            return
+        if not getattr(self, "path_json_augment", None):
+            lp.set_save_info(
+                "Lokasi simpan: buka folder dataset dulu (tombol 'Buka Folder' di atas).",
+                "#9ca3af")
+            return
+        result_dir = os.path.dirname(self.path_json_augment)
+        base = os.path.basename(result_dir.rstrip("/\\")) or result_dir
+        emos = lp.get_selected_emotions()
+        emo = emos[0] if emos else "{emosi}"
+        uuid = "{uuid}"
+        if self._lp_current_source and self._lp_current_source[0] < len(self.video_files):
+            rel = os.path.relpath(self.video_files[self._lp_current_source[0]],
+                                  self.root_folder).replace("\\", "/")
+            uuid = (self._person_of(rel) or "unknown")[:8]
+        lp.set_save_info(
+            f"Lokasi simpan: {base}/augmented/liveportrait_app/{uuid}/{emo}/  "
+            f"→ langsung muncul di 'Tinjau & Label'.", "#2563eb")
 
     def _lp_cache_result(self, key, emo, video_path, driving_path):
         """Catat hasil LP per frame sumber. Yang disimpan hanya PATH video output +
@@ -1175,19 +1206,26 @@ class VideoLabelerApp:
                     self._lp_write_frames(sel, emo, "", 0, drv_stem,
                                           uuid_override=uuid, stem_override=uuid)
                     done += 1
-                    # REALTIME: tampilkan hasil job ini segera + isi grid tinjau
+                    # REALTIME (di-throttle anti-lag, sama seperti batch)
+                    import time as _t
+                    now = _t.time()
+                    tampil_preview = (now - self._lp_last_preview_ts >= 1.2)
                     df = None
-                    if drv not in drv_terkirim:
-                        drv_terkirim.add(drv)
-                        df = _decode_video(drv)
-                    src_bgr = _cv2.imread(face)
-                    def _tampil(rf=frames, dfx=df, e2=emo, dpp=drv, sb=src_bgr, u=uuid):
-                        if sb is not None:
-                            lp.set_source_frame(sb, u, 0)
-                        if dfx is not None:
-                            lp.set_driving_frames(dfx, e2, path=dpp)
-                        lp.set_result_frames(rf, e2)
-                        self._lp_refresh_review()
+                    if tampil_preview:
+                        self._lp_last_preview_ts = now
+                        if drv not in drv_terkirim:
+                            drv_terkirim.add(drv)
+                            df = _decode_video(drv)
+                    src_bgr = _cv2.imread(face) if tampil_preview else None
+                    def _tampil(rf=frames, dfx=df, e2=emo, dpp=drv, sb=src_bgr, u=uuid,
+                                show=tampil_preview):
+                        if show:
+                            if sb is not None:
+                                lp.set_source_frame(sb, u, 0)
+                            if dfx is not None:
+                                lp.set_driving_frames(dfx, e2, path=dpp)
+                            lp.set_result_frames(rf, e2)
+                        self._lp_refresh_review_throttled()
                     self.root.after(0, _tampil)
                 except Exception as ex:
                     print(f"[LP Face] {face} {emo} {drv_stem}: {ex}")
@@ -1381,6 +1419,7 @@ class VideoLabelerApp:
             return False
         self._lp_busy = True
         self._lp_cancel_flag = False
+        self._lp_last_review_ts = self._lp_last_preview_ts = 0.0   # job pertama tampil langsung
         return True
 
     def _lp_process_current(self):
@@ -1542,23 +1581,30 @@ class VideoLabelerApp:
                     sel = [(i, frames[i]) for i in idxs if i < total]
                     self._lp_write_frames(sel, emo, rel, fi, drv_stem)
                     done += 1
-                    # REALTIME: tampilkan job yang BARU SELESAI di pratinjau (sumber +
-                    # hasil) dan langsung isi grid 'Tinjau & Label' — tidak perlu
-                    # menunggu seluruh batch selesai untuk melihat hasilnya.
+                    # REALTIME (di-throttle anti-lag): tampilkan job terbaru di pratinjau &
+                    # isi grid tinjau, TAPI dibatasi frekuensinya — preview ~1.2s, grid ~3s.
+                    # Tanpa throttle, batch (apalagi dari cache instan) membanjiri UI → lag.
+                    import time as _t
+                    now = _t.time()
+                    tampil_preview = (now - self._lp_last_preview_ts >= 1.2)
                     df = None
-                    if drv not in drv_terkirim:
-                        drv_terkirim.add(drv)
-                        df = _decode_video(drv)
-                    src_bgr = _cv2.imread(sp)
+                    if tampil_preview:
+                        self._lp_last_preview_ts = now
+                        if drv not in drv_terkirim:
+                            drv_terkirim.add(drv)
+                            df = _decode_video(drv)
+                    src_bgr = _cv2.imread(sp) if tampil_preview else None
                     def _tampil(rf=frames, dfx=df, e2=emo, dpp=drv, sb=src_bgr,
-                                u=(uuid or ""), f2=fi, kk=(vid_idx, fi), ov=out_vid):
+                                u=(uuid or ""), f2=fi, kk=(vid_idx, fi), ov=out_vid,
+                                show=tampil_preview):
                         self._lp_cache_result(kk, e2, ov, dpp)
-                        if sb is not None:
-                            lp.set_source_frame(sb, u, f2)
-                        if dfx is not None:
-                            lp.set_driving_frames(dfx, e2, path=dpp)
-                        lp.set_result_frames(rf, e2)
-                        self._lp_refresh_review()
+                        if show:
+                            if sb is not None:
+                                lp.set_source_frame(sb, u, f2)
+                            if dfx is not None:
+                                lp.set_driving_frames(dfx, e2, path=dpp)
+                            lp.set_result_frames(rf, e2)
+                        self._lp_refresh_review_throttled()
                     self.root.after(0, _tampil)
                 except Exception as ex:
                     print(f"[LP Batch] {rel} f{fi} {emo} {drv_stem}: {ex}")
@@ -1632,8 +1678,12 @@ class VideoLabelerApp:
             drv_stem = os.path.splitext(os.path.basename(lp.driving_aktif))[0]
         saved = self._lp_write_frames(frames, emo, rel, fi, drv_stem)
         if lp:
-            lp.update_progress(f"Tersimpan {saved} frame ke dataset ({emo}). "
-                               f"Klik 'Muat / Refresh' untuk tinjau.", "#10b981")
+            uuid = (self._person_of(rel) or "unknown")[:8]
+            base = os.path.basename(os.path.dirname(self.path_json_augment).rstrip("/\\"))
+            lp.update_progress(
+                f"Tersimpan {saved} frame ({emo}) → {base}/augmented/liveportrait_app/"
+                f"{uuid}/{emo}/  ·  lihat di 'Tinjau & Label' di bawah.", "#10b981")
+            self._lp_update_save_info()
             self._lp_refresh_review()
 
     # ── Tinjau hasil generate (terima/tolak) ─────────────────────────────────
@@ -1686,11 +1736,21 @@ class VideoLabelerApp:
             out.append((p, emo))
         return out
 
+    def _lp_refresh_review_throttled(self, jeda: float = 3.0):
+        """Refresh grid tinjau TAPI maksimal sekali per `jeda` detik. Dipakai saat batch
+        supaya banjir job (apalagi dari cache yang instan) tidak memicu ratusan rebuild
+        grid + glob rekursif → ini biang lag. Refresh penuh tetap dijalankan di akhir batch."""
+        import time as _t
+        now = _t.time()
+        if now - self._lp_last_review_ts >= jeda:
+            self._lp_last_review_ts = now
+            self._lp_refresh_review()
+
     def _lp_refresh_review(self):
         """Kirim SELURUH daftar hasil + state ke panel (tanpa decode thumbnail di muka →
         cepat walau ribuan; thumbnail di-decode per-halaman oleh panel saat dibutuhkan)."""
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
-        if not lp or not lp._built:
+        if not lp or not lp._built or not getattr(self, "path_json_augment", None):
             return
         gen_dir = self._lp_generated_dir() or ""
         gen = self._lp_list_generated()

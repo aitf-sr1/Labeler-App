@@ -214,6 +214,7 @@ class LPPanel:
         self._ref_pratinjau   = [None, None, None]
         self.slider_hasil   = None
         self.label_info_hasil = None
+        self.label_lokasi_simpan = None    # indikator "frame disimpan ke mana"
         self.label_progres  = None
         self.label_jml_tanda = None
         self.label_frame_terpilih = None
@@ -268,6 +269,10 @@ class LPPanel:
 
         self._pindai_folder_driving()   # isi menu driving otomatis
         self._segarkan_ringkasan()
+        try:
+            self.app._lp_update_save_info()   # tampilkan lokasi simpan bila dataset sudah dibuka
+        except Exception:
+            pass
 
     def _seksi_lipat(self, induk, teks: str, terbuka: bool = True, isi_penuh: bool = False):
         """Judul seksi yang BISA DILIPAT (klik = buka/tutup). Memadatkan panel: seksi
@@ -477,16 +482,27 @@ class LPPanel:
         self.label_frame_terpilih.pack(fill="x", padx=12, pady=(2, 4))
 
         baris_simpan = ctk.CTkFrame(kartu, fg_color="transparent")
-        baris_simpan.pack(fill="x", padx=12, pady=(0, 10))
+        baris_simpan.pack(fill="x", padx=12, pady=(0, 4))
         ctk.CTkButton(baris_simpan, text="Simpan Frame Tertanda", height=30, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#10b981", hover_color="#0ea372",
                       command=self._simpan_frame_tertanda).pack(side="left", padx=(0, 8))
         ctk.CTkButton(baris_simpan, text="Simpan Frame Ini Saja", height=30, corner_radius=8,
                       font=("Poppins", 9, "bold"), fg_color="#3b82f6", hover_color="#2563eb",
                       command=self._simpan_frame_sekarang).pack(side="left")
+
+        # Indikator lokasi simpan — MUNCUL begitu folder dataset dibuka (menjawab kebingungan
+        # "frame disimpan ke mana"). Diperbarui saat folder/emosi/sumber berganti.
+        self.label_lokasi_simpan = ctk.CTkLabel(
+            kartu, text="Lokasi simpan: buka folder dataset dulu (tombol 'Buka Folder' di atas) — "
+                        "lokasi muncul di sini.",
+            font=("Poppins", 8), text_color=("#2563eb", "#60a5fa"),
+            anchor="w", justify="left", wraplength=680)
+        self.label_lokasi_simpan.pack(fill="x", padx=12, pady=(2, 2))
+
         ctk.CTkLabel(
-            kartu, text="Saat Batch, frame index yang ditandai ini dipakai untuk SEMUA video "
-                        "(ekspresi sama karena driving sama).",
+            kartu, text="Frame yang disimpan langsung muncul di seksi 'Tinjau & Label' di bawah. "
+                        "Batch & Proses Wajah menyimpan OTOMATIS; 'Proses Frame Ini' perlu klik "
+                        "Simpan. Frame index yang ditandai dipakai untuk SEMUA video saat Batch.",
             font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
             wraplength=680, justify="left").pack(fill="x", padx=12, pady=(0, 8))
 
@@ -1215,6 +1231,11 @@ class LPPanel:
         if self.label_progres:
             self.label_progres.configure(text=pesan, text_color=warna)
 
+    def set_save_info(self, pesan: str, warna: str = "#2563eb"):
+        """Tampilkan lokasi simpan frame (dipanggil app saat folder/emosi/sumber berganti)."""
+        if self.label_lokasi_simpan:
+            self.label_lokasi_simpan.configure(text=pesan, text_color=warna)
+
     def start_loading(self, pesan: str):
         """Tampilkan indikator loading beranimasi selama proses (biar tahu tidak hang)."""
         self._loading_teks = pesan
@@ -1434,6 +1455,10 @@ class LPPanel:
                                                border_color=warna)
             self._saat_driving_berganti(emosi)   # langsung muat preview driving emosi ini
         self._segarkan_ringkasan()
+        try:
+            self.app._lp_update_save_info()       # lokasi simpan ikut emosi terpilih
+        except Exception:
+            pass
 
     # ── Dataset wajah baru ──────────────────────────────────────────────────────
 
