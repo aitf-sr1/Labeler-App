@@ -865,6 +865,7 @@ class LPPanel:
         self._simpan_fraksi()
         self._simpan_tanda_driving()
         self._segarkan_tanda()
+        self._lepas_fokus()    # habis baca kotak 'Jumlah target' → panah aktif lagi
 
     def _bersihkan_tanda(self):
         self.frame_terpilih.clear()
@@ -944,12 +945,22 @@ class LPPanel:
         return self.review_label.get(rel) or self.app._lp_default_label(emosi)
 
     # ── Navigasi pemeriksa (menjangkau SELURUH daftar, bukan cuma 1 halaman) ──
+    def _lepas_fokus(self):
+        """Lepas fokus dari kotak input (Loncat/Jumlah) → panah keyboard kembali untuk
+        navigasi. Tanpa ini, sehabis mengetik/klik di Entry fokus tetap di situ dan panah
+        dipakai menggeser kursor teks — itu sebab bug 'setelah Loncat panah tak jalan'."""
+        try:
+            self.app.root.focus_set()
+        except Exception:
+            pass
+
     def _tinjau_geser(self, delta: int):
         if not self.review_items:
             return
         self.idx_tinjau = max(0, min(len(self.review_items) - 1, self.idx_tinjau + delta))
         self._render_pemeriksa()
         self._render_halaman()   # pindah halaman bila perlu
+        self._lepas_fokus()
 
     def _tinjau_loncat(self):
         if not self.review_items:
@@ -962,6 +973,7 @@ class LPPanel:
         self.idx_tinjau = max(0, min(len(self.review_items) - 1, n - 1))
         self._render_pemeriksa()
         self._render_halaman()
+        self._lepas_fokus()     # penting: panah keyboard kembali aktif setelah Loncat
 
     def _buka_di_pemeriksa(self, idx: int):
         """Loncat ke index absolut (dipanggil dari klik thumbnail grid)."""
@@ -970,6 +982,7 @@ class LPPanel:
         self.idx_tinjau = max(0, min(len(self.review_items) - 1, idx))
         self._render_pemeriksa()
         self._render_halaman()
+        self._lepas_fokus()
 
     def _gambar_pemeriksa(self, bgr, ditolak: bool, emosi: str, teks_overlay: str = "DITOLAK"):
         """Gambar satu bgr ke kanvas pemeriksa (+ overlay DITOLAK/DIBUANG + warna tepi)."""
@@ -1058,6 +1071,7 @@ class LPPanel:
         self.idx_tinjau = hal_baru * self.PER_HAL
         self._render_pemeriksa()
         self._render_halaman()
+        self._lepas_fokus()
 
     def _render_halaman(self):
         """Render satu halaman thumbnail (yang memuat idx_tinjau). Decode di thread latar."""

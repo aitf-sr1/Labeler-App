@@ -88,8 +88,14 @@ def main():
         lp.set_review_data(items, labels, {"rel/x0.jpg": {"Confusion": 1}}, set())
         assert lp.idx_tinjau == 0
         lp._tinjau_geser(+1); assert lp.idx_tinjau == 1
+        lp.entri_loncat.focus_set()   # simulasi kursor di kotak Loncat
         lp.entri_loncat.delete(0, "end"); lp.entri_loncat.insert(0, "95"); lp._tinjau_loncat()
         assert lp.idx_tinjau == 94, lp.idx_tinjau
+        # Regresi: setelah Loncat, fokus dilepas dari Entry → panah HARUS tetap menavigasi
+        root.update()
+        ent = getattr(lp.entri_loncat, "_entry", lp.entri_loncat)
+        assert root.focus_get() is not ent, "fokus masih nyangkut di kotak Loncat"
+        a._on_arrow(+1); assert lp.idx_tinjau == 95, ("panah mati setelah Loncat", lp.idx_tinjau)
         lp.terapkan_state("rel/x94.jpg", ditolak=True)
         assert "rel/x94.jpg" in lp.review_ditolak
         lp._geser_halaman(+1)                  # ganti halaman grid
@@ -189,6 +195,9 @@ def main():
                   "_lp_pcache_get", "_lp_pcache_put", "_lp_pcache_lookup_any_for_source",
                   "_on_arrow", "_lp_update_save_info", "_lp_refresh_review_throttled"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
+        for m in ["_lepas_fokus", "_tinjau_geser", "_tinjau_loncat", "_buka_di_pemeriksa",
+                  "_geser_halaman"]:
+            assert hasattr(lp, m), f"metode panel hilang: {m}"
 
         # Ganti-ganti mode tidak boleh error; di galeri panah kembali ke navigasi video
         a.left_panel.show_gallery_mode()

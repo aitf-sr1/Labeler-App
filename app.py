@@ -2767,10 +2767,11 @@ class VideoLabelerApp:
         except ValueError:
             return
         idx = max(0, min(n - 1, len(self.video_files) - 1))
+        self.jump_entry.delete(0, "end")
+        self.root.focus_set()         # lepas fokus dari kotak → panah ◀/▶ aktif lagi
         if idx == self.current_index: return
         self.save_current_state()
         self.current_index = idx
-        self.jump_entry.delete(0, "end")
         self.load_video()
 
     # Frame gallery & label helpers

@@ -169,7 +169,9 @@ lebih umum / tidak overfit:
   Jadi tidak perlu scroll satu-satu mencari di antara ribuan hasil.
 - **Tombol panah keyboard ◀/▶**: saat panel LP terbuka, panah kiri/kanan menggerakkan
   pemeriksa (seperti save & next di galeri) — periksa ribuan gambar tanpa menyentuh mouse.
-  Di galeri, panah tetap pindah video seperti biasa.
+  Di galeri, panah tetap pindah video seperti biasa. Setelah memakai kotak **Loncat** /
+  **Jumlah target**, fokus dilepas otomatis sehingga **panah langsung berfungsi lagi**
+  (sebelumnya fokus nyangkut di kotak membuat panah seolah mati).
 - Klik **1×** thumbnail → tampil **BESAR** di pemeriksa. Di sana ditampilkan **dua hal**:
   - **Deteksi AI** (chip, read-only) — hasil SigLIP+MediaPipe.
   - **Label final manual** (pill, bisa diklik) — yang dipakai saat buat dataset.
