@@ -53,6 +53,43 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 
 ---
 
+## Cara Memutuskan Saat Ciri "Beririsan" — Tiap Label Punya CUE Sendiri
+
+**Masalah yang sering bikin bingung:** ciri tampak beririsan. Mis. orang bingung **juga** menghadap layar — lalu "hadap layar" itu bukti Engagement atau Confusion? Jawabannya: **"hadap layar" HANYA bukti Engagement.** Confusion dibuktikan oleh **alis**, bukan oleh gaze. Begitu tiap cue dikembalikan ke "pemiliknya", irisannya hilang.
+
+**Aturannya: jawab DUA pertanyaan TERPISAH, masing-masing dari cue-nya sendiri:**
+
+| Pertanyaan | Lihat CUE | Hasil |
+|---|---|---|
+| **1. ATENSI** — ke mana perhatiannya? | **arah pandang + mata** (gaze) | Engagement / Boredom / **tak tentu** |
+| **2. KOGNITIF** — ekspresi alisnya? | **arah alis** | Confusion / Frustration / **tak ada** |
+
+- **Gaze** (hadap layar, mata terbuka/lesu, arah noleh) → **hanya** menentukan **Engagement/Boredom**.
+- **Alis** (turun=Confusion, naik=Frustration) → **hanya** menentukan **Confusion/Frustration**.
+- Lalu **gabungkan** jawaban kedua pertanyaan. Tiap pertanyaan paling banyak menghasilkan **satu** label (karena Eng↔Bore & Conf↔Frus saling eksklusif).
+
+**Makanya bisa muncul label tunggal maupun ganda — semuanya konsisten:**
+
+| Gaze (atensi) | Alis (kognitif) | Label akhir |
+|---|---|---|
+| Hadap layar, mata terbuka | netral | **Engagement saja** |
+| Hadap layar, mata terbuka | **turun/berkerut** | **Engagement + Confusion** (productive confusion) |
+| Hadap layar, mata terbuka | **naik/distressed** | **Engagement + Frustration** |
+| Noleh samping/atas, mata lesu | netral | **Boredom saja** |
+| **Tak tentu** (gaze ambigu) | **turun/berkerut** | **Confusion saja** |
+| **Tak tentu** | **naik/distressed** | **Frustration saja** |
+
+> Jadi **"Confusion saja"** terjadi saat **alis jelas berkerut TAPI atensinya tak bisa ditentukan** (gaze ambigu) — itu sebabnya ia langka. **"Engagement saja"** = hadap layar + **alis netral**. Tidak ada yang beririsan kalau tiap cue dikembalikan ke pertanyaannya.
+
+**Irisan ASLI yang perlu hati-hati (jujur, ini memang mirip):**
+- **Mata menyipit (AU7, Confusion) vs mata lesu/setengah menutup (AU43, Boredom)** — sama-sama di mata. Bedakan: **menegang/menyipit aktif** (usaha kognitif → Confusion) vs **turun/lemas pasif** (mengantuk → Boredom).
+- **Senyum (AU12)** muncul di Confusion **dan** Frustration → **jangan** pakai senyum untuk memutuskan keduanya.
+- **Nunduk** = bukan Boredom (itu baca/catat = Engagement); hanya **samping/atas** yang Boredom.
+
+**Dasar jurnalnya:** tiap label memang punya **kanal ukur** berbeda di literatur — Engagement/atensi dari **gaze/penampilan** (Whitehill, GazeTutor, Sümer); Confusion/Frustration dari **AU alis** (Craig). Karena kanalnya beda, keduanya **diputuskan terpisah lalu digabung** — bukan diadu di cue yang sama. (Eng↔Bore & Conf↔Frus dipaksa eksklusif karena tiap pasangan **berebut cue yang sama**: gaze untuk yang pertama, arah alis untuk yang kedua.)
+
+---
+
 ## TABEL INDUK — Semua Sinyal Sekilas (cheat sheet)
 
 | Yang terlihat di wajah | Emosi | Kekuatan | Paper |
