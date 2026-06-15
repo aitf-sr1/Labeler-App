@@ -53,6 +53,18 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 
 ---
 
+## Cara Membaca AU — PRESENCE (ada/tidak), bukan mengukur angka
+
+Saat panduan menulis "alis berkerut = AU4", yang dimaksud adalah **kehadiran ciri**, **bukan** "ukur seberapa besar nilainya". Dasarnya: Craig 2008 memvalidasi AU→emosi lewat **coverage = seberapa SERING AU itu HADIR** saat emosi muncul (mis. AU4 hadir di **95%** episode Confusion) — bukan kurva "makin besar AU makin bingung". (Craig bahkan tidak memakai istilah *intensity*.)
+
+**Untuk kamu (anotator manual):**
+- Nilai **APAKAH ciri TERLIHAT** (alis turun/sipit untuk Confusion; alis naik untuk Frustration) → **ya/tidak**.
+- **Makin jelas cirinya → makin yakin**, tapi keputusan akhir tetap **biner** (label aktif/tidak). Tidak perlu menaksir angka.
+- Dukungan "makin kuat → makin cenderung" memang ada (Grafsgaard 2013: AU4 *"positively correlated with frustration"*), jadi ciri yang **jelas/kuat** boleh kamu anggap lebih meyakinkan — tapi ciri yang **samar** → ragu (lihat aturan SEDANG/ketat).
+- **Angka ambang** (di mana sistem otomatis memutus aktif/tidak) adalah **kalibrasi empiris** sistem, **bukan** dari jurnal — jadi jangan terpaku angka; pakai mata + aturan presence ini. (Detail di `ACADEMIC_BASIS.md` §3.1.)
+
+---
+
 ## Cara Memutuskan Saat Ciri "Beririsan" — Tiap Label Punya CUE Sendiri
 
 **Masalah yang sering bikin bingung:** ciri tampak beririsan. Mis. orang bingung **juga** menghadap layar — lalu "hadap layar" itu bukti Engagement atau Confusion? Jawabannya: **"hadap layar" HANYA bukti Engagement.** Confusion dibuktikan oleh **alis**, bukan oleh gaze. Begitu tiap cue dikembalikan ke "pemiliknya", irisannya hilang.

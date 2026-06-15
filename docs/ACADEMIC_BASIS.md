@@ -250,7 +250,36 @@ AU12 muncul di **kedua** confusion dan frustration (tidak diskriminatif) → dip
 
 **Penjelasan:** Kappa 0.76–0.84 = kesepakatan antar-rater yang *substansial hingga hampir sempurna* (skala Cohen's kappa). Ini membuktikan pengkodean AU-nya reliable — dua orang terlatih yang mengkode wajah yang sama mendapat hasil serupa, artinya AU yang terdeteksi bukan subjektif.
 
-> **Jembatan → 4. FRUSTRATION:** Peta AU→emosi sudah solid (kappa antar-rater tinggi). Sekarang tiap emosi dibedah satu per satu — dimulai dari Frustration dan sinyal alis-naiknya.
+### 3.1 PRESENCE vs INTENSITAS — apa arti "emosi dipengaruhi AU"? (penting, sering disalahpahami)
+
+Pertanyaan wajar: kalau AU4 = sinyal Confusion, apakah **makin besar nilai AU4 makin bingung**? Jawabannya **bertingkat** — dan penting dibedakan supaya tidak salah klaim:
+
+**(a) Dasar inti Craig 2008 = PRESENCE (kehadiran), BUKAN intensitas.** Craig memakai *association rule mining* atas AU yang dikode **ada/tidak**, dan metriknya **coverage** = seberapa **sering AU itu HADIR** saat suatu emosi:
+
+> "coverage of 100% for a pattern indicates that it was observed in all 100 data sets for an affective state"
+
+> "the presence of action unit 4 triggers action unit 7"
+
+— Craig et al. (2008). (p. 783–784)  [PDF](../../paper/08-%20Craig%202008%20-%20Emote%20Aloud%20during%20Learning%20with%20AutoTutor%20%28FACS%29.pdf#page=7)
+
+Jadi "AU4 = Confusion (95%)" artinya **"saat siswa bingung, AU4 HADIR di 95% episode"** — sebuah **asosiasi kehadiran**, bukan kurva "makin tinggi AU4 makin bingung". **Craig tidak menyebut kata *intensity* sama sekali.**
+
+**(b) Dukungan untuk graded ("makin tinggi → makin cenderung") datang dari Grafsgaard 2013, lewat KORELASI:**
+
+> "Action Unit 4 (brow lowering) was positively correlated with frustration"
+
+— Grafsgaard et al. (2013). (abstract)  [PDF](../../paper/16-%20Grafsgaard%202013%20-%20Automatically%20Recognizing%20Facial%20Indicators%20of%20Frustration.pdf#page=1)
+
+CERT mengeluarkan nilai AU **kontinu**, jadi "berkorelasi positif" memang berarti **kecenderungan graded** (AU4 lebih tinggi → lebih cenderung frustrasi). Tapi ini **korelasi**, bukan ambang pasti.
+
+**(c) FACS sendiri punya intensitas** (Whitehill: *"measure the intensity of over 40 distinct facial muscles"*), dan **sistem ini memang memakai intensitas kontinu**: blendshape MediaPipe → AU baseline-normalized (deviasi dari netral) → skor kontinu → **threshold empiris** menentukan label aktif/tidak.
+
+**Kesimpulan jujur:**
+- Yang **divalidasi paper** untuk emosi belajar = **PRESENCE** (Craig) + **arah korelasi** (Grafsgaard). Keduanya mendukung "ciri itu HADIR → emosinya ada" dan "lebih kuat → lebih cenderung".
+- "Nilai AU sekian = pasti emosi X" **TIDAK** dari paper — **angka ambang (threshold) adalah kalibrasi empiris** sistem ini (lihat DESIGN_RATIONALE), bukan ketentuan jurnal.
+- Maka untuk **anotasi manual**: nilai **KEHADIRAN/kejelasan** ciri (alis berkerut **terlihat** atau tidak), bukan mengukur angka. Makin jelas → makin yakin, tapi keputusan akhir tetap **biner** (label ada/tidak). Lihat `PANDUAN_ANOTASI_MANUAL.md` bagian "Cara membaca AU".
+
+> **Jembatan → 4. FRUSTRATION:** Peta AU→emosi sudah solid (kappa antar-rater tinggi, berbasis presence + korelasi). Sekarang tiap emosi dibedah satu per satu — dimulai dari Frustration dan sinyal alis-naiknya.
 
 ---
 
