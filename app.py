@@ -2092,7 +2092,25 @@ class VideoLabelerApp:
             raise ValueError(f"{sumber_nama} belum ada. Buat split dulu (panel kanan) "
                              f"atau pilih basis lain.")
 
+        # ANTI-LEAKAGE: kumpulkan UUID orang yang ADA di val/test. Sintetik (hasil LP)
+        # untuk orang itu TIDAK boleh masuk train — kalau tidak, model belajar wajah orang
+        # yang dipakai untuk evaluasi (kebocoran identitas). Split asli sudah per-UUID, jadi
+        # tiap orang ada di SATU split saja; di sini kita pastikan sintetiknya tidak menyebrang.
+        def _uuids_in_split(split):
+            s = set()
+            p = os.path.join(base, f"{split}.csv")
+            if os.path.exists(p):
+                with open(p, newline="") as f:
+                    for r in _csv.reader(f):
+                        if r:
+                            u = self._person_of(r[0])
+                            if u:
+                                s.add(u)
+            return s
+        eval_uuids = _uuids_in_split("val") | _uuids_in_split("test")
+
         aug_rows = []
+        n_leak = 0
         if mode in ("lp", "lp_new"):
             with self._lp_json_lock:
                 rejected = self._lp_load_review()
@@ -2108,12 +2126,21 @@ class VideoLabelerApp:
                 lab = labels.get(rel_gen) or self._lp_default_label(emo)
                 if sum(lab.get(l, 0) for l in LABELS) == 0:
                     continue   # tak ada label positif → lewati
+                # CEGAH LEAKAGE: drop sintetik milik orang yang ada di val/test.
+                # (UUID newface tak match pola → _person_of None → aman, orang baru.)
+                uuid_gen = self._person_of(path)
+                if uuid_gen and uuid_gen in eval_uuids:
+                    n_leak += 1
+                    continue
                 rel_ds = os.path.relpath(path, result_dir).replace("\\", "/")
                 aug_rows.append((rel_ds, lab))
             if not aug_rows:
-                raise ValueError(
-                    "Tidak ada gambar hasil (diterima + berlabel) untuk komposisi ini. "
-                    "Proses LP / dataset wajah dulu, atau pilih komposisi 'Tanpa LP'.")
+                pesan = ("Tidak ada gambar hasil (diterima + berlabel) untuk komposisi ini. "
+                         "Proses LP / dataset wajah dulu, atau pilih komposisi 'Tanpa LP'.")
+                if n_leak:
+                    pesan += (f"\n\n(Catatan: {n_leak} hasil di-skip karena orangnya ada di "
+                              f"val/test — dicegah agar tidak bocor ke train.)")
+                raise ValueError(pesan)
 
         out = self._lp_merge_dir(mode, base_source)
         os.makedirs(out, exist_ok=True)
@@ -2146,17 +2173,23 @@ class VideoLabelerApp:
 
         with open(os.path.join(out, "lp_merge_manifest.json"), "w") as f:
             _json.dump({"mode": mode, "base_source": base_source, "base": base,
-                        "added_train": [r for r, _ in aug_rows], "n_aug": len(aug_rows)},
-                       f, indent=2)
+                        "added_train": [r for r, _ in aug_rows], "n_aug": len(aug_rows),
+                        "n_skip_leakage": n_leak}, f, indent=2)
 
         nama_mode = self._LP_NAMA_MODE[mode]
         nama_basis = "Manual (kurasi)" if base_source == "manual" else "AI (batch)"
+        leak_txt = (f"\n\n⚠ {n_leak} hasil LP di-SKIP karena orangnya ada di val/test "
+                    f"(cegah kebocoran identitas — sintetik hanya untuk orang di train)."
+                    if n_leak else
+                    "\n\n✓ Tanpa kebocoran: semua sintetik milik orang di train / orang baru.")
         ringkasan = (
             f"Komposisi: {nama_mode}\nBasis label asli: {nama_basis}\nOutput: {out}\n\n"
             f"train: {n_train_base} asli + {len(aug_rows)} sintetik = {n_train_base + len(aug_rows)}\n"
-            f"val: {n_val}   test: {n_test}\n\n"
+            f"val: {n_val}   test: {n_test}"
+            f"{leak_txt}\n\n"
             f"Kolom 'synthetic' = 1 untuk hasil LP. Klik 'Undo' untuk hapus folder ini.")
-        print(f"[LP Merge] mode={mode} basis={base_source} {len(aug_rows)} sintetik → {out}")
+        print(f"[LP Merge] mode={mode} basis={base_source} {len(aug_rows)} sintetik, "
+              f"{n_leak} di-skip (leakage) → {out}")
         return {"out": out, "nama_mode": nama_mode, "ringkasan": ringkasan}
 
     def _lp_undo_merge(self):

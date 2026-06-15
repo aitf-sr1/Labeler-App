@@ -233,8 +233,15 @@ kedua di kartu "Buat Dataset"):
 > label manual); kalau belum ada label manual, pilih basis **AI** atau labeli manual dulu.
 > Basis Manual & AI **disimpan ke folder berbeda** sehingga tidak saling menimpa.
 
-Output **non-destruktif**: train = asli (basis terpilih) + sintetik, val/test disalin apa adanya,
-kolom `synthetic` (1 = hasil LP). Label asli (`Label2d` / `Label2d_manual`) tidak diubah.
+**Anti-kebocoran identitas (penting):** sintetik hasil LP **hanya** ditambahkan ke train untuk
+orang yang **memang ada di split train** (atau **orang baru** dari dataset wajah baru). Kalau
+seorang siswa ada di **val/test**, hasil LP-nya **TIDAK** dimasukkan ke train — kalau tidak, model
+"melihat" wajah orang yang dipakai untuk evaluasi (*data leakage* identitas). Jumlah yang di-skip
+karena alasan ini dilaporkan di ringkasan & `lp_merge_manifest.json` (`n_skip_leakage`). Split asli
+sudah per-UUID (satu orang = satu split), dan guard ini memastikan sintetiknya tidak menyeberang.
+
+Output **non-destruktif**: train = asli (basis terpilih) + sintetik (bebas-bocor), val/test disalin
+apa adanya, kolom `synthetic` (1 = hasil LP). Label asli (`Label2d` / `Label2d_manual`) tidak diubah.
 **Undo / Hapus** menghapus semua folder `Label2d_merged_*` (asli aman). **Statistik Dataset** juga
 menghitung kolom "asli" dari basis yang sedang dipilih, jadi angkanya cocok dengan hasil merge.
 

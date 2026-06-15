@@ -183,6 +183,38 @@ def main():
         a.path_json_augment = path_lama
         _sh.rmtree(tdir2, ignore_errors=True)
 
+        # ANTI-LEAKAGE merge: sintetik milik orang di val/test TIDAK boleh masuk train
+        import csv as _csv2, json as _json2
+        md = tempfile.mkdtemp(prefix="lp_merge_")
+        UA = "00000000-0000-0000-0000-0000000000aa"   # di train
+        UB = "00000000-0000-0000-0000-0000000000bb"   # di val (harus di-skip)
+        UC = "00000000-0000-0000-0000-0000000000cc"   # di test
+        base = os.path.join(md, "Label2d"); os.makedirs(base)
+        def _wcsv(nm, uuid):
+            with open(os.path.join(base, nm), "w", newline="") as f:
+                w = _csv2.writer(f); w.writerow(["frame_path"] + mod.LABELS)
+                w.writerow([f"cropped_faces/clean/{uuid}/v/frame_00.jpg", 0, 1, 0, 0])
+        _wcsv("train.csv", UA); _wcsv("val.csv", UB); _wcsv("test.csv", UC)
+        gd = os.path.join(md, "augmented", "liveportrait_app")
+        for uuid in (UA, UB):                         # UA boleh, UB bocor
+            d = os.path.join(gd, uuid, "Confusion"); os.makedirs(d)
+            open(os.path.join(d, "x.jpg"), "wb").close()
+        dnf = os.path.join(gd, "newface-z-abc123", "Confusion"); os.makedirs(dnf)
+        open(os.path.join(dnf, "w.jpg"), "wb").close()
+        pa0, pf0 = getattr(a, "path_json_augment", None), getattr(a, "path_json_frames", None)
+        a.path_json_augment = os.path.join(md, "augment_marks.json")
+        a.path_json_frames  = os.path.join(md, "frame_annotations.json")
+        a._lp_build_merged_dataset("lp_new", "ai")    # lp_new agar wajah baru ikut
+        with open(os.path.join(md, "Label2d_merged_lp_new", "train.csv")) as f:
+            txt = f.read()
+        assert f"/{UA}/" in txt, "sintetik orang train harus ada"
+        assert "newface-z-abc123" in txt, "sintetik wajah baru harus ada"
+        assert f"/{UB}/" not in txt, "BOCOR: sintetik orang VAL masuk train!"
+        man = _json2.load(open(os.path.join(md, "Label2d_merged_lp_new", "lp_merge_manifest.json")))
+        assert man["n_skip_leakage"] == 1, man["n_skip_leakage"]
+        a.path_json_augment, a.path_json_frames = pa0, pf0
+        _sh.rmtree(md, ignore_errors=True)
+
         # Panah saat TIDAK ada daftar tinjau → scrub video HASIL yang sedang tampil
         lp.set_review_data([], {}, {}, set())
         lp.set_result_frames([np.zeros((30, 30, 3), "uint8")] * 8, "Confusion")
