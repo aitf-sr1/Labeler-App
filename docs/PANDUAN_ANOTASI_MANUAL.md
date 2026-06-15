@@ -170,7 +170,7 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 
 | Ciri | Tanda fisik yang terlihat | Kekuatan | Catatan |
 |---|---|---|---|
-| **Alis turun/mengerut (AU4)** | Kedua alis ditarik **ke bawah dan merapat ke tengah**; muncul **kerutan VERTIKAL** (garis tegak seperti "11") di antara alis | **KUAT** | Craig 95% + Grafsgaard 2011 + ConfusionBench 2026 "most reliable" — 3 studi, sinyal terkuat |
+| **Alis turun/mengerut (AU4)** | Kedua alis ditarik **ke bawah dan merapat ke tengah**; **bila ada**, muncul **kerutan VERTIKAL** (garis tegak seperti "11") di antara alis (kerutan boleh tak muncul — yang wajib alisnya turun-merapat) | **KUAT** | Craig 95% + Grafsgaard 2011 + ConfusionBench 2026 "most reliable" — 3 studi, sinyal terkuat |
 | **Kelopak menyipit (AU7)** | Mata **sedikit menyipit/menegang** (lebih kecil dari biasa), kelopak bawah terangkat; **mata tetap terbuka**, bukan menutup | **KUAT** | Craig 78% |
 | **AU4 + AU7 bersama** | Alis turun **dan** mata menyipit sekaligus = ekspresi **"mengernyit memikirkan sesuatu"** | **KUAT** | Craig 73%; ConfusionBench: kombinasi paling andal |
 | **Mulut sedikit terbuka (AU25+26)** | Bibir sedikit membuka / rahang sedikit turun, seperti **sedang berpikir keras** menjawab soal sulit | SEDANG (penguat) | Namba 2024 — 1 studi, ambigu (mulut terbuka banyak sebab) |
@@ -214,7 +214,7 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 
 | Ciri | Tanda fisik yang terlihat | Kekuatan | Catatan |
 |---|---|---|---|
-| **Alis naik penuh (AU1+AU2)** | Kedua alis (bagian dalam **dan** luar) **terangkat ke atas**; muncul **kerutan MENDATAR/horizontal** di dahi; mata terbuka lebih lebar; wajah tampak tertekan | KUAT* | Craig 100% — 1 studi; Grafsgaard soroti AU4 turun |
+| **Alis naik penuh (AU1+AU2)** | Kedua alis (bagian dalam **dan** luar) **terangkat ke atas**; **bila kulit tak terlalu kencang** muncul **kerutan MENDATAR** di dahi (kerutan **boleh tak muncul** — yang wajib alisnya terangkat); wajah tampak **tertekan/kesal**. *(Mata melotot saja ≠ frustrasi — itu AU5/terkejut.)* | KUAT* | Craig 100% — 1 studi; Grafsgaard soroti AU4 turun |
 | **Alis turun + wajah tertekan (AU4 sekunder)** | Alis turun tetapi disertai ekspresi **kesal/mentok** (bukan sekadar berpikir) | SEDANG | Grafsgaard 2013 (deteksi otomatis, konteks belajar) |
 | **2 tangan menekan dahi / menutup wajah** | Telapak/jari **menekan dahi atau pelipis**, menutup wajah, atau menopang kepala dengan **dua tangan** | SEDANG (penguat) | Grafsgaard 2013b (2 tangan = self-efficacy rendah) |
 | **Lekuk di sudut bibir (AU14)** | Sudut bibir **tertarik ke samping-dalam**, membentuk lekuk/lesung kecil | LEMAH | Halus, sulit dilihat manual |
@@ -232,7 +232,7 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 **BUKAN Frustration:**
 - Alis **turun/mengerut** saja (tanpa tertekan) → itu **Confusion** (AU4, bukan AU1/AU2)
 - **2 tangan menekan dahi** tapi alis netral & wajah tenang → **bukan** Frustration (cuma pendukung)
-- Senyum → bukan frustration
+- **Senyum lebar tulus** (mata ikut berkerut) → bukan Frustration (lihat "Kasus Senyum"); tapi **senyum kaku + alis naik tertekan** → tetap Frustration
 - Wajah datar → tidak cukup sinyal
 
 > Tangan (2-tangan/dahi) & lesung pipit = **penguat saja**, persis seperti tangan/mulut di Confusion. Tanpa sinyal alis / pose tertekan → tidak memicu label.
@@ -242,13 +242,35 @@ Label KUAT/SEDANG/LEMAH **bukan tebakan** — ia mengikuti **peringkat yang dibu
 | Aspek | Confusion | Frustration |
 |---|---|---|
 | **Arah alis** | **Turun & merapat** ke tengah (AU4) | **Naik/terangkat** ke atas (AU1+AU2) |
-| **Kerutan dahi (penanda paling mudah)** | garis kerut **VERTIKAL** di antara kedua alis (seperti angka "11") | garis kerut **HORIZONTAL/mendatar** melintang dahi |
-| **Mata** | sedikit **menyipit/menegang** | terbuka lebih **lebar** |
-| **Kondisi** | masih mencoba memahami | mentok / menyerah / kesal |
+| **Kerutan dahi (penanda bantu, bisa TAK muncul)** | garis kerut **VERTIKAL** di antara kedua alis (seperti angka "11") | garis kerut **HORIZONTAL/mendatar** melintang dahi |
+| **Mata** | sedikit **menyipit/menegang** (AU7) | **bukan** patokan — yang naik **alisnya**, *bukan* mata melotot (melotot = AU5/terkejut) |
+| **Kondisi** | masih mencoba memahami | mentok / menyerah / kesal (tampak tertekan) |
 | **Tangan** | menyentuh **dagu**, ringan, biasanya 1 tangan | **menekan dahi** / menutup wajah, biasanya 2 tangan |
 | **Arah pandang** | cenderung ke layar/soal | bisa ke mana saja |
 
-> 💡 **Trik cepat:** lihat **kerutan dahi**. Garis **tegak** di antara alis → **Confusion**. Garis **mendatar** di dahi → **Frustration**.
+> 💡 **Trik cepat:** lihat **gerak ALIS** dulu (turun→Confusion, naik→Frustration). Kerutan dahi cuma **penanda bantu**: tegak antar-alis→Confusion, mendatar di dahi→Frustration.
+>
+> ⚠️ **Penting (jawaban kasus "alis naik tapi dahi tak berkerut" / "mata terbuka lebar"):**
+> - **Kerutan dahi BOLEH tidak muncul** (kulit kencang/muda, atau alis terangkat tipis). Yang **wajib** dinilai adalah **posisi alisnya terangkat**, bukan ada-tidaknya kerutan. Jangan batalkan Frustration cuma karena dahi mulus.
+> - **Mata terbuka lebar SAJA ≠ Frustration.** Mata melotot = **AU5 (Upper Lid Raiser)** — sinyal **terkejut/waspada**, **bukan** bagian sinyal frustrasi Craig (yang frustrasi itu **AU1+AU2 = alis terangkat**, bukan mata membesar). Frustration butuh **alis benar-benar terangkat (dalam+luar) + kesan tertekan/kesal**; kalau cuma mata lebar tanpa alis naik & tanpa kesan tertekan → kemungkinan **terkejut/netral**, bukan Frustration.
+>
+> *Dasar: morfologi AU standar FACS (Ekman & Friesen 1978 — sumber definisi AU yang dipakai Craig & Bartlett). AU4 (brow lowerer)→kerut tegak; AU1+AU2 (brow raiser)→kerut mendatar; AU5 (upper lid raiser)=mata membesar (terkejut), terpisah dari frustrasi. Deskripsi morfologi standar, bukan kutipan dari 37 paper.*
+
+### Kasus Senyum (AU12) bersama alis naik/turun
+
+**Senyum tidak menentukan** Confusion vs Frustration — ia muncul di **kedua**-nya (Craig 2008: *"AUs 12 and 14 that occur during expressions of both confusion and frustration"*). Jadi **alis tetap penentu**, tetapi **jenis senyum** mengubah keputusan:
+
+| Yang terlihat | Putusan |
+|---|---|
+| **Senyum tulus/lebar** (pipi terangkat + **sudut mata ikut berkerut**) — walau alis sedikit naik/turun | **BUKAN** Confusion/Frustration. Senyum tulus = *exclusion cue* (ConfusionBench: *"smiling as an exclusion cue in most cases"*). Kalau menatap layar → **Engagement**. |
+| **Senyum tipis/kaku/menyeringai** (hanya sudut bibir, **mata datar/tegang**) + **alis turun** (kerutan tegak) | **Confusion** — alis menang; senyumnya hanya menutupi |
+| **Senyum tipis/kaku** + **alis naik + wajah tertekan** (kerutan mendatar) | **Frustration** — alis menang; senyum getir/kesal |
+
+**Cara membedakan senyum:**
+- **Tulus** → pipi naik **dan** ada kerutan di **sudut mata** (mata ikut tersenyum).
+- **Kaku/sosial** → **hanya** sudut bibir tertarik, mata datar atau tegang.
+
+> Sistem juga **membatasi** skor Confusion saat senyum **sangat kuat** (tidak di-nol-kan, ada batas bawah) — sebab senyum lebar lebih ke "menikmati", bukan bingung. Intinya: **senyum lebar tulus → jangan Confusion/Frustration; senyum kaku + alis bergerak → ikuti arah alis.**
 
 ---
 
