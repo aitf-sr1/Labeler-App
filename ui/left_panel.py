@@ -94,7 +94,12 @@ class LeftPanel:
         ctk.CTkButton(
             ctrl, text="Play / Pause", command=self.app.toggle_play,
             font=self.app.font_sm, width=120, height=30, corner_radius=8,
-        ).pack(side="left", padx=(0, 10))
+        ).pack(side="left", padx=(0, 8))
+        # Posisi/timer video — untuk fitur "Ganti Gambar" (scrub ke posisi diinginkan).
+        self.pos_label = ctk.CTkLabel(
+            ctrl, text="frame 0/0", font=("Poppins", 9), width=128,
+            text_color=("#475569", "#9ca3af"))
+        self.pos_label.pack(side="left", padx=(0, 8))
         self.slider = ctk.CTkSlider(ctrl, from_=0, to=100, command=self.app.on_slider_move)
         self.slider.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.slider.set(0)
@@ -277,6 +282,24 @@ class LeftPanel:
             self._lp_mark_btns.append(lp_btn)
             self._lp_mark_states.append(False)
 
+            # GANTI / PULIHKAN gambar crop frame ini (scrub video ke posisi diinginkan
+            # di player atas, lalu "Ganti Gambar"). "Asli" memulihkan crop auto-extract.
+            ganti_row = ctk.CTkFrame(outer, fg_color="transparent")
+            ganti_row.pack(fill="x", pady=(4, 0), padx=2)
+            ctk.CTkButton(
+                ganti_row, text="Ganti Gambar", height=28, corner_radius=8,
+                font=("Poppins", 9, "bold"), fg_color=("#dbeafe", "#1e293b"),
+                hover_color=("#bfdbfe", "#27364a"), text_color=("#1d4ed8", "#93c5fd"),
+                command=lambda fi=i: self.app._replace_frame_crop(fi),
+            ).pack(side="left", fill="x", expand=True, padx=(0, 3))
+            ctk.CTkButton(
+                ganti_row, text="↺ Asli", height=28, width=70, corner_radius=8,
+                font=("Poppins", 9), fg_color="transparent", border_width=1,
+                border_color=("#cbd5e1", "#3f3f5a"), text_color=("#64748b", "#9ca3af"),
+                hover_color=("#e2e8f0", "#23233a"),
+                command=lambda fi=i: self.app._restore_frame_crop(fi),
+            ).pack(side="left")
+
             # Label manual sebagai PILL TOGGLE (bukan checkbox). Muncul saat semi-manual aktif.
             chk_row = tk.Frame(outer, bg="#161622")
             frame_btns, frame_state = {}, {}
@@ -300,6 +323,11 @@ class LeftPanel:
             text="Klik kiri: seek  |  Klik kanan: toggle label  |  Double-klik: tolak frame",
             font=("Poppins", 9), text_color=("#9ca3af", "#4b5563"),
         ).pack(pady=(0, 8))
+
+    def set_play_position(self, teks: str):
+        """Tampilkan posisi/timer video di sebelah play/pause (fitur 'Ganti Gambar')."""
+        if getattr(self, "pos_label", None) is not None:
+            self.pos_label.configure(text=teks)
 
     def set_reference_mark(self, frame_idx: int, active: bool):
         """Set tampilan tombol Gambar Referensi (aktif = terisi hijau)."""

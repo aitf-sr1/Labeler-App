@@ -2738,6 +2738,7 @@ class VideoLabelerApp:
             if ret and frame is not None:
                 self.left_panel.slider.set(self.current_frame)
                 self.left_panel.show_video_frame(frame)
+                self._update_play_position()
 
         self.after_id = self.root.after(15, self.update_frame)
 
@@ -2758,6 +2759,22 @@ class VideoLabelerApp:
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame)
         self.play_start_time  = time.time()
         self.play_start_frame = self.current_frame
+        self._update_play_position()
+        # tampilkan frame pada posisi scrub (biar terlihat sebelum 'Ganti Gambar')
+        ret, frame = self.cap.read()
+        if ret and frame is not None:
+            self.left_panel.show_video_frame(frame)
+
+    def _update_play_position(self):
+        """Perbarui label posisi/timer di sebelah play/pause (untuk fitur 'Ganti Gambar')."""
+        try:
+            total = max(1, int(getattr(self, "total_frames", 1)))
+            cur   = int(getattr(self, "current_frame", 0))
+            fps   = getattr(self, "fps", 0) or 0
+            det   = f" · {cur / fps:.1f}s" if fps else ""
+            self.left_panel.set_play_position(f"frame {cur}/{total} · {int(100 * cur / total)}%{det}")
+        except Exception:
+            pass
 
     def seek_to_frame(self, frame_idx: int):
         """
@@ -2774,9 +2791,187 @@ class VideoLabelerApp:
         self.play_start_time = time.time()
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, target)
         self.left_panel.slider.set(target)
+        self._update_play_position()
         ret, frame = self.cap.read()
         if ret:
             self.left_panel.show_video_frame(frame)
+
+    # ── Ganti / pulihkan gambar crop frame (pilih posisi video manual) ───────
+    def _replace_frame_crop(self, frame_idx: int):
+        """Ganti gambar crop frame ke-`frame_idx` dengan POSISI VIDEO yang sedang tampil.
+        Update LENGKAP & konsisten supaya tak ada mismatch (termasuk viz): clean.jpg +
+        viz.jpg + raw_cache JSON (landmark frame itu) + cache memori + thumbnail galeri.
+        Crop asli di-backup sekali (bisa dipulihkan). Ambil dari video yang SAMA →
+        identitas/split tetap benar (tanpa leakage)."""
+        import cv2, numpy as np
+        from PIL import Image
+        from core.face_detector import crop_face
+        from core.landmark_analyzer import analyze_frame, compute_emotion_scores, draw_landmark_viz
+        if not self.cap or not self.video_files:
+            return
+        if frame_idx >= len(self.left_panel.frame_canvases):
+            return
+        rel_path = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+        base = os.path.splitext(rel_path)[0]
+        if not messagebox.askyesno(
+                "Ganti Gambar Frame",
+                f"Ganti gambar frame #{frame_idx+1} dengan posisi video sekarang "
+                f"(frame {self.current_frame})?\n\nGambar lama di-backup (bisa dipulihkan). "
+                f"Periksa ulang label frame ini setelahnya."):
+            return
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame)
+        ret, frame = self.cap.read()
+        if not ret or frame is None:
+            self.right_panel.lbl_batch_status.configure(text="Gagal membaca frame video", text_color="#ef4444")
+            return
+        cropped, _found, _n, _bb = crop_face(frame)
+        if cropped is None or cropped.size == 0:
+            cropped = frame
+        crop224 = cv2.resize(cropped, (224, 224), interpolation=cv2.INTER_AREA)
+
+        clean_dir = os.path.join(self.path_dir_cropped, "clean", base)
+        viz_dir   = os.path.join(self.path_dir_cropped, "viz", base)
+        os.makedirs(clean_dir, exist_ok=True); os.makedirs(viz_dir, exist_ok=True)
+        clean_p = os.path.join(clean_dir, f"frame_{frame_idx:02d}.jpg")
+        viz_p   = os.path.join(viz_dir, f"frame_{frame_idx:02d}_viz.jpg")
+        self._backup_frame_crop(base, frame_idx, clean_p, viz_p)   # backup ASLI sekali
+
+        cv2.imwrite(clean_p, crop224)
+        lr = analyze_frame(crop224)                                # landmark dari crop BARU
+        try:
+            from utils.person_neutral import get_person_neutral
+            pn = get_person_neutral(self._dataset_dir(), rel_path)
+            if pn:
+                lr.person_neutral = pn
+        except Exception:
+            pass
+        scores  = compute_emotion_scores(lr, self.rules)
+        viz_bgr = draw_landmark_viz(crop224.copy(), lr, scores)
+        cv2.imwrite(viz_p, viz_bgr)
+        self._update_raw_cache_frame(rel_path, frame_idx, lr)      # cache landmark konsisten
+
+        self._apply_replaced_frame_to_gallery(rel_path, frame_idx, crop224, viz_bgr, lr)
+
+        ov = self.augment_marks.setdefault("manual_frame_overrides", [])
+        key = f"cropped_faces/clean/{base}/frame_{frame_idx:02d}.jpg"
+        if key not in ov:
+            ov.append(key); self._save_augment_marks()
+        self.right_panel.lbl_batch_status.configure(
+            text=f"Frame #{frame_idx+1} diganti (dari frame {self.current_frame}). Cek ulang labelnya.",
+            text_color="#10b981")
+
+    def _restore_frame_crop(self, frame_idx: int):
+        """Pulihkan gambar crop frame ke versi ASLI (auto-extract) dari backup _orig/."""
+        import cv2, shutil
+        from PIL import Image
+        from core.landmark_analyzer import analyze_frame, compute_emotion_scores, draw_landmark_viz
+        if not self.video_files:
+            return
+        rel_path = os.path.relpath(self.video_files[self.current_index], self.root_folder)
+        base = os.path.splitext(rel_path)[0]
+        orig_clean = os.path.join(self.path_dir_cropped, "_orig", base, f"frame_{frame_idx:02d}.jpg")
+        orig_viz   = os.path.join(self.path_dir_cropped, "_orig", base, f"frame_{frame_idx:02d}_viz.jpg")
+        if not os.path.exists(orig_clean):
+            self.right_panel.lbl_batch_status.configure(
+                text=f"Frame #{frame_idx+1} belum pernah diganti (tak ada backup asli).", text_color="#f59e0b")
+            return
+        clean_p = os.path.join(self.path_dir_cropped, "clean", base, f"frame_{frame_idx:02d}.jpg")
+        viz_p   = os.path.join(self.path_dir_cropped, "viz", base, f"frame_{frame_idx:02d}_viz.jpg")
+        shutil.copy2(orig_clean, clean_p)
+        if os.path.exists(orig_viz):
+            shutil.copy2(orig_viz, viz_p)
+        crop = cv2.imread(clean_p)
+        lr = analyze_frame(crop)
+        try:
+            from utils.person_neutral import get_person_neutral
+            pn = get_person_neutral(self._dataset_dir(), rel_path)
+            if pn:
+                lr.person_neutral = pn
+        except Exception:
+            pass
+        if not os.path.exists(orig_viz):                  # backup viz hilang → regen
+            viz_bgr = draw_landmark_viz(crop.copy(), lr, compute_emotion_scores(lr, self.rules))
+            cv2.imwrite(viz_p, viz_bgr)
+        else:
+            viz_bgr = cv2.imread(viz_p)
+        self._update_raw_cache_frame(rel_path, frame_idx, lr)
+        self._apply_replaced_frame_to_gallery(rel_path, frame_idx, crop, viz_bgr, lr)
+        ov = self.augment_marks.get("manual_frame_overrides", [])
+        key = f"cropped_faces/clean/{base}/frame_{frame_idx:02d}.jpg"
+        if key in ov:
+            ov.remove(key); self._save_augment_marks()
+        self.right_panel.lbl_batch_status.configure(
+            text=f"Frame #{frame_idx+1} dipulihkan ke crop asli.", text_color="#10b981")
+
+    def _backup_frame_crop(self, base: str, frame_idx: int, clean_p: str, viz_p: str):
+        """Salin crop ASLI ke _orig/ — HANYA sekali (saat ganti pertama), agar versi
+        auto-extract aslinya tetap bisa dipulihkan walau diganti berkali-kali."""
+        import shutil
+        orig_dir = os.path.join(self.path_dir_cropped, "_orig", base)
+        orig_clean = os.path.join(orig_dir, f"frame_{frame_idx:02d}.jpg")
+        if os.path.exists(orig_clean):
+            return                                        # sudah ada backup ASLI → jangan timpa
+        os.makedirs(orig_dir, exist_ok=True)
+        if os.path.exists(clean_p):
+            shutil.copy2(clean_p, orig_clean)
+        if os.path.exists(viz_p):
+            shutil.copy2(viz_p, os.path.join(orig_dir, f"frame_{frame_idx:02d}_viz.jpg"))
+
+    def _update_raw_cache_frame(self, rel_path: str, frame_idx: int, lr):
+        """Perbarui satu entri frame di raw_cache JSON agar landmark (untuk skor AI &
+        fast-path viz) konsisten dengan crop baru."""
+        import json as _json
+        rc = getattr(self, "path_dir_raw_cache", None)
+        if not rc:
+            return
+        safe = rel_path.replace(os.sep, "__").replace("/", "__").replace("\\", "__")
+        safe = os.path.splitext(safe)[0]
+        cp = os.path.join(rc, safe + ".json")
+        if not os.path.exists(cp):
+            return
+        try:
+            with open(cp) as f:
+                data = _json.load(f)
+        except Exception:
+            return
+        frames = data.get("frames", [])
+        while len(frames) <= frame_idx:
+            frames.append({})
+        frames[frame_idx] = {
+            "frame_idx": frame_idx, "face_found": lr.face_found,
+            "yaw": lr.yaw, "pitch": lr.pitch, "roll": lr.roll,
+            "iris_x": lr.iris_x, "iris_y": lr.iris_y,
+            "iris_img_x": lr.iris_img_x, "iris_img_y": lr.iris_img_y,
+            "blendshapes": lr.blendshapes, "hand_one": lr.hand_one, "hand_two": lr.hand_two,
+        }
+        data["frames"] = frames
+        try:
+            with open(cp, "w") as f:
+                _json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"[GantiFrame] gagal update raw_cache: {e}")
+
+    def _apply_replaced_frame_to_gallery(self, rel_path: str, frame_idx: int, crop_bgr, viz_bgr, lr):
+        """Update cache memori (pil/viz/landmark) + render ulang galeri untuk frame ini."""
+        import cv2
+        from PIL import Image
+        if self._gallery_cache.get("rel_path") != rel_path:
+            return
+        pil  = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB))
+        vpil = Image.fromarray(cv2.cvtColor(viz_bgr, cv2.COLOR_BGR2RGB))
+        for key, val in (("pil_images", pil), ("viz_images", vpil), ("landmark_results", lr)):
+            lst = list(self._gallery_cache.get(key) or [])
+            while len(lst) <= frame_idx:
+                lst.append(val)
+            lst[frame_idx] = val
+            self._gallery_cache[key] = lst
+        self.viz_images = self._gallery_cache["viz_images"]
+        active_lbl = self.active_frame_label.get()
+        vid_data   = self._active_vid_data(rel_path)
+        display    = (self._gallery_cache["viz_images"]
+                      if (self.show_viz.get() and self._gallery_cache["viz_images"])
+                      else self._gallery_cache["pil_images"])
+        self.left_panel.render_frames(display, vid_data, active_lbl)
 
     # Navigation
 

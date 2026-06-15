@@ -239,8 +239,13 @@ def main():
                   "_lp_restore_trash", "_lp_restore_one", "_lp_list_trashed",
                   "_lp_pcache_get", "_lp_pcache_put", "_lp_pcache_lookup_any_for_source",
                   "_on_arrow", "_lp_update_save_info", "_lp_refresh_review_throttled",
-                  "_lp_prepare_face_source"]:
+                  "_lp_prepare_face_source",
+                  "_replace_frame_crop", "_restore_frame_crop", "_backup_frame_crop",
+                  "_update_raw_cache_frame", "_apply_replaced_frame_to_gallery",
+                  "_update_play_position"]:
             assert hasattr(a, m), f"metode app hilang: {m}"
+        a._update_play_position()                      # tak ada video → aman (guarded)
+        a.left_panel.set_play_position("frame 1/2")    # setter posisi player
         for m in ["_lepas_fokus", "_tinjau_geser", "_tinjau_loncat", "_buka_di_pemeriksa",
                   "_geser_halaman", "_sync_halaman", "_sorot_aktif"]:
             assert hasattr(lp, m), f"metode panel hilang: {m}"
