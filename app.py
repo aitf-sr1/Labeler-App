@@ -2000,12 +2000,16 @@ class VideoLabelerApp:
         threading.Thread(target=_worker, daemon=True).start()
 
     # ── Merge hasil LP ke dataset Label2d (non-destruktif + bisa undo) ────────
-    def _lp_label2d_base(self) -> str:
-        return os.path.join(os.path.dirname(self.path_json_frames), "Label2d")
+    def _lp_label2d_base(self, source: str = "ai") -> str:
+        """Folder split dataset asli: 'ai' → Label2d (dari batch), 'manual' → Label2d_manual."""
+        nama = "Label2d_manual" if source == "manual" else "Label2d"
+        return os.path.join(os.path.dirname(self.path_json_frames), nama)
 
-    def _lp_merge_dir(self, mode: str = "lp") -> str:
-        """Folder output per komposisi: base / lp / lp_new (disimpan terpisah)."""
-        return os.path.join(os.path.dirname(self.path_json_frames), f"Label2d_merged_{mode}")
+    def _lp_merge_dir(self, mode: str = "lp", source: str = "ai") -> str:
+        """Folder output per komposisi & basis (disimpan terpisah supaya manual vs AI tak
+        saling timpa): basis AI → Label2d_merged_{mode}; basis manual → ..._{mode}_manual."""
+        suffix = f"{mode}_manual" if source == "manual" else mode
+        return os.path.join(os.path.dirname(self.path_json_frames), f"Label2d_merged_{suffix}")
 
     @staticmethod
     def _lp_path_is_newface(path: str) -> bool:
@@ -2028,17 +2032,28 @@ class VideoLabelerApp:
             return
         lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
         mode = lp.get_merge_mode() if lp else "lp"
+        src  = lp.get_base_source() if lp else "ai"   # basis label asli: manual | ai
         # Split dasar dibuat di UI thread (sekali, kasus pertama saja) karena
         # _split_dataset_2d membaca widget tkinter — tidak aman dari thread lain.
-        base = self._lp_label2d_base()
+        base = self._lp_label2d_base(src)
         if not os.path.exists(os.path.join(base, "train.csv")):
-            self._split_dataset_2d(silent=True, force_default=True)
+            self._split_dataset_2d(silent=True, force_default=True, source=src)
+        if not os.path.exists(os.path.join(base, "train.csv")):
+            pesan = ("Label Manual belum bisa dibuat (belum ada label manual). "
+                     "Labeli manual dulu, atau pilih basis 'Label AI'."
+                     if src == "manual" else
+                     "Label2d dasar belum ada & gagal dibuat. Proses batch dulu.")
+            messagebox.showinfo("Buat Dataset", pesan)
+            if lp:
+                lp.update_progress(pesan, "#f59e0b")
+            return
+        nama_basis = "Manual" if src == "manual" else "AI (batch)"
         if lp:
-            lp.start_loading(f"Menyusun dataset '{self._LP_NAMA_MODE[mode]}'")
+            lp.start_loading(f"Menyusun '{self._LP_NAMA_MODE[mode]}' (basis {nama_basis})")
 
-        def _worker(m=mode):
+        def _worker(m=mode, s=src):
             try:
-                hasil = self._lp_build_merged_dataset(m)
+                hasil = self._lp_build_merged_dataset(m, s)
             except ValueError as ex:           # kondisi user (bukan bug) → info biasa
                 pesan = str(ex)
                 self.root.after(0, lambda p=pesan: (
@@ -2062,17 +2077,20 @@ class VideoLabelerApp:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _lp_build_merged_dataset(self, mode: str) -> dict:
-        """(Logika murni, TANPA UI — bisa diuji terpisah) Susun Label2d_merged_{mode}:
+    def _lp_build_merged_dataset(self, mode: str, base_source: str = "ai") -> dict:
+        """(Logika murni, TANPA UI — bisa diuji terpisah) Susun Label2d_merged_{mode}[_manual]:
           - base   : dataset asli saja
           - lp     : asli + hasil LP dari frame video dataset
           - lp_new : asli + hasil LP video + hasil LP dataset wajah baru
-        Non-destruktif: val/test disalin, kolom 'synthetic' ditambah, Label2d asli utuh.
+        `base_source`: 'manual' = pakai Label2d_manual (kurasi user); 'ai' = pakai Label2d (batch).
+        Non-destruktif: val/test disalin, kolom 'synthetic' ditambah, label asli utuh.
         Raise ValueError dengan pesan ramah bila prasyarat tak terpenuhi."""
         import csv as _csv, json as _json
-        base = self._lp_label2d_base()
+        base = self._lp_label2d_base(base_source)
         if not os.path.exists(os.path.join(base, "train.csv")):
-            raise ValueError("Label2d dasar belum ada. Buat split 2D dulu (panel kanan).")
+            sumber_nama = "Label2d_manual (label manual)" if base_source == "manual" else "Label2d (label AI)"
+            raise ValueError(f"{sumber_nama} belum ada. Buat split dulu (panel kanan) "
+                             f"atau pilih basis lain.")
 
         aug_rows = []
         if mode in ("lp", "lp_new"):
@@ -2097,7 +2115,7 @@ class VideoLabelerApp:
                     "Tidak ada gambar hasil (diterima + berlabel) untuk komposisi ini. "
                     "Proses LP / dataset wajah dulu, atau pilih komposisi 'Tanpa LP'.")
 
-        out = self._lp_merge_dir(mode)
+        out = self._lp_merge_dir(mode, base_source)
         os.makedirs(out, exist_ok=True)
 
         def _salin_dengan_kolom_synthetic(split):
@@ -2127,17 +2145,18 @@ class VideoLabelerApp:
         n_train_base = len(rows) - 1
 
         with open(os.path.join(out, "lp_merge_manifest.json"), "w") as f:
-            _json.dump({"mode": mode, "base": base,
+            _json.dump({"mode": mode, "base_source": base_source, "base": base,
                         "added_train": [r for r, _ in aug_rows], "n_aug": len(aug_rows)},
                        f, indent=2)
 
         nama_mode = self._LP_NAMA_MODE[mode]
+        nama_basis = "Manual (kurasi)" if base_source == "manual" else "AI (batch)"
         ringkasan = (
-            f"Komposisi: {nama_mode}\nOutput: {out}\n\n"
+            f"Komposisi: {nama_mode}\nBasis label asli: {nama_basis}\nOutput: {out}\n\n"
             f"train: {n_train_base} asli + {len(aug_rows)} sintetik = {n_train_base + len(aug_rows)}\n"
             f"val: {n_val}   test: {n_test}\n\n"
             f"Kolom 'synthetic' = 1 untuk hasil LP. Klik 'Undo' untuk hapus folder ini.")
-        print(f"[LP Merge] mode={mode} {len(aug_rows)} sintetik → {out}")
+        print(f"[LP Merge] mode={mode} basis={base_source} {len(aug_rows)} sintetik → {out}")
         return {"out": out, "nama_mode": nama_mode, "ringkasan": ringkasan}
 
     def _lp_undo_merge(self):
@@ -2186,8 +2205,11 @@ class VideoLabelerApp:
                     if self._lp_path_is_newface(path):
                         st[l]["wajah_baru"] += 1
 
-        # Label asli dari Label2d/train.csv (bila sudah pernah split)
-        train_csv = os.path.join(self._lp_label2d_base(), "train.csv")
+        # Label asli dari train.csv basis terpilih (manual/ai) — agar angka "asli" cocok
+        # dengan yang akan dipakai saat Buat Dataset.
+        lp = getattr(getattr(self, "left_panel", None), "lp_panel_content", None)
+        src = lp.get_base_source() if (lp and getattr(lp, "_built", False)) else "ai"
+        train_csv = os.path.join(self._lp_label2d_base(src), "train.csv")
         ada_base = os.path.exists(train_csv)
         if ada_base:
             with open(train_csv, newline="") as f:
@@ -2198,7 +2220,7 @@ class VideoLabelerApp:
                     if i < len(r) and r[i] == "1":
                         st[l]["asli"] += 1
 
-        baris = ["Distribusi label kelas (train):", ""]
+        baris = [f"Distribusi label kelas (train) — basis: {'Manual' if src=='manual' else 'AI (batch)'}", ""]
         for l in LABELS:
             d = st[l]
             total = d["asli"] + d["lp"]
@@ -2208,8 +2230,9 @@ class VideoLabelerApp:
                 f"(dari wajah baru: {d['wajah_baru']})  =  {total}"
                 + (f"   |   ditolak {d['ditolak']}" if d["ditolak"] else ""))
         if not ada_base:
-            baris.append("\n(Label2d/train.csv belum ada — kolom 'asli' = 0. "
-                         "Buat split 2D dulu untuk angka asli.)")
+            nm = "Label2d_manual" if src == "manual" else "Label2d"
+            baris.append(f"\n({nm}/train.csv belum ada — kolom 'asli' = 0. "
+                         f"Buat split {'manual ' if src=='manual' else ''}dulu untuk angka asli.)")
         n_trash = len(self._lp_list_trashed())
         if n_trash:
             baris.append(f"\nDi _trash (dibuang, bisa dipulihkan): {n_trash} gambar.")

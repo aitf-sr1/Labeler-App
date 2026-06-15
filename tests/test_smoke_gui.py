@@ -31,6 +31,14 @@ def main():
         assert lp._built, "panel LP gagal build"
         lp.get_selected_emotions(); lp.get_target_n(); lp.get_picked_indices()
         lp.get_driving_folder(); lp.get_driving_list("Confusion"); lp.get_merge_mode()
+        assert lp.get_base_source() == "manual", lp.get_base_source()   # default basis = manual
+        lp.var_base_source.set("ai"); assert lp.get_base_source() == "ai"
+        lp.var_base_source.set("manual")
+        # merge dir & base path beda per basis (manual vs ai) supaya tak saling timpa
+        assert a._lp_merge_dir("lp", "manual").endswith("Label2d_merged_lp_manual")
+        assert a._lp_merge_dir("lp", "ai").endswith("Label2d_merged_lp")
+        assert a._lp_label2d_base("manual").endswith("Label2d_manual")
+        assert a._lp_label2d_base("ai").endswith("Label2d")
         lp.get_face_folder(); lp.get_selected_faces(); lp.get_picked_fractions()
 
         # Kunci posisi proporsional: tandai di video pendek lalu ganti ke video panjang

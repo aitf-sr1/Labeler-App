@@ -161,6 +161,7 @@ class LPPanel:
         self._folder_wajah_awal = folder_wajah
         self.var_folder_wajah = None               # tk.StringVar (dibuat di build)
         self.var_merge_mode   = None               # komposisi dataset: base|lp|lp_new
+        self.var_base_source  = None               # basis label asli: manual|ai
         self.wajah_paths      = []                 # semua path gambar di folder
         self.wajah_terpilih   = set()              # path gambar yang dipilih untuk diproses
         self.grid_wajah       = None
@@ -244,6 +245,7 @@ class LPPanel:
         self.var_folder_driving = tk.StringVar(value=self._folder_driving_awal)
         self.var_folder_wajah   = tk.StringVar(value=self._folder_wajah_awal)
         self.var_merge_mode     = tk.StringVar(value="lp")   # base | lp | lp_new
+        self.var_base_source    = tk.StringVar(value="manual")  # manual | ai (basis label asli)
         self.var_kunci_posisi   = tk.BooleanVar(value=True)  # pertahankan posisi proporsional
         self.var_filter_tinjau  = tk.StringVar(value="Semua")
         for emosi in LABELS:
@@ -625,6 +627,20 @@ class LPPanel:
             ctk.CTkRadioButton(baris_radio, text=teks, value=nilai, variable=self.var_merge_mode,
                                font=("Poppins", 9), radiobutton_width=16, radiobutton_height=16,
                                fg_color="#10b981", hover_color="#0ea372").pack(side="left", padx=(0, 14))
+
+        # BASIS label dataset asli: dari label MANUAL (yang kamu kurasi) atau label AI (batch).
+        # Default MANUAL — sesuai harapan "gabungin manual + LP". Output folder beda per basis.
+        ctk.CTkLabel(kartu_buat, text="Basis label dataset asli (digabung dgn LP):",
+                     font=("Poppins", 9, "bold"), text_color=("#059669", "#34d399")).pack(
+            anchor="w", padx=12, pady=(4, 0))
+        baris_basis = ctk.CTkFrame(kartu_buat, fg_color="transparent")
+        baris_basis.pack(fill="x", padx=12, pady=(0, 2))
+        for nilai, teks in [("manual", "Label Manual (kurasi sendiri)"),
+                            ("ai",     "Label AI (hasil batch)")]:
+            ctk.CTkRadioButton(baris_basis, text=teks, value=nilai, variable=self.var_base_source,
+                               font=("Poppins", 9), radiobutton_width=16, radiobutton_height=16,
+                               fg_color="#0ea5e9", hover_color="#0284c7").pack(side="left", padx=(0, 14))
+
         baris_buat = ctk.CTkFrame(kartu_buat, fg_color="transparent")
         baris_buat.pack(fill="x", padx=12, pady=(2, 10))
         ctk.CTkButton(baris_buat, text="Buat Dataset", height=30, width=150, corner_radius=8,
@@ -635,8 +651,10 @@ class LPPanel:
                       hover_color=("#d1d5db", "#3a3a4a"), text_color=("#374151", "#9ca3af"),
                       command=self.app._lp_undo_merge).pack(side="left")
         ctk.CTkLabel(kartu_buat,
-                     text="Output ke Label2d_merged_{komposisi}/ (non-destruktif, kolom 'synthetic'). "
-                          "Label2d asli tidak diubah.",
+                     text="Output: basis MANUAL → Label2d_merged_{komposisi}_manual/ ; basis AI → "
+                          "Label2d_merged_{komposisi}/ (non-destruktif, kolom 'synthetic'). "
+                          "Basis MANUAL pakai label hasil kurasi-mu (Label2d_manual); basis AI pakai "
+                          "hasil batch (Label2d). Label asli tidak diubah.",
                      font=("Poppins", 8), text_color=("#6b7280", "#9ca3af"),
                      wraplength=680, justify="left").pack(anchor="w", padx=12, pady=(0, 8))
 
@@ -1233,6 +1251,10 @@ class LPPanel:
 
     def get_merge_mode(self) -> str:
         return self.var_merge_mode.get() if self.var_merge_mode else "lp"
+
+    def get_base_source(self) -> str:
+        """Basis label dataset asli untuk merge: 'manual' (kurasi user) atau 'ai' (batch)."""
+        return self.var_base_source.get() if self.var_base_source else "manual"
 
     def get_target_n(self) -> int:
         try:

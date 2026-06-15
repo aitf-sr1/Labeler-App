@@ -30,8 +30,8 @@ masuk split **train** — tidak bocor ke val/test.
                                    │
  TINJAU   ── grid + pemeriksa BESAR → Deteksi AI (bandingkan vs label manual) → tolak/terima
                                    │
- BUAT     ── pilih komposisi (Tanpa LP / Dengan LP / LP + Dataset Baru) → Buat Dataset
- DATASET     (output Label2d_merged_{komposisi}/, non-destruktif, bisa Undo)
+ BUAT     ── pilih komposisi (Tanpa LP / Dengan LP / LP + Dataset Baru) + BASIS (Manual/AI)
+ DATASET     → Buat Dataset (output Label2d_merged_{komposisi}[_manual]/, non-destruktif, Undo)
 ```
 
 ---
@@ -217,12 +217,29 @@ Pilih **komposisi** lewat bullet/radio, lalu **Buat Dataset**:
 | **Dengan LP** | Asli + hasil LP dari frame video dataset. |
 | **LP + Dataset Wajah Baru** | Asli + hasil LP video + hasil LP dataset wajah baru. |
 
-Output **non-destruktif** ke `Label2d_merged_{komposisi}/` (mis. `Label2d_merged_lp/`):
-train = asli + sintetik, val/test disalin apa adanya, kolom `synthetic` (1 = hasil LP).
-`Label2d` asli tidak diubah. **Undo / Hapus** menghapus folder `Label2d_merged_*` (asli aman).
+### Basis label dataset asli — **Manual** atau **AI (batch)**
 
-Tiga komposisi disimpan terpisah → mudah membandingkan (mis. cek apakah augmentasi membantu
-atau malah overfit).
+Selain komposisi, pilih **basis label** dataset asli yang digabung dengan hasil LP (radio
+kedua di kartu "Buat Dataset"):
+
+| Basis | Sumber train/val/test asli | Output |
+|---|---|---|
+| **Label Manual** (default) | `Label2d_manual/` — hasil **split label kurasi manual**-mu | `Label2d_merged_{komposisi}_manual/` |
+| **Label AI (batch)** | `Label2d/` — hasil **split label batch SigLIP+MediaPipe** | `Label2d_merged_{komposisi}/` |
+
+> **Penting:** sebelum versi ini, merge **selalu** memakai basis **AI (`Label2d`)** — bukan label
+> manual. Sekarang **default-nya Manual** (sesuai harapan "gabungin manual + LP"). Bila
+> `Label2d_manual/` belum ada, app mencoba membuatnya dari `manual_labels` (perlu sudah ada
+> label manual); kalau belum ada label manual, pilih basis **AI** atau labeli manual dulu.
+> Basis Manual & AI **disimpan ke folder berbeda** sehingga tidak saling menimpa.
+
+Output **non-destruktif**: train = asli (basis terpilih) + sintetik, val/test disalin apa adanya,
+kolom `synthetic` (1 = hasil LP). Label asli (`Label2d` / `Label2d_manual`) tidak diubah.
+**Undo / Hapus** menghapus semua folder `Label2d_merged_*` (asli aman). **Statistik Dataset** juga
+menghitung kolom "asli" dari basis yang sedang dipilih, jadi angkanya cocok dengan hasil merge.
+
+Tiap komposisi × basis disimpan terpisah → mudah membandingkan (mis. cek apakah augmentasi
+membantu atau malah overfit, dan apakah basis manual vs AI beda hasilnya).
 
 ---
 
@@ -236,7 +253,7 @@ atau malah overfit).
 | `lp_review.json` | Daftar gambar yang ditolak |
 | `lp_result_cache.json` | Cache hasil LP lintas-sesi (kunci identitas file ukuran+mtime, bukan nama) |
 | `augmented/liveportrait_app/_trash/` | Gambar yang dibuang (bisa dilihat via filter "Dibuang" & dipulihkan) |
-| `Label2d_merged_{base,lp,lp_new}/` | Dataset gabungan per komposisi |
+| `Label2d_merged_{base,lp,lp_new}[_manual]/` | Dataset gabungan per komposisi × basis (AI / manual) |
 | `augment_marks.json` → `lp_transform_frames` | Frame sumber video yang ditandai LP |
 
 ## Kode terkait
