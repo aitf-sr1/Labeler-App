@@ -1554,17 +1554,67 @@ class LPPanel:
             self._pindai_folder_wajah()
 
     def _pindai_folder_wajah(self):
-        self.wajah_terpilih.clear()
+        # Pulihkan tanda wajah yang DULU disimpan utk folder ini (tak hilang saat rescan/restart)
+        self.wajah_terpilih = self._muat_pilihan_wajah(self.get_face_folder())
         self.app._lp_refresh_faces()   # app baca folder + decode thumbnail di thread latar
 
     def _pilih_semua_wajah(self):
         self.wajah_terpilih = set(self.wajah_paths)
         self.render_faces([(p, p in self.wajah_terpilih, None) for p in self.wajah_paths],
                           dari_cache=True)
+        self._simpan_pilihan_wajah()
 
     def _kosongkan_pilihan_wajah(self):
         self.wajah_terpilih.clear()
         self.render_faces([(p, False, None) for p in self.wajah_paths], dari_cache=True)
+        self._simpan_pilihan_wajah()
+
+    # ── Persistensi tanda wajah per-folder ──────────────────────────────────────
+    def _path_pilihan_wajah(self) -> str:
+        d = os.path.join(os.path.expanduser("~"), ".cache", "siglip_labeler")
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, "lp_face_selection.json")
+
+    def _muat_pilihan_wajah(self, folder: str) -> set:
+        """Set path wajah yang dulu ditandai utk `folder` (hanya yang file-nya masih ada)."""
+        if not folder:
+            return set()
+        try:
+            import json
+            with open(self._path_pilihan_wajah(), encoding="utf-8") as f:
+                data = json.load(f)
+            out = set()
+            for nama in data.get(os.path.abspath(folder), []):
+                p = os.path.join(folder, nama)
+                if os.path.exists(p):
+                    out.add(p)
+            return out
+        except Exception:
+            return set()
+
+    def _simpan_pilihan_wajah(self):
+        """Simpan tanda wajah folder aktif ke disk (per folder)."""
+        folder = self.get_face_folder()
+        if not folder:
+            return
+        try:
+            import json
+            path = self._path_pilihan_wajah()
+            data = {}
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+            key = os.path.abspath(folder)
+            nama = sorted(os.path.basename(p) for p in self.wajah_terpilih
+                          if os.path.dirname(os.path.abspath(p)) == key)
+            if nama:
+                data[key] = nama
+            else:
+                data.pop(key, None)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        except Exception:
+            pass
 
     def _toggle_pilih_wajah(self, path: str):
         # Update HANYA kartu yang diklik (border + ✓) — tanpa rebuild seluruh grid,
@@ -1585,6 +1635,8 @@ class LPPanel:
                                    font=("Poppins", 14, "bold"), tags="cek")
         # Pratinjau wajah yang diklik di kolom SUMBER
         self._pratinjau_wajah_sumber(path)
+        # Simpan tanda ke disk supaya tak hilang saat rescan/restart
+        self._simpan_pilihan_wajah()
 
     def _pratinjau_wajah_sumber(self, path: str):
         """Tampilkan wajah folder yang diklik di kolom pratinjau SUMBER (bantuan visual)."""
@@ -1648,6 +1700,7 @@ class LPPanel:
         self._uk_wajah = UK
         cache = getattr(self, "_thumb_wajah_cache", {})
         for nomor, (path, terpilih, thumb) in enumerate(item_wajah):
+            terpilih = path in self.wajah_terpilih   # otoritatif (pulihkan tanda saat rescan)
             if thumb is None:
                 thumb = cache.get(path)
             if thumb is None:
