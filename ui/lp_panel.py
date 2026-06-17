@@ -166,6 +166,8 @@ class LPPanel:
         self.wajah_terpilih   = set()              # path gambar yang dipilih untuk diproses
         self.grid_wajah       = None
         self._ref_thumb_wajah = []
+        self._kanvas_wajah    = {}                 # {path: canvas} agar toggle update 1 kartu saja
+        self._uk_wajah        = 120
         self._thumb_wajah_cache = {}               # {path: thumb_bgr} agar toggle tak decode ulang
         self.label_ringkasan_wajah = None          # ringkasan setelan dekat tombol proses wajah
 
@@ -1565,13 +1567,39 @@ class LPPanel:
         self.render_faces([(p, False, None) for p in self.wajah_paths], dari_cache=True)
 
     def _toggle_pilih_wajah(self, path: str):
-        if path in self.wajah_terpilih:
-            self.wajah_terpilih.discard(path)
-        else:
+        # Update HANYA kartu yang diklik (border + ✓) — tanpa rebuild seluruh grid,
+        # jadi instan & tidak ada "loading" yang tak perlu.
+        terpilih = path not in self.wajah_terpilih
+        if terpilih:
             self.wajah_terpilih.add(path)
+        else:
+            self.wajah_terpilih.discard(path)
         self._segarkan_label_wajah()
-        self.render_faces([(p, p in self.wajah_terpilih, None) for p in self.wajah_paths],
-                          dari_cache=True)
+        kanvas = self._kanvas_wajah.get(path)
+        if kanvas is not None:
+            uk = self._uk_wajah
+            kanvas.configure(highlightbackground=WARNA_LP if terpilih else "#333")
+            kanvas.delete("cek")
+            if terpilih:
+                kanvas.create_text(uk - 14, 14, text="✓", fill=WARNA_LP,
+                                   font=("Poppins", 14, "bold"), tags="cek")
+        # Pratinjau wajah yang diklik di kolom SUMBER
+        self._pratinjau_wajah_sumber(path)
+
+    def _pratinjau_wajah_sumber(self, path: str):
+        """Tampilkan wajah folder yang diklik di kolom pratinjau SUMBER (bantuan visual)."""
+        try:
+            import cv2
+            bgr = cv2.imread(path)
+            if bgr is None:
+                bgr = self._thumb_wajah_cache.get(path)
+            if bgr is None or not self.kanvas_pratinjau:
+                return
+            self._tampilkan(0, bgr)
+            if self.label_pratinjau:
+                self.label_pratinjau[0].configure(text=os.path.basename(path)[:24])
+        except Exception:
+            pass
 
     def _segarkan_label_wajah(self):
         if hasattr(self, "label_jml_wajah"):
@@ -1609,6 +1637,7 @@ class LPPanel:
         for anak in self.grid_wajah.winfo_children():
             anak.destroy()
         self._ref_thumb_wajah.clear()
+        self._kanvas_wajah = {}
         if not item_wajah:
             ctk.CTkLabel(self.grid_wajah, text="(folder kosong / belum dipindai)",
                          font=("Poppins", 9), text_color=("#6b7280", "#9ca3af")).pack(pady=8)
@@ -1616,6 +1645,7 @@ class LPPanel:
             return
         KOLOM = 5
         UK = 120
+        self._uk_wajah = UK
         cache = getattr(self, "_thumb_wajah_cache", {})
         for nomor, (path, terpilih, thumb) in enumerate(item_wajah):
             if thumb is None:
@@ -1634,7 +1664,9 @@ class LPPanel:
             self._ref_thumb_wajah.append(gambar)
             kanvas.create_image(0, 0, anchor="nw", image=gambar)
             if terpilih:
-                kanvas.create_text(UK - 14, 14, text="✓", fill=WARNA_LP, font=("Poppins", 14, "bold"))
+                kanvas.create_text(UK - 14, 14, text="✓", fill=WARNA_LP,
+                                   font=("Poppins", 14, "bold"), tags="cek")
+            self._kanvas_wajah[path] = kanvas
             kanvas.bind("<Button-1>", lambda e, p=path: self._toggle_pilih_wajah(p))
             ctk.CTkLabel(sel, text=os.path.basename(path)[:16], font=("Poppins", 7),
                          text_color=("#6b7280", "#9ca3af")).pack()
