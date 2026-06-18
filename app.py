@@ -3748,14 +3748,61 @@ class VideoLabelerApp:
                 messagebox.showwarning("Split", "Tidak ada video valid untuk di-split.")
             return
 
-        random.seed(42)
-        random.shuffle(unique_uuids)
-        n       = len(unique_uuids)
-        n_train = int(0.8 * n)
-        n_val   = int(0.1 * n)
+        n = len(unique_uuids)
 
-        train_uuids = set(unique_uuids[:n_train])
-        val_uuids   = set(unique_uuids[n_train:n_train + n_val])
+        # ── Pembagian STRATIFIED-GROUP ──────────────────────────────────────────
+        # Tiap UUID/siswa tetap UTUH di satu split (no leakage), TAPI proporsi tiap
+        # label dijaga seimbang antar train/val/test — bukan acak buta yang bikin
+        # Frustration/Boredom timpang antar split. Greedy: tiap UUID ditaruh ke split
+        # yang paling mengurangi deviasi (jumlah video + positif per label) dari target.
+        RATIO = {"train": 0.8, "val": 0.1, "test": 0.1}
+        prof = {}
+        for u, vids in videos_by_uuid.items():
+            pu = {"n": len(vids)}
+            for lbl in LABELS:
+                pu[lbl] = sum(int(v[lbl.lower()]) for v in vids)
+            prof[u] = pu
+        _metrics = ["n"] + LABELS
+        _tot = {m: sum(prof[u][m] for u in prof) for m in _metrics}
+        _target = {s: {m: _tot[m] * RATIO[s] for m in _metrics} for s in RATIO}
+
+        def _dev(state):
+            d = 0.0
+            for s in RATIO:
+                for m in _metrics:
+                    t = _target[s][m]
+                    d += ((state[s][m] - t) / (t + 1e-9)) ** 2
+            return d
+
+        def _assign(order):
+            state = {s: {m: 0.0 for m in _metrics} for s in RATIO}
+            amap = {}
+            for u in order:
+                best_s, best_d = None, None
+                for s in RATIO:
+                    for m in _metrics: state[s][m] += prof[u][m]
+                    dd = _dev(state)
+                    for m in _metrics: state[s][m] -= prof[u][m]
+                    if best_d is None or dd < best_d:
+                        best_d, best_s = dd, s
+                for m in _metrics: state[best_s][m] += prof[u][m]
+                amap[u] = best_s
+            return amap, _dev(state)
+
+        random.seed(42)
+        _base = sorted(prof, key=lambda u: -prof[u]["n"])
+        _best_map, _best_score = None, None
+        for _cand in [_base] + [random.sample(list(prof), len(prof)) for _ in range(300)]:
+            amap, score = _assign(_cand)
+            cnt = {s: sum(1 for x in amap.values() if x == s) for s in RATIO}
+            if n >= 6 and (cnt["val"] < 1 or cnt["test"] < 1):
+                continue
+            if _best_score is None or score < _best_score:
+                _best_score, _best_map = score, amap
+        assign_map = _best_map or _assign(_base)[0]
+
+        train_uuids = {u for u, s in assign_map.items() if s == "train"}
+        val_uuids   = {u for u, s in assign_map.items() if s == "val"}
 
         train_vids, val_vids, test_vids = [], [], []
         for uuid, vids in videos_by_uuid.items():
